@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Melody Singer</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <!-- 顶部菜单栏 -->
+    <header class="menubar">
+        <div class="menu-items">
+            <span class="menu-item" id="menuFile"><i class="fas fa-folder-open"></i> 打开 MIDI</span>
+            <input type="file" id="midiFileInput" accept=".mid,.midi" style="display:none">
+            <span class="menu-item">编辑</span>
+            <span class="menu-item">视图</span>
+            <span class="menu-item">项目</span>
+        </div>
+        <div class="transport-info">
+            <span class="bpm-display" id="bpmDisplay">BPM: 120</span>
+            <span class="time-display" id="timeDisplay">00:00.000</span>
+            <span class="render-status" id="renderStatus"></span>
+        </div>
+        <div class="window-controls">
+            <span class="win-btn"><i class="fas fa-minus"></i></span>
+            <span class="win-btn"><i class="fas fa-expand"></i></span>
+            <span class="win-btn close"><i class="fas fa-times"></i></span>
+        </div>
+    </header>
+
+    <!-- 主容器 -->
+    <div class="app-container">
+        <!-- 左侧轨道配置面板 -->
+        <aside class="track-inspector" id="trackInspector" style="display:none">
+            <div class="track-inspector-header">
+                <h3 id="trackInspectorName">轨道配置</h3>
+                <i class="fas fa-times track-inspector-close" id="trackInspectorClose"></i>
+            </div>
+            <div class="track-inspector-content">
+                <div class="panel-section">
+                    <h3>渲染器</h3>
+                    <div class="renderer-options" id="rendererOptions">
+                        <label class="renderer-option">
+                            <input type="radio" name="trackRenderer" value="none" checked>
+                            <span class="renderer-label"><i class="fas fa-ban"></i> 不渲染</span>
+                        </label>
+                        <label class="renderer-option">
+                            <input type="radio" name="trackRenderer" value="vocal">
+                            <span class="renderer-label"><i class="fas fa-microphone-alt"></i> 人声</span>
+                        </label>
+                        <label class="renderer-option">
+                            <input type="radio" name="trackRenderer" value="instrument">
+                            <span class="renderer-label"><i class="fas fa-music"></i> 乐器</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="panel-section" id="vocalSection" style="display:none">
+                    <h3>声库</h3>
+                    <div class="voicebank-list" id="trackVoicebankList"></div>
+                </div>
+                <div class="panel-section" id="instrumentSection" style="display:none">
+                    <h3>乐器</h3>
+                    <select class="sv-input" id="trackInstrumentSelect">
+                        <option value="piano">🎹 钢琴</option>
+                        <option value="violin">🎻 小提琴</option>
+                        <option value="guitar">🎸 吉他</option>
+                        <option value="drums">🥁 鼓组</option>
+                    </select>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 工作区 -->
+        <main class="workspace">
+            <!-- 轨道视图 -->
+            <section class="track-view" id="trackView">
+                <div class="track-header-col" id="trackHeaderCol">
+                    <div class="track-empty-hint" id="trackEmptyHint">
+                        <i class="fas fa-music"></i> 打开 MIDI 文件以加载轨道
+                    </div>
+                </div>
+                <div class="track-timeline-wrapper">
+                    <div class="track-ruler" id="trackRuler"></div>
+                    <div class="track-timeline" id="trackTimeline"></div>
+                </div>
+            </section>
+
+            <div class="panel-resizer" id="trackResizer"></div>
+
+            <!-- 工具栏 -->
+            <div class="toolbar-strip">
+                <div class="tools-left">
+                    <div class="btn-group">
+                        <span class="tool-btn active" data-tool="pointer" title="指针 (V)"><i class="fas fa-mouse-pointer"></i></span>
+                        <span class="tool-btn" data-tool="pencil" title="铅笔 (B)"><i class="fas fa-pencil-alt"></i></span>
+                        <span class="tool-btn" data-tool="eraser" title="橡皮擦 (E)"><i class="fas fa-eraser"></i></span>
+                        <span class="tool-btn" data-tool="knife" title="切刀 (X)"><i class="fas fa-cut"></i></span>
+                        <span class="tool-btn" data-tool="pitchpen" title="音高画笔 (P)"><i class="fas fa-wave-square"></i></span>
+                    </div>
+                    <span class="toolbar-divider"></span>
+                    <span class="grid-snap" id="gridSnapDisplay">SNAP: 1/16</span>
+                </div>
+                <div class="tools-center">
+                    <i class="fas fa-step-backward transport-btn" id="btnPrev" title="后退"></i>
+                    <i class="fas fa-play transport-btn" id="btnPlay" title="播放 (Space)"></i>
+                    <i class="fas fa-stop transport-btn" id="btnStop" title="停止 (Ctrl+Space)"></i>
+                    <i class="fas fa-step-forward transport-btn" id="btnNext" title="前进"></i>
+                </div>
+                <div class="tools-right">
+                    <i class="fas fa-search-minus zoom-btn" id="btnZoomOut"></i>
+                    <span class="zoom-level" id="zoomLevel">100%</span>
+                    <i class="fas fa-search-plus zoom-btn" id="btnZoomIn"></i>
+                </div>
+            </div>
+
+            <!-- 钢琴卷帘窗 -->
+            <section class="piano-roll hidden" id="pianoRoll">
+                <div class="piano-roll-header">
+                    <span>编辑:</span>
+                    <span class="piano-roll-track-name" id="pianoRollTrackName">—</span>
+                    <button class="piano-roll-solo-btn" id="btnSoloPlay" title="单轨播放"><i class="fas fa-headphones"></i> 播放</button>
+                    <button class="piano-roll-solo-btn" id="btnTrackSynth" title="合成当前轨道"><i class="fas fa-magic"></i> 合成</button>
+                    <span class="piano-roll-close" id="pianoRollClose" title="关闭钢琴卷帘"><i class="fas fa-times"></i> 关闭</span>
+                </div>
+                <div class="piano-roll-body">
+                    <div class="piano-keys" id="pianoKeys"></div>
+                    <div class="grid-scroll-container" id="gridScrollContainer">
+                        <div class="ruler" id="ruler"></div>
+                        <div class="canvas-stack" id="canvasStack">
+                            <canvas id="canvasGrid" class="piano-canvas"></canvas>
+                            <canvas id="canvasNotes" class="piano-canvas"></canvas>
+                            <canvas id="canvasOverlay" class="piano-canvas"></canvas>
+                        </div>
+                        <div class="playhead" id="playhead">
+                            <div class="playhead-head"></div>
+                            <div class="playhead-line"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- 右侧检查器 -->
+        <aside class="inspector">
+            <div class="inspector-content">
+                <div class="panel-section">
+                    <h3>音符属性</h3>
+                    <div class="prop-row"><label>歌词</label><input type="text" class="sv-input" id="inspectorLyrics" placeholder="选择音符..."></div>
+                    <div class="prop-row"><label>音高</label><input type="text" class="sv-input" id="inspectorPitch" readonly placeholder="-"></div>
+                    <div class="prop-row"><label>力度</label><input type="text" class="sv-input" id="inspectorVelocity" readonly placeholder="-"></div>
+                </div>
+                <div class="panel-section">
+                    <h3>声线</h3>
+                    <div class="slider-group">
+                        <div class="slider-row"><label>Tension</label><span class="val" id="tensionVal">50%</span></div>
+                        <input type="range" class="sv-slider" id="tensionSlider" value="50" min="0" max="100">
+                        <div class="slider-row"><label>Breathiness</label><span class="val" id="breathVal">50%</span></div>
+                        <input type="range" class="sv-slider" id="breathSlider" value="50" min="0" max="100">
+                    </div>
+                </div>
+                <div class="panel-section">
+                    <h3>合成</h3>
+                    <div class="prop-row"><label>声库</label><select class="sv-input" id="voicebankSelect"><option value="">加载中...</option></select></div>
+                    <div class="prop-row">
+                        <label><input type="checkbox" id="vocalReverbToggle"> 混响</label>
+                        <select class="sv-input" id="vocalIRSelect" style="flex:1;display:none">
+                            <option value="derlon_sanctuary">圣殿</option>
+                            <option value="five_columns_long">大厅</option>
+                            <option value="large_long_echo_hall">回声厅</option>
+                            <option value="french_18th_century_salon">沙龙</option>
+                            <option value="bottle_hall">瓶厅</option>
+                        </select>
+                    </div>
+                    <div class="slider-group" id="vocalReverbSliderGroup" style="display:none">
+                        <div class="slider-row"><label>混响量</label><span class="val" id="vocalReverbVal">55%</span></div>
+                        <input type="range" class="sv-slider" id="vocalReverbSend" value="55" min="0" max="100" step="5">
+                    </div>
+                    <button class="synth-btn" id="btnSynthesize" disabled><i class="fas fa-magic"></i> 开始合成</button>
+                    <div class="synth-progress" id="synthProgress" style="display:none">
+                        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+                        <div class="progress-text" id="progressText">等待中...</div>
+                    </div>
+                    <div class="synth-error" id="synthError" style="display:none"></div>
+                </div>
+                <div class="panel-section" id="resultSection" style="display:none">
+                    <h3>合成结果</h3>
+                    <div class="result-controls">
+                        <button class="result-btn" id="btnDownload"><i class="fas fa-download"></i> 下载</button>
+                    </div>
+                </div>
+            </div>
+            <div class="side-toolbar">
+                <div class="side-icon active"><i class="fas fa-music"></i></div>
+                <div class="side-icon"><i class="fas fa-microphone-alt"></i></div>
+                <div class="side-icon"><i class="fas fa-layer-group"></i></div>
+                <div class="side-icon"><i class="fas fa-sliders-h"></i></div>
+                <div class="side-icon bottom"><i class="fas fa-cog"></i></div>
+            </div>
+        </aside>
+    </div>
+
+    <!-- 准备阶段弹窗（音素化+音高预测，用户不能操作） -->
+    <div class="prepare-modal-overlay" id="prepareModal" style="display:none">
+        <div class="prepare-modal">
+            <div class="prepare-spinner"></div>
+            <div class="prepare-text" id="prepareText">准备中...</div>
+        </div>
+    </div>
+
+    <!-- 批量歌词模态框 -->
+    <div class="modal-overlay" id="batchLyricsModal" style="display:none">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <span>批量歌词输入 (Ctrl+L)</span>
+                <i class="fas fa-times modal-close" id="batchLyricsClose"></i>
+            </div>
+            <div class="modal-body">
+                <p class="modal-hint">输入歌词，自动分配到选中的音符。勾选"逐字拆分"时中文将按单字分配。</p>
+                <textarea class="modal-textarea" id="batchLyricsInput" placeholder="例：我 爱 你 中 国"></textarea>
+                <label class="modal-checkbox"><input type="checkbox" id="batchCharSplit" checked> 逐字拆分（中文/日文推荐）</label>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn" id="batchLyricsCancel">取消</button>
+                <button class="modal-btn primary" id="batchLyricsApply">应用</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MIDI 导入设置弹窗 -->
+    <div class="modal-overlay" id="midiImportModal" style="display:none">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <span>MIDI 导入设置</span>
+                <i class="fas fa-times modal-close" id="midiImportClose"></i>
+            </div>
+            <div class="modal-body">
+                <p class="modal-hint">检测到以下参数，可修改后确认导入：</p>
+                <div class="modal-form-row">
+                    <label>BPM</label>
+                    <input type="number" class="sv-input" id="midiImportBpm" min="20" max="300" style="width:80px">
+                </div>
+                <div class="modal-form-row">
+                    <label>拍号</label>
+                    <input type="number" class="sv-input" id="midiImportTsNum" min="1" max="16" style="width:50px">
+                    <span>/</span>
+                    <input type="number" class="sv-input" id="midiImportTsDen" min="1" max="16" style="width:50px">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn" id="midiImportCancel">取消</button>
+                <button class="modal-btn primary" id="midiImportConfirm">确认导入</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="../lib/Tone.js"></script>
+    <script src="../lib/Midi.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

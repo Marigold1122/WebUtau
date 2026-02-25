@@ -1,0 +1,22 @@
+# .NET build artifacts
+bin/
+obj/
+TestBuild/
+
+# Server runtime data
+server/DiffSingerApi/uploads/
+server/DiffSingerApi/output/
+server/DiffSingerApi/voicebanks/
+
+# IDE
+.vs/
+.vscode/
+*.user
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Claude
+.claude/

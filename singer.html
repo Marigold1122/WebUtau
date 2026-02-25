@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Melody Singer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700&display=swap" media="print" onload="this.media='all'">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        /* ========== 主题系统 (与 web-piano 一致) ========== */
+        [data-theme="sakura"], :root {
+            --daw-bg-dark: #1e1520;
+            --daw-accent: #d4a0b8;
+            --daw-accent-rgb: 212, 160, 184;
+            --daw-accent-secondary: #b8a0d0;
+            --daw-text-primary: #f5eef5;
+            --daw-text-secondary: #e0c0d4;
+            --daw-text-muted: #a898a0;
+            --glass-bg: rgba(35, 18, 30, 0.45);
+            --glass-bg-deeper: rgba(25, 10, 22, 0.55);
+            --glass-border: rgba(212, 160, 184, 0.1);
+            --glass-blur: 22px;
+            --gradient-main: linear-gradient(135deg, #d4a0b8, #b8a0d0);
+            --gradient-subtle: linear-gradient(135deg, rgba(212, 160, 184, 0.15), rgba(184, 160, 208, 0.1));
+            --glow-accent: 0 0 12px rgba(212, 160, 184, 0.3);
+            --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.2), 0 2px 8px rgba(0, 0, 0, 0.1);
+            --btn-download: #90aed0;
+            --btn-upload: #b0a0c8;
+            --scrollbar-thumb: rgba(212, 160, 184, 0.15);
+            --scrollbar-thumb-hover: rgba(212, 160, 184, 0.25);
+            --start-btn-gradient: linear-gradient(135deg, #d4a0b8 0%, #c8a0d0 50%, #b8a0d0 100%);
+            --start-btn-shadow: 0 8px 30px rgba(212, 160, 184, 0.35);
+        }
+        [data-theme="mint"] {
+            --daw-bg-dark: #131e1c;
+            --daw-accent: #7ec0a8;
+            --daw-accent-rgb: 126, 192, 168;
+            --daw-accent-secondary: #88b0d0;
+            --daw-text-primary: #eef5f3;
+            --daw-text-secondary: #b0d4c8;
+            --daw-text-muted: #88a098;
+            --glass-bg: rgba(15, 30, 28, 0.45);
+            --glass-bg-deeper: rgba(10, 22, 20, 0.55);
+            --glass-border: rgba(126, 192, 168, 0.1);
+            --glass-blur: 22px;
+            --gradient-main: linear-gradient(135deg, #7ec0a8, #88b0d0);
+            --gradient-subtle: linear-gradient(135deg, rgba(126, 192, 168, 0.15), rgba(136, 176, 208, 0.1));
+            --glow-accent: 0 0 12px rgba(126, 192, 168, 0.25);
+            --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.2), 0 2px 8px rgba(0, 0, 0, 0.1);
+            --btn-download: #88b0d0;
+            --btn-upload: #a098c0;
+            --scrollbar-thumb: rgba(126, 192, 168, 0.15);
+            --scrollbar-thumb-hover: rgba(126, 192, 168, 0.25);
+            --start-btn-gradient: linear-gradient(135deg, #7ec0a8 0%, #88b8c0 50%, #88b0d0 100%);
+            --start-btn-shadow: 0 8px 30px rgba(126, 192, 168, 0.3);
+        }
+        [data-theme="twilight"] {
+            --daw-bg-dark: #1e1515;
+            --daw-accent: #d0a088;
+            --daw-accent-rgb: 208, 160, 136;
+            --daw-accent-secondary: #b090c0;
+            --daw-text-primary: #f8f0e8;
+            --daw-text-secondary: #dcc0b0;
+            --daw-text-muted: #a89890;
+            --glass-bg: rgba(32, 18, 18, 0.45);
+            --glass-bg-deeper: rgba(22, 12, 12, 0.55);
+            --glass-border: rgba(208, 160, 136, 0.1);
+            --glass-blur: 22px;
+            --gradient-main: linear-gradient(135deg, #d0a088, #b090c0);
+            --gradient-subtle: linear-gradient(135deg, rgba(208, 160, 136, 0.15), rgba(176, 144, 192, 0.1));
+            --glow-accent: 0 0 12px rgba(208, 160, 136, 0.25);
+            --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.2), 0 2px 8px rgba(0, 0, 0, 0.1);
+            --btn-download: #90a8c8;
+            --btn-upload: #b098b8;
+            --scrollbar-thumb: rgba(208, 160, 136, 0.15);
+            --scrollbar-thumb-hover: rgba(208, 160, 136, 0.25);
+            --start-btn-gradient: linear-gradient(135deg, #d0a088 0%, #c098b0 50%, #b090c0 100%);
+            --start-btn-shadow: 0 8px 30px rgba(208, 160, 136, 0.3);
+        }
+        [data-theme="ocean"] {
+            --daw-bg-dark: #0e1520;
+            --daw-accent: #5ca0d8;
+            --daw-accent-rgb: 92, 160, 216;
+            --daw-accent-secondary: #68c8e0;
+            --daw-text-primary: #e8f0f8;
+            --daw-text-secondary: #a0c8e0;
+            --daw-text-muted: #708898;
+            --glass-bg: rgba(10, 18, 30, 0.45);
+            --glass-bg-deeper: rgba(6, 12, 22, 0.55);
+            --glass-border: rgba(92, 160, 216, 0.1);
+            --glass-blur: 22px;
+            --gradient-main: linear-gradient(135deg, #5ca0d8, #68c8e0);
+            --gradient-subtle: linear-gradient(135deg, rgba(92, 160, 216, 0.15), rgba(104, 200, 224, 0.1));
+            --glow-accent: 0 0 12px rgba(92, 160, 216, 0.25);
+            --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.2), 0 2px 8px rgba(0, 0, 0, 0.1);
+            --btn-download: #5ca0d8;
+            --btn-upload: #8898c8;
+            --scrollbar-thumb: rgba(92, 160, 216, 0.15);
+            --scrollbar-thumb-hover: rgba(92, 160, 216, 0.25);
+            --start-btn-gradient: linear-gradient(135deg, #5ca0d8 0%, #60b8d8 50%, #68c8e0 100%);
+            --start-btn-shadow: 0 8px 30px rgba(92, 160, 216, 0.35);
+        }
+        [data-theme="cyber"] {
+            --daw-bg-dark: #0c0c18;
+            --daw-accent: #e060d0;
+            --daw-accent-rgb: 224, 96, 208;
+            --daw-accent-secondary: #60d0f0;
+            --daw-text-primary: #f0e8f8;
+            --daw-text-secondary: #d0a8e0;
+            --daw-text-muted: #8878a0;
+            --glass-bg: rgba(15, 8, 25, 0.5);
+            --glass-bg-deeper: rgba(8, 4, 18, 0.6);
+            --glass-border: rgba(224, 96, 208, 0.1);
+            --glass-blur: 22px;
+            --gradient-main: linear-gradient(135deg, #e060d0, #60d0f0);
+            --gradient-subtle: linear-gradient(135deg, rgba(224, 96, 208, 0.15), rgba(96, 208, 240, 0.1));
+            --glow-accent: 0 0 12px rgba(224, 96, 208, 0.3);
+            --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.25), 0 2px 8px rgba(0, 0, 0, 0.15);
+            --btn-download: #60a0e0;
+            --btn-upload: #b080d0;
+            --scrollbar-thumb: rgba(224, 96, 208, 0.15);
+            --scrollbar-thumb-hover: rgba(224, 96, 208, 0.3);
+            --start-btn-gradient: linear-gradient(135deg, #e060d0 0%, #a060e0 50%, #60d0f0 100%);
+            --start-btn-shadow: 0 8px 30px rgba(224, 96, 208, 0.4);
+        }
+        [data-theme="forest"] {
+            --daw-bg-dark: #101a12;
+            --daw-accent: #6ab878;
+            --daw-accent-rgb: 106, 184, 120;
+            --daw-accent-secondary: #a0b868;
+            --daw-text-primary: #e8f0e8;
+            --daw-text-secondary: #b0d0b0;
+            --daw-text-muted: #789078;
+            --glass-bg: rgba(12, 22, 14, 0.45);
+            --glass-bg-deeper: rgba(8, 16, 10, 0.55);
+            --glass-border: rgba(106, 184, 120, 0.1);
+            --glass-blur: 22px;
+            --gradient-main: linear-gradient(135deg, #6ab878, #a0b868);
+            --gradient-subtle: linear-gradient(135deg, rgba(106, 184, 120, 0.15), rgba(160, 184, 104, 0.1));
+            --glow-accent: 0 0 12px rgba(106, 184, 120, 0.25);
+            --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.2), 0 2px 8px rgba(0, 0, 0, 0.1);
+            --btn-download: #78a0c0;
+            --btn-upload: #98a878;
+            --scrollbar-thumb: rgba(106, 184, 120, 0.15);
+            --scrollbar-thumb-hover: rgba(106, 184, 120, 0.25);
+            --start-btn-gradient: linear-gradient(135deg, #6ab878 0%, #80b870 50%, #a0b868 100%);
+            --start-btn-shadow: 0 8px 30px rgba(106, 184, 120, 0.3);
+        }
+        [data-theme="lavender"] {
+            --daw-bg-dark: #161220;
+            --daw-accent: #a088d0;
+            --daw-accent-rgb: 160, 136, 208;
+            --daw-accent-secondary: #d088b0;
+            --daw-text-primary: #f0ecf8;
+            --daw-text-secondary: #c8b8e0;
+            --daw-text-muted: #9088a0;
+            --glass-bg: rgba(20, 15, 30, 0.45);
+            --glass-bg-deeper: rgba(14, 10, 22, 0.55);
+            --glass-border: rgba(160, 136, 208, 0.1);
+            --glass-blur: 22px;
+            --gradient-main: linear-gradient(135deg, #a088d0, #d088b0);
+            --gradient-subtle: linear-gradient(135deg, rgba(160, 136, 208, 0.15), rgba(208, 136, 176, 0.1));
+            --glow-accent: 0 0 12px rgba(160, 136, 208, 0.25);
+            --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.2), 0 2px 8px rgba(0, 0, 0, 0.1);
+            --btn-download: #88a0d0;
+            --btn-upload: #b088c0;
+            --scrollbar-thumb: rgba(160, 136, 208, 0.15);
+            --scrollbar-thumb-hover: rgba(160, 136, 208, 0.25);
+            --start-btn-gradient: linear-gradient(135deg, #a088d0 0%, #b888c0 50%, #d088b0 100%);
+            --start-btn-shadow: 0 8px 30px rgba(160, 136, 208, 0.3);
+        }
+
+        body {
+            min-height: 100vh;
+            font-family: 'M PLUS Rounded 1c', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: var(--daw-bg-dark);
+            color: var(--daw-text-primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            overflow-y: auto;
+        }
+        body::-webkit-scrollbar { width: 6px; }
+        body::-webkit-scrollbar-track { background: transparent; }
+        body::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 4px; }
+
+        .card {
+            width: min(520px, 92vw);
+            background: var(--glass-bg);
+            backdrop-filter: blur(var(--glass-blur));
+            -webkit-backdrop-filter: blur(var(--glass-blur));
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            box-shadow: var(--shadow-card);
+            padding: 0;
+            margin: 32px 0;
+            overflow: hidden;
+        }
+
+        /* Header */
+        .card-header {
+            padding: 20px 28px;
+            background: var(--glass-bg-deeper);
+            border-bottom: 1px solid var(--glass-border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .card-title {
+            font-size: 20px; font-weight: 700;
+            background: var(--gradient-main);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: 1px;
+        }
+        .back-link {
+            color: var(--daw-text-muted); text-decoration: none; font-size: 13px;
+            transition: color 0.2s;
+        }
+        .back-link:hover { color: var(--daw-accent); }
+
+        /* Theme dots */
+        .theme-bar {
+            display: flex; gap: 6px; padding: 10px 28px;
+            background: var(--glass-bg-deeper); border-bottom: 1px solid var(--glass-border);
+        }
+        .theme-dot {
+            width: 18px; height: 18px; border-radius: 50%; cursor: pointer;
+            border: 2px solid transparent; transition: all 0.2s;
+        }
+        .theme-dot:hover { transform: scale(1.2); }
+        .theme-dot.active { border-color: var(--daw-text-primary); transform: scale(1.15); }
+
+        /* Body */
+        .card-body { padding: 24px 28px; display: flex; flex-direction: column; gap: 20px; }
+
+        /* Drop zone */
+        .drop-zone {
+            border: 2px dashed rgba(var(--daw-accent-rgb), 0.3);
+            border-radius: 14px; padding: 32px 20px;
+            text-align: center; cursor: pointer;
+            transition: all 0.25s; background: var(--gradient-subtle);
+        }
+        .drop-zone:hover, .drop-zone.dragover {
+            border-color: rgba(var(--daw-accent-rgb), 0.6);
+            background: rgba(var(--daw-accent-rgb), 0.08);
+        }
+        .drop-zone.has-file { border-color: rgba(var(--daw-accent-rgb), 0.5); }
+        .drop-icon { font-size: 36px; margin-bottom: 8px; opacity: 0.7; }
+        .drop-text { color: var(--daw-text-secondary); font-size: 14px; }
+        .drop-filename {
+            margin-top: 8px; color: var(--daw-accent); font-weight: 700; font-size: 15px;
+            word-break: break-all;
+        }
+
+        /* Form controls */
+        .form-group { display: flex; flex-direction: column; gap: 6px; }
+        .form-label { font-size: 13px; color: var(--daw-text-muted); font-weight: 700; letter-spacing: 0.5px; }
+        .form-select {
+            width: 100%; padding: 10px 14px; border-radius: 10px;
+            background: var(--glass-bg-deeper); color: var(--daw-text-primary);
+            border: 1px solid var(--glass-border); font-size: 14px;
+            font-family: inherit; cursor: pointer; outline: none;
+            transition: border-color 0.2s;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23999' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+        }
+        .form-select:focus { border-color: rgba(var(--daw-accent-rgb), 0.5); }
+        .form-select option { background: var(--daw-bg-dark); color: var(--daw-text-primary); }
+
+        /* Buttons */
+        .btn {
+            padding: 12px 20px; border: none; border-radius: 12px;
+            font-family: inherit; font-size: 14px; font-weight: 700;
+            cursor: pointer; transition: all 0.25s; letter-spacing: 0.5px;
+        }
+        .btn-primary {
+            background: var(--start-btn-gradient); color: #fff;
+            box-shadow: var(--start-btn-shadow);
+        }
+        .btn-primary:hover { transform: translateY(-1px); filter: brightness(1.1); }
+        .btn-primary:disabled {
+            opacity: 0.5; cursor: not-allowed; transform: none; filter: none;
+        }
+        .btn-secondary {
+            background: rgba(var(--daw-accent-rgb), 0.12);
+            color: var(--daw-accent); border: 1px solid rgba(var(--daw-accent-rgb), 0.2);
+        }
+        .btn-secondary:hover { background: rgba(var(--daw-accent-rgb), 0.2); }
+        .btn-sm { padding: 8px 14px; font-size: 12px; border-radius: 8px; }
+        .btn-row { display: flex; gap: 10px; align-items: center; }
+
+        /* Progress */
+        .progress-section { display: none; flex-direction: column; gap: 10px; }
+        .progress-section.active { display: flex; }
+        .progress-status {
+            font-size: 13px; color: var(--daw-text-secondary);
+            display: flex; align-items: center; gap: 8px;
+        }
+        .spinner {
+            width: 14px; height: 14px; border: 2px solid rgba(var(--daw-accent-rgb), 0.2);
+            border-top-color: var(--daw-accent); border-radius: 50%;
+            animation: spin 0.8s linear infinite; flex-shrink: 0;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .progress-bar-bg {
+            height: 6px; border-radius: 3px;
+            background: rgba(var(--daw-accent-rgb), 0.1); overflow: hidden;
+        }
+        .progress-bar-fill {
+            height: 100%; border-radius: 3px;
+            background: var(--gradient-main);
+            transition: width 0.4s ease; width: 0%;
+        }
+
+        /* Result */
+        .result-section { display: none; flex-direction: column; gap: 12px; }
+        .result-section.active { display: flex; }
+        .result-box {
+            background: var(--gradient-subtle); border-radius: 14px;
+            padding: 18px; border: 1px solid var(--glass-border);
+        }
+        .result-box audio {
+            width: 100%; margin-bottom: 10px; border-radius: 8px;
+            outline: none;
+        }
+
+        /* Error */
+        .error-msg {
+            display: none; padding: 12px 16px; border-radius: 10px;
+            background: rgba(200, 60, 60, 0.12); border: 1px solid rgba(200, 60, 60, 0.25);
+            color: #e08080; font-size: 13px;
+        }
+        .error-msg.active { display: block; }
+
+        /* Upload voicebank area */
+        .upload-vb-row {
+            display: flex; align-items: center; gap: 8px; margin-top: 4px;
+        }
+        .upload-vb-row input[type="file"] { display: none; }
+        .upload-vb-status { font-size: 12px; color: var(--daw-text-muted); }
+
+        /* Reverb panel */
+        .reverb-panel {
+            display: flex; flex-direction: column; gap: 8px;
+            padding: 14px; border-radius: 12px;
+            background: var(--gradient-subtle); border: 1px solid var(--glass-border);
+        }
+        .reverb-panel .reverb-header {
+            display: flex; align-items: center; gap: 8px;
+        }
+        .reverb-panel .reverb-header label {
+            font-size: 13px; color: var(--daw-text-secondary); font-weight: 700;
+            cursor: pointer; display: flex; align-items: center; gap: 6px;
+        }
+        .reverb-panel .reverb-header input[type="checkbox"] {
+            accent-color: var(--daw-accent);
+        }
+        .reverb-params { display: none; flex-direction: column; gap: 8px; }
+        .reverb-params.active { display: flex; }
+        .reverb-row {
+            display: flex; align-items: center; gap: 10px;
+        }
+        .reverb-row .reverb-label {
+            font-size: 12px; color: var(--daw-text-muted); font-weight: 700;
+            white-space: nowrap; min-width: 48px;
+        }
+        .reverb-row input[type="range"] {
+            flex: 1; height: 4px; -webkit-appearance: none; appearance: none;
+            background: rgba(var(--daw-accent-rgb), 0.15); border-radius: 2px; outline: none;
+        }
+        .reverb-row input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
+            background: var(--gradient-main); cursor: pointer; border: none;
+            box-shadow: 0 0 6px rgba(var(--daw-accent-rgb), 0.4);
+        }
+        .reverb-row .reverb-val {
+            font-size: 12px; color: var(--daw-text-secondary); min-width: 32px; text-align: right;
+        }
+        .reverb-ir-select {
+            width: 100%; padding: 6px 10px; border-radius: 8px;
+            background: var(--glass-bg-deeper); color: var(--daw-text-primary);
+            border: 1px solid var(--glass-border); font-size: 12px;
+            font-family: inherit; cursor: pointer; outline: none;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23999' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat; background-position: right 8px center;
+        }
+        .reverb-ir-select option { background: var(--daw-bg-dark); color: var(--daw-text-primary); }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Melody Singer</div>
+            <a href="index.html" class="back-link">&#8592; Web Piano</a>
+        </div>
+        <div class="theme-bar" id="themeBar"></div>
+        <div class="card-body">
+            <!-- MIDI Upload -->
+            <div class="drop-zone" id="dropZone">
+                <div class="drop-icon">&#127925;</div>
+                <div class="drop-text">拖拽 MIDI 文件到此处，或点击选择</div>
+                <div class="drop-filename" id="midiFileName"></div>
+                <input type="file" id="midiInput" accept=".mid,.midi" style="display:none">
+            </div>
+
+            <!-- Singer select -->
+            <div class="form-group">
+                <label class="form-label">声库</label>
+                <select class="form-select" id="singerSelect">
+                    <option value="" disabled selected>加载中...</option>
+                </select>
+                <div class="upload-vb-row">
+                    <button class="btn btn-secondary btn-sm" id="uploadVbBtn">上传声库 ZIP</button>
+                    <input type="file" id="vbInput" accept=".zip">
+                    <span class="upload-vb-status" id="vbStatus"></span>
+                </div>
+            </div>
+
+            <!-- Reverb -->
+            <div class="reverb-panel">
+                <div class="reverb-header">
+                    <label><input type="checkbox" id="reverbToggle"> 空间混响</label>
+                </div>
+                <div class="reverb-params" id="reverbParams">
+                    <select class="reverb-ir-select" id="irSelect">
+                        <option value="derlon_sanctuary">圣殿 (Sanctuary)</option>
+                        <option value="five_columns_long">大厅 (Five Columns)</option>
+                        <option value="large_long_echo_hall">回声厅 (Echo Hall)</option>
+                        <option value="french_18th_century_salon">沙龙 (18th Salon)</option>
+                        <option value="bottle_hall">瓶厅 (Bottle Hall)</option>
+                    </select>
+                    <div class="reverb-row">
+                        <span class="reverb-label">混响量</span>
+                        <input type="range" id="reverbSend" min="0" max="100" value="55" step="5">
+                        <span class="reverb-val" id="reverbSendVal">55%</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Synthesize button -->
+            <button class="btn btn-primary" id="synthBtn" disabled>开始合成</button>
+
+            <!-- Progress -->
+            <div class="progress-section" id="progressSection">
+                <div class="progress-status">
+                    <div class="spinner"></div>
+                    <span id="progressText">排队中...</span>
+                </div>
+                <div class="progress-bar-bg">
+                    <div class="progress-bar-fill" id="progressBar"></div>
+                </div>
+            </div>
+
+            <!-- Error -->
+            <div class="error-msg" id="errorMsg"></div>
+
+            <!-- Result -->
+            <div class="result-section" id="resultSection">
+                <div class="result-box">
+                    <audio controls id="audioPlayer"></audio>
+                    <div class="btn-row">
+                        <button class="btn btn-secondary" id="downloadBtn">下载 WAV</button>
+                        <button class="btn btn-secondary" id="newSynthBtn">重新合成</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+const API_BASE = 'http://localhost:5000/api';
+let selectedFile = null;
+let currentJobId = null;
+let pollTimer = null;
+
+// ===== Reverb (Web Audio API + Convolver IR) =====
+// 信号链（发送-返回架构）：
+//   audioPlayer → source → dryGain → destination （干声直通）
+//   audioPlayer → source → sendGain → convolver → destination （混响湿声）
+let _audioCtx = null;
+let _sourceNode = null;
+let _dryGain = null;
+let _sendGain = null;   // 控制混响发送量
+let _convolver = null;
+let _reverbConnected = false;
+let _reverbEnabled = false;
+let _currentIR = null;
+
+function ensureReverbChain() {
+    if (_reverbConnected) return;
+    _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    _sourceNode = _audioCtx.createMediaElementSource(audioPlayer);
+    _dryGain = _audioCtx.createGain();
+    _sendGain = _audioCtx.createGain();
+    _convolver = _audioCtx.createConvolver();
+
+    // 干声直通
+    _sourceNode.connect(_dryGain);
+    _dryGain.connect(_audioCtx.destination);
+
+    // 混响发送-返回
+    _sourceNode.connect(_sendGain);
+    _sendGain.connect(_convolver);
+    _convolver.connect(_audioCtx.destination);
+
+    // 默认关闭混响（sendGain = 0）
+    _dryGain.gain.value = 1;
+    _sendGain.gain.value = 0;
+    _reverbConnected = true;
+}
+
+async function loadIR(irName) {
+    if (!_audioCtx || !_convolver) return;
+    try {
+        const res = await fetch(`/samples/ir/${irName}.mp3`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const arrayBuf = await res.arrayBuffer();
+        const audioBuf = await _audioCtx.decodeAudioData(arrayBuf);
+        _convolver.buffer = audioBuf;
+        _currentIR = irName;
+        console.log('IR loaded:', irName);
+    } catch (err) {
+        console.error('IR 加载失败:', irName, err);
+    }
+}
+
+function applyReverbState() {
+    if (!_sendGain) return;
+    if (_reverbEnabled) {
+        const pct = parseInt(reverbSend.value, 10);
+        _sendGain.gain.value = pct / 100;
+    } else {
+        _sendGain.gain.value = 0;
+    }
+}
+
+// DOM
+const reverbToggle = document.getElementById('reverbToggle');
+const reverbParams = document.getElementById('reverbParams');
+const irSelect = document.getElementById('irSelect');
+const reverbSend = document.getElementById('reverbSend');
+const reverbSendVal = document.getElementById('reverbSendVal');
+
+reverbToggle.addEventListener('change', async () => {
+    _reverbEnabled = reverbToggle.checked;
+    reverbParams.classList.toggle('active', _reverbEnabled);
+    if (_reverbEnabled && !_currentIR) {
+        await loadIR(irSelect.value);
+    }
+    applyReverbState();
+});
+
+irSelect.addEventListener('change', () => {
+    if (_reverbEnabled) loadIR(irSelect.value);
+});
+
+reverbSend.addEventListener('input', () => {
+    reverbSendVal.textContent = reverbSend.value + '%';
+    applyReverbState();
+});
+
+// ===== Theme =====
+const themes = [
+    { name: 'sakura', color: '#d4a0b8' },
+    { name: 'mint', color: '#7ec0a8' },
+    { name: 'twilight', color: '#d0a088' },
+    { name: 'ocean', color: '#5ca0d8' },
+    { name: 'cyber', color: '#e060d0' },
+    { name: 'forest', color: '#6ab878' },
+    { name: 'lavender', color: '#a088d0' }
+];
+const themeBar = document.getElementById('themeBar');
+const savedTheme = localStorage.getItem('piano-theme') || 'sakura';
+document.documentElement.setAttribute('data-theme', savedTheme);
+
+themes.forEach(t => {
+    const dot = document.createElement('div');
+    dot.className = 'theme-dot' + (t.name === savedTheme ? ' active' : '');
+    dot.style.background = t.color;
+    dot.title = t.name;
+    dot.addEventListener('click', () => {
+        document.documentElement.setAttribute('data-theme', t.name);
+        localStorage.setItem('piano-theme', t.name);
+        themeBar.querySelectorAll('.theme-dot').forEach(d => d.classList.remove('active'));
+        dot.classList.add('active');
+    });
+    themeBar.appendChild(dot);
+});
+
+// ===== MIDI Upload =====
+const dropZone = document.getElementById('dropZone');
+const midiInput = document.getElementById('midiInput');
+const midiFileName = document.getElementById('midiFileName');
+
+dropZone.addEventListener('click', () => midiInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file && (file.name.endsWith('.mid') || file.name.endsWith('.midi'))) selectMidi(file);
+});
+midiInput.addEventListener('change', e => { if (e.target.files[0]) selectMidi(e.target.files[0]); });
+
+function selectMidi(file) {
+    selectedFile = file;
+    midiFileName.textContent = file.name;
+    dropZone.classList.add('has-file');
+    updateSynthBtn();
+}
+
+// ===== Singer Select =====
+const singerSelect = document.getElementById('singerSelect');
+
+async function loadVoicebanks() {
+    try {
+        const res = await fetch(`${API_BASE}/voicebanks`);
+        if (!res.ok) throw new Error('Failed to load voicebanks');
+        const list = await res.json();
+        singerSelect.innerHTML = '';
+        if (list.length === 0) {
+            singerSelect.innerHTML = '<option value="" disabled selected>无可用声库</option>';
+        } else {
+            list.forEach(v => {
+                const opt = document.createElement('option');
+                opt.value = v.id;
+                opt.textContent = v.name || v.id;
+                singerSelect.appendChild(opt);
+            });
+            singerSelect.selectedIndex = 0;
+        }
+        updateSynthBtn();
+    } catch (e) {
+        singerSelect.innerHTML = '<option value="" disabled selected>连接后端失败</option>';
+        console.error(e);
+    }
+}
+singerSelect.addEventListener('change', updateSynthBtn);
+
+// ===== Upload Voicebank =====
+const uploadVbBtn = document.getElementById('uploadVbBtn');
+const vbInput = document.getElementById('vbInput');
+const vbStatus = document.getElementById('vbStatus');
+
+uploadVbBtn.addEventListener('click', () => vbInput.click());
+vbInput.addEventListener('change', async e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    vbStatus.textContent = '上传中...';
+    uploadVbBtn.disabled = true;
+    try {
+        const form = new FormData();
+        form.append('file', file);
+        const res = await fetch(`${API_BASE}/voicebanks/upload`, { method: 'POST', body: form });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Upload failed');
+        vbStatus.textContent = '上传成功!';
+        await loadVoicebanks();
+    } catch (e) {
+        vbStatus.textContent = '上传失败: ' + e.message;
+    } finally {
+        uploadVbBtn.disabled = false;
+        vbInput.value = '';
+    }
+});
+
+// ===== Synthesize =====
+const synthBtn = document.getElementById('synthBtn');
+const progressSection = document.getElementById('progressSection');
+const progressText = document.getElementById('progressText');
+const progressBar = document.getElementById('progressBar');
+const errorMsg = document.getElementById('errorMsg');
+const resultSection = document.getElementById('resultSection');
+const audioPlayer = document.getElementById('audioPlayer');
+const downloadBtn = document.getElementById('downloadBtn');
+const newSynthBtn = document.getElementById('newSynthBtn');
+
+function updateSynthBtn() {
+    synthBtn.disabled = !selectedFile || !singerSelect.value;
+}
+
+synthBtn.addEventListener('click', startSynthesis);
+newSynthBtn.addEventListener('click', resetUI);
+
+async function startSynthesis() {
+    if (!selectedFile || !singerSelect.value) return;
+
+    // Reset UI
+    errorMsg.classList.remove('active');
+    resultSection.classList.remove('active');
+    progressSection.classList.add('active');
+    progressBar.style.width = '0%';
+    progressText.textContent = '上传中...';
+    synthBtn.disabled = true;
+
+    try {
+        const form = new FormData();
+        form.append('midi', selectedFile);
+        form.append('singerId', singerSelect.value);
+
+        const res = await fetch(`${API_BASE}/synthesize`, { method: 'POST', body: form });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Submit failed');
+
+        currentJobId = data.jobId;
+        progressText.textContent = '排队中...';
+        progressBar.style.width = '5%';
+        startPolling();
+    } catch (e) {
+        showError(e.message);
+    }
+}
+
+function startPolling() {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(pollJob, 1500);
+}
+
+async function pollJob() {
+    if (!currentJobId) return;
+    try {
+        const res = await fetch(`${API_BASE}/jobs/${currentJobId}`);
+        const data = await res.json();
+
+        if (data.status === 'queued') {
+            progressText.textContent = '排队中...';
+            progressBar.style.width = '5%';
+        } else if (data.status === 'processing') {
+            progressText.textContent = data.progress || '合成中...';
+            // Estimate progress from stage
+            const stage = data.progress || '';
+            let pct = 20;
+            if (stage.includes('Phonemiz')) pct = 30;
+            else if (stage.includes('pitch')) pct = 50;
+            else if (stage.includes('Render')) pct = 65;
+            else if (stage.includes('Writing')) pct = 90;
+            progressBar.style.width = pct + '%';
+        } else if (data.status === 'completed') {
+            clearInterval(pollTimer);
+            progressBar.style.width = '100%';
+            progressText.textContent = '完成!';
+            setTimeout(() => showResult(), 500);
+        } else if (data.status === 'failed') {
+            clearInterval(pollTimer);
+            showError(data.error || 'Synthesis failed');
+        }
+    } catch (e) {
+        // Network error, keep polling
+        console.error('Poll error:', e);
+    }
+}
+
+function showResult() {
+    progressSection.classList.remove('active');
+    resultSection.classList.add('active');
+    ensureReverbChain();
+    if (_audioCtx && _audioCtx.state === 'suspended') _audioCtx.resume();
+    applyReverbState();
+    const audioUrl = `${API_BASE}/jobs/${currentJobId}/download`;
+    audioPlayer.src = audioUrl;
+    downloadBtn.onclick = () => {
+        const a = document.createElement('a');
+        a.href = audioUrl;
+        a.download = `${currentJobId}.wav`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+    };
+}
+
+function showError(msg) {
+    progressSection.classList.remove('active');
+    errorMsg.textContent = msg;
+    errorMsg.classList.add('active');
+    synthBtn.disabled = false;
+}
+
+function resetUI() {
+    resultSection.classList.remove('active');
+    progressSection.classList.remove('active');
+    errorMsg.classList.remove('active');
+    progressBar.style.width = '0%';
+    currentJobId = null;
+    synthBtn.disabled = false;
+    updateSynthBtn();
+}
+
+// ===== Init =====
+loadVoicebanks();
+</script>
+</body>
+</html>
