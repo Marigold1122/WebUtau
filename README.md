@@ -1,54 +1,228 @@
 # Melody Singer
 
-基于浏览器的歌声合成 DAW，导入 MIDI 即可合成人声。
+一个在浏览器里运行的 AI 歌声合成工作站。导入 MIDI，选择歌手，输入歌词，即可生成逼真的 AI 演唱。同时支持钢琴、吉他、鼓等乐器伴奏。
+
+<!-- 在这里粘贴演示视频链接（单独一行） -->
+
+---
 
 ## 功能
 
-- **多轨编辑器** — 钢琴卷帘 + 总览时间线，支持多轨道管理
-- **MIDI 导入** — 自动解析音符、歌词，支持批量歌词编辑
-- **DiffSinger 合成** — 后端调用 DiffSinger 模型，逐短语渲染人声
-- **音高编辑** — 画笔工具编辑音高偏差曲线 (PITD)，实时同步后端重渲染
-- **乐器采样** — 内置钢琴、小提琴、吉他、鼓组采样，Tone.js 回放
-- **人声混响** — 卷积混响 (Voxengo IR)，可调发送量
-- **撤销/重做** — Ctrl+Z / Ctrl+Shift+Z
-- **实时播放** — 渲染中即可播放已完成短语，未完成短语自动等待
+- AI 歌声合成（基于 DiffSinger + OpenUtau 引擎）
+- 多轨道编辑：人声 + 钢琴/吉他/小提琴/鼓组伴奏
+- 实时音高曲线编辑
+- MIDI 导入/导出
+- WAV 导出
+- 混响效果
+- 每轨独立音量控制
+- 撤销/重做（Ctrl+Z / Ctrl+Shift+Z）
+
+---
+
+## 从零开始安装教程
+
+> 本教程面向完全没有编程经验的用户。请按照每一步操作，不要跳步。
+
+### 第一步：安装 .NET 8 SDK
+
+这是运行后端服务器必须的。
+
+1. 打开浏览器，访问 https://dotnet.microsoft.com/download/dotnet/8.0
+2. 在页面中找到 **SDK 8.0.xxx** 那一行（不是 Runtime），点击 **Windows x64** 下面的下载链接
+3. 下载完成后双击运行安装程序
+4. 一路点 **下一步** / **Install** / **是**，直到安装完成
+
+**验证安装成功：**
+
+1. 按 `Win + R`，输入 `cmd`，回车，打开命令提示符
+2. 输入以下命令并回车：
+   ```
+   dotnet --version
+   ```
+3. 如果显示 `8.0.xxx` 这样的版本号，说明安装成功
+4. 如果提示「不是内部或外部命令」，重启电脑后再试
+
+### 第二步：安装 Python
+
+这是运行前端文件服务器用的（只需要最基本的 Python，不用装任何库）。
+
+1. 打开浏览器，访问 https://www.python.org/downloads/
+2. 点击页面最大的那个黄色 **Download Python** 按钮
+3. 下载完成后双击运行安装程序
+4. **重要！** 安装界面底部有一个勾选框 **「Add Python to PATH」**，**一定要勾上**
+5. 然后点 **Install Now**，等待安装完成
+
+**验证安装成功：**
+
+1. 重新打开一个命令提示符（`Win + R` → 输入 `cmd` → 回车）
+2. 输入：
+   ```
+   python --version
+   ```
+3. 如果显示 `Python 3.xx.x`，说明安装成功
+
+### 第三步：下载本项目
+
+**方式 A：直接下载 ZIP（推荐新手）**
+
+1. 打开本项目的 GitHub 页面
+2. 点击绿色的 **Code** 按钮
+3. 点击 **Download ZIP**
+4. 下载完成后，右键 ZIP 文件 → **全部解压缩**
+5. 记住解压后的文件夹位置（比如 `D:\melody-singer`）
+
+**方式 B：用 Git 克隆**
+
+如果你已经装了 Git，可以在命令提示符中运行：
+```
+git clone https://github.com/Marigold1122/melody-singer.git
+```
+
+### 第四步：下载 DiffSinger 歌手模型
+
+项目本身不包含歌手模型文件（体积太大）。你需要自己下载。
+
+1. 去以下网站寻找 DiffSinger 歌手模型包（`.zip` 格式）：
+   - OpenUTAU DiffSinger 社区资源
+   - Hugging Face 上搜索 "DiffSinger voicebank"
+2. 下载好的 `.zip` 文件先不用解压，后面可以在网页里直接上传
+
+**或者手动安装：**
+
+1. 把歌手模型的 `.zip` 解压
+2. 将解压出的文件夹放入项目的 `DiffSinger` 目录下
+3. 确保文件夹里有 `dsconfig.yaml` 文件
+
+文件结构应该像这样：
+```
+DiffSinger/
+├── 你的歌手名字/
+│   ├── dsconfig.yaml        ← 必须有这个文件
+│   ├── character.txt
+│   ├── *.onnx               ← 模型文件
+│   ├── dsdur/
+│   ├── dspitch/
+│   └── dsvariance/
+└── checkpoints/
+    └── ...                   ← 声码器（vocoder）模型
+```
+
+> 声码器（checkpoints 文件夹）是所有歌手共用的，只需要下载一次。如果 `checkpoints` 文件夹为空或不存在，你也需要下载对应的 vocoder 模型放进去。
+
+### 第五步：配置歌手模型路径
+
+如果你把项目解压到了 `D:\melody-singer`，默认配置就能用。否则需要修改配置文件。
+
+1. 用记事本打开 `server\DiffSingerApi\appsettings.json`
+2. 把 `VoicebanksPath` 改成你电脑上 `DiffSinger` 文件夹的实际路径：
+   ```json
+   {
+     "VoicebanksPath": "你的项目路径/DiffSinger"
+   }
+   ```
+   > 路径中用 `/`（正斜杠），不要用 `\`（反斜杠）。比如 `D:/melody-singer/DiffSinger`
+
+### 第六步：启动！
+
+1. 在项目根目录找到 `start-v3.bat`，双击运行
+2. 会弹出两个黑色的命令行窗口（不要关闭它们！）：
+   - 一个是后端 API 服务器（端口 5000）
+   - 一个是前端文件服务器（端口 3000）
+3. 等待大约 10 秒，浏览器会自动打开 Melody Singer 界面
+4. 如果浏览器没有自动打开，手动打开浏览器访问：`http://localhost:3000/3/index.html`
+
+> **首次启动会比较慢**，因为 .NET 需要编译项目。后续启动会快很多。
+
+### 第七步：开始使用
+
+#### 导入 MIDI 文件
+
+1. 点击左上角的 **「打开 MIDI」** 按钮
+2. 选择一个 `.mid` 文件
+3. MIDI 中的音符会显示在钢琴卷帘编辑器中
+
+#### 选择歌手并合成
+
+1. 在左侧轨道面板中，点击一个轨道
+2. 在轨道配置中，渲染器选择 **「人声」**
+3. 在歌手下拉框中选择你已安装的歌手
+4. 点击 **渲染** 按钮，等待 AI 合成完成
+5. 合成进度会实时显示在界面上
+
+#### 编辑歌词
+
+1. 双击钢琴卷帘中的音符，可以编辑单个歌词
+2. 右键菜单可以批量编辑歌词
+
+#### 编辑音高
+
+1. 在工具栏选择 **音高画笔** 工具
+2. 在音符上方绘制音高曲线
+3. 右键可以重置音高
+
+#### 播放
+
+- 按 **空格键** 播放/暂停
+- 点击时间轴可以定位播放位置
+- 播放时可以实时调节各轨道音量
+
+#### 快捷键
+
+| 快捷键 | 功能 |
+|--------|------|
+| 空格 | 播放 / 暂停 |
+| Ctrl+Z | 撤销 |
+| Ctrl+Shift+Z 或 Ctrl+Y | 重做 |
+| Delete | 删除选中的音符 |
+| 滚轮 | 上下滚动 |
+| Ctrl+滚轮 | 水平缩放 |
+
+---
+
+## 常见问题
+
+**Q：双击 `start-v3.bat` 后窗口一闪就没了？**
+
+A：右键 `start-v3.bat` → **编辑**，检查里面的路径是否和你的实际路径一致。如果不一致，修改 `cd /d` 后面的路径。
+
+**Q：浏览器显示「无法访问此网站」？**
+
+A：检查两个命令行窗口是否还在运行。如果后端窗口显示红色错误信息，可能是 .NET SDK 没有正确安装。
+
+**Q：后端窗口显示错误，提到「singer」或「voicebank」？**
+
+A：说明没有找到歌手模型。检查 `appsettings.json` 中的路径是否正确，以及 `DiffSinger` 文件夹下是否有歌手文件夹。
+
+**Q：端口被占用？**
+
+A：`start-v3.bat` 会自动尝试释放 3000 和 5000 端口。如果还是不行，手动打开任务管理器，结束占用这些端口的程序。
+
+**Q：合成速度很慢？**
+
+A：DiffSinger 的合成速度取决于你的 CPU/GPU 性能。首次合成会比较慢（需要加载模型），后续会快一些。
+
+---
 
 ## 项目结构
 
 ```
 melody-singer/
-├── 3/                    # 前端 (HTML + CSS + JS)
+├── 3/                      # 前端界面（主版本）
 │   ├── index.html
 │   ├── app.js
 │   └── style.css
-├── server/
-│   └── DiffSingerApi/    # .NET 后端 API
-├── lib/                  # Tone.js, Midi.min.js
-├── samples/              # 乐器采样 + 混响 IR
-├── singer.html           # 独立合成页面
-└── start-v3.bat          # 一键启动脚本
+├── server/                 # 后端 API 服务器
+│   └── DiffSingerApi/
+├── OpenUtau/               # 歌声合成引擎
+├── DiffSinger/             # 歌手模型存放目录
+│   ├── checkpoints/        # 共用的声码器模型
+│   └── (歌手名)/           # 各个歌手的模型文件
+├── samples/                # 乐器采样（钢琴、吉他等）
+├── lib/                    # JS 依赖库
+├── start-v3.bat            # 一键启动脚本
+└── README.md
 ```
 
-## 运行
+## 许可证
 
-### 前置条件
-
-- .NET 8 SDK
-- Python 3 (用于本地 HTTP 服务)
-- DiffSinger ONNX 模型 + 声库（放入 `server/DiffSingerApi/bin/.../voicebanks/`）
-
-### 启动
-
-```bat
-start-v3.bat
-```
-
-会自动：
-1. 启动后端 API（端口 5000）
-2. 启动前端服务器（端口 3000）
-3. 打开浏览器 `http://localhost:3000/3/index.html`
-
-## 技术栈
-
-- **前端**: 原生 HTML/CSS/JS, Canvas 2D, Web Audio API, Tone.js
-- **后端**: ASP.NET Core, ONNX Runtime (DiffSinger 推理)
+MIT License
