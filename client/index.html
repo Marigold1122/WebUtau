@@ -8,9 +8,14 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
+    <!-- 自定义背景层 -->
+    <div id="bgLayer" class="bg-layer"></div>
+    <input type="file" id="bgFileInput" accept="image/*" style="display:none">
+
     <!-- 顶部菜单栏 -->
     <header class="menubar">
         <div class="menu-items">
+            <span class="menu-item" id="menuNewProject"><i class="fas fa-file"></i> 新建项目</span>
             <span class="menu-item" id="menuFile"><i class="fas fa-folder-open"></i> 打开 MIDI</span>
             <input type="file" id="midiFileInput" accept=".mid,.midi" style="display:none">
             <span class="menu-item">编辑</span>
@@ -106,6 +111,7 @@
                     <i class="fas fa-play transport-btn" id="btnPlay" title="播放 (Space)"></i>
                     <i class="fas fa-stop transport-btn" id="btnStop" title="停止 (Ctrl+Space)"></i>
                     <i class="fas fa-step-forward transport-btn" id="btnNext" title="前进"></i>
+                    <i class="fas fa-circle transport-btn record-btn" id="btnRecord" title="MIDI 录制 (R)"></i>
                 </div>
                 <div class="tools-right">
                     <i class="fas fa-search-minus zoom-btn" id="btnZoomOut"></i>
@@ -161,6 +167,7 @@
                 </div>
                 <div class="panel-section">
                     <h3>合成</h3>
+                    <div class="prop-row"><label>MIDI 输入</label><select class="sv-input" id="midiInputSelect"><option value="">未检测到设备</option></select></div>
                     <div class="prop-row"><label>声库</label><select class="sv-input" id="voicebankSelect"><option value="">加载中...</option></select></div>
                     <div class="prop-row">
                         <label><input type="checkbox" id="vocalReverbToggle"> 混响</label>
@@ -187,6 +194,39 @@
                     <h3>合成结果</h3>
                     <div class="result-controls">
                         <button class="result-btn" id="btnDownload"><i class="fas fa-download"></i> 下载</button>
+                        <button class="result-btn" id="btnExportDry"><i class="fas fa-microphone"></i> 导出干声</button>
+                    </div>
+                </div>
+                <div class="panel-section" id="vcSection" style="display:none">
+                    <h3>音色转换 <span class="vc-badge">Seed-VC</span></h3>
+                    <div class="vc-ref-row">
+                        <label>参考音频</label>
+                        <button class="result-btn small" id="btnVcRef"><i class="fas fa-upload"></i> 选择</button>
+                        <span class="vc-ref-name" id="vcRefName">未选择</span>
+                        <input type="file" id="vcRefInput" accept="audio/*" style="display:none">
+                    </div>
+                    <div class="slider-group">
+                        <div class="slider-row"><label>扩散步数</label><span class="val" id="vcStepsVal">10</span></div>
+                        <input type="range" class="sv-slider" id="vcStepsSlider" value="10" min="1" max="200" step="1">
+                        <div class="slider-row"><label>长度调整</label><span class="val" id="vcLengthVal">1.00</span></div>
+                        <input type="range" class="sv-slider" id="vcLengthSlider" value="100" min="50" max="200" step="1">
+                        <div class="slider-row"><label>引导强度</label><span class="val" id="vcCfgVal">0.70</span></div>
+                        <input type="range" class="sv-slider" id="vcCfgSlider" value="70" min="0" max="100" step="1">
+                        <div class="slider-row"><label>变调 (半音)</label><span class="val" id="vcPitchVal">0</span></div>
+                        <input type="range" class="sv-slider" id="vcPitchSlider" value="0" min="-12" max="12" step="1">
+                    </div>
+                    <div class="vc-checkboxes">
+                        <label class="vc-check"><input type="checkbox" id="vcAutoF0" checked> 自动F0调整</label>
+                        <label class="vc-check"><input type="checkbox" id="vcF0Condition"> F0条件约束</label>
+                    </div>
+                    <button class="result-btn primary full-width" id="btnVcConvert"><i class="fas fa-exchange-alt"></i> 开始转换</button>
+                    <div class="vc-progress" id="vcProgress" style="display:none">
+                        <div class="progress-bar"><div class="progress-fill vc-fill" id="vcProgressFill"></div></div>
+                        <div class="progress-text" id="vcProgressText">准备中...</div>
+                    </div>
+                    <div class="vc-result" id="vcResult" style="display:none">
+                        <audio id="vcAudioPlayer" controls style="width:100%;height:28px"></audio>
+                        <button class="result-btn" id="btnVcDownload"><i class="fas fa-download"></i> 下载转换结果</button>
                     </div>
                 </div>
             </div>
@@ -195,7 +235,7 @@
                 <div class="side-icon"><i class="fas fa-microphone-alt"></i></div>
                 <div class="side-icon"><i class="fas fa-layer-group"></i></div>
                 <div class="side-icon"><i class="fas fa-sliders-h"></i></div>
-                <div class="side-icon bottom"><i class="fas fa-cog"></i></div>
+                <div class="side-icon bottom" id="btnSettings"><i class="fas fa-cog"></i></div>
             </div>
         </aside>
     </div>
@@ -254,8 +294,72 @@
         </div>
     </div>
 
-    <script src="../lib/Tone.js"></script>
-    <script src="../lib/Midi.min.js"></script>
+    <!-- 新建项目弹窗 -->
+    <div class="modal-overlay" id="newProjectModal" style="display:none">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <span>新建项目</span>
+                <i class="fas fa-times modal-close" id="newProjectClose"></i>
+            </div>
+            <div class="modal-body">
+                <p class="modal-hint">设置项目参数：</p>
+                <div class="modal-form-row">
+                    <label>BPM</label>
+                    <input type="number" class="sv-input" id="newProjectBpm" min="20" max="300" value="120" style="width:80px">
+                </div>
+                <div class="modal-form-row">
+                    <label>拍号</label>
+                    <input type="number" class="sv-input" id="newProjectTsNum" min="1" max="16" value="4" style="width:50px">
+                    <span>/</span>
+                    <input type="number" class="sv-input" id="newProjectTsDen" min="1" max="16" value="4" style="width:50px">
+                </div>
+                <div class="modal-form-row">
+                    <label>轨道名</label>
+                    <input type="text" class="sv-input" id="newProjectTrackName" value="Track 1" style="width:120px">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn" id="newProjectCancel">取消</button>
+                <button class="modal-btn primary" id="newProjectConfirm">创建</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 设置弹窗 -->
+    <div class="modal-overlay" id="settingsModal" style="display:none">
+        <div class="modal-dialog" style="width:360px">
+            <div class="modal-header">
+                <span><i class="fas fa-cog"></i> 设置</span>
+                <i class="fas fa-times modal-close" id="settingsClose"></i>
+            </div>
+            <div class="modal-body">
+                <div class="panel-section">
+                    <h3>自定义背景</h3>
+                    <div class="bg-preview-row">
+                        <div class="bg-preview-thumb" id="bgPreviewThumb"><i class="fas fa-image"></i></div>
+                        <button class="modal-btn" id="btnBgChoose"><i class="fas fa-folder-open"></i> 选择图片</button>
+                        <button class="modal-btn" id="btnBgClear"><i class="fas fa-trash-alt"></i> 清除</button>
+                    </div>
+                </div>
+                <div class="panel-section">
+                    <div class="slider-group">
+                        <div class="slider-row"><label>面板透明度</label><span class="val" id="bgOpacityVal">80%</span></div>
+                        <input type="range" class="sv-slider" id="bgOpacitySlider" value="80" min="0" max="100" step="1">
+                        <div class="slider-row"><label>背景变暗</label><span class="val" id="bgDimVal">0%</span></div>
+                        <input type="range" class="sv-slider" id="bgDimSlider" value="0" min="0" max="80" step="1">
+                        <div class="slider-row"><label>背景模糊</label><span class="val" id="bgBlurVal">0px</span></div>
+                        <input type="range" class="sv-slider" id="bgBlurSlider" value="0" min="0" max="40" step="1">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn primary" id="settingsOk">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="./lib/Tone.js"></script>
+    <script src="./lib/Midi.min.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

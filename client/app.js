@@ -15,14 +15,14 @@ const DBLCLICK_MS = 400;
 const ZOOM_MIN = 0.15;
 const ZOOM_MAX = 6;
 const ZOOM_STEP = 1.15;
-const API_BASE = 'http://localhost:5000';
+const API_BASE = window.location.origin;
 const TRACK_COLORS = ['#3cc5b2','#e04d7f','#e0b820','#4aad5e','#884de0','#e06a28','#2fafa0','#e04a4a'];
 const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 
 // ===== 乐器采样配置 =====
 const INSTRUMENT_CONFIGS = {
     piano: {
-        baseUrl: '../samples/piano/',
+        baseUrl: './samples/piano/',
         samples: {
             'A0': 'A0.mp3', 'C1': 'C1.mp3', 'A1': 'A1.mp3',
             'C2': 'C2.mp3', 'A2': 'A2.mp3',
@@ -34,7 +34,7 @@ const INSTRUMENT_CONFIGS = {
         release: 1.2,
     },
     violin: {
-        baseUrl: '../samples/violin/',
+        baseUrl: './samples/violin/',
         samples: {
             'G3': 'LLVln_ArcoVib_G3_p.mp3', 'A3': 'LLVln_ArcoVib_A3_p.mp3',
             'C4': 'LLVln_ArcoVib_C4_p.mp3', 'E4': 'LLVln_ArcoVib_E4_p.mp3',
@@ -48,7 +48,7 @@ const INSTRUMENT_CONFIGS = {
         release: 0.8,
     },
     guitar: {
-        baseUrl: '../samples/guitar/',
+        baseUrl: './samples/guitar/',
         samples: {
             'G#1': 'Gs1_1_1.mp3', 'D#2': 'Ds2_1_1.mp3',
             'G#2': 'Gs2_1_1.mp3', 'C#3': 'Cs3_1_1.mp3',
@@ -57,7 +57,7 @@ const INSTRUMENT_CONFIGS = {
         release: 1.0,
     },
     drums: {
-        baseUrl: '../samples/drums/',
+        baseUrl: './samples/drums/',
         samples: {
             'C2': 'kick-v2.mp3', 'C#2': 'sidestick-v2.mp3',
             'D2': 'snare-v2.mp3', 'E2': 'rimshot-v2.mp3',
@@ -178,6 +178,10 @@ const state = {
     pitchDeviation: { xs: [], ys: [] },  // 稀疏控制点，xs 升序，ys 对应 cent 偏移值
     _pitchLastPitch: null, // 画笔上一次采样的 basePitch（MIDI 浮点）
     _pitchLastPoint: null, // 画笔上一个鼠标位置 {cx, cy}
+    // === MIDI 键盘录制 ===
+    midiRecording: false,       // 录制模式开关
+    _midiAccess: null,          // MIDIAccess 对象
+    _activeMidiNotes: new Map(), // 正在按下的键: midiNote → { startTick }
 };
 
 // ===== SECTION 2b: Undo/Redo =====
@@ -496,7 +500,13 @@ function cacheDom() {
         'tensionSlider','tensionVal','breathSlider','breathVal',
         'voicebankSelect','btnSynthesize',
         'synthProgress','progressFill','progressText','synthError',
-        'resultSection','btnDownload',
+        'resultSection','btnDownload','btnExportDry',
+        'vcSection','btnVcRef','vcRefName','vcRefInput',
+        'vcStepsSlider','vcStepsVal','vcLengthSlider','vcLengthVal',
+        'vcCfgSlider','vcCfgVal','vcPitchSlider','vcPitchVal',
+        'vcAutoF0','vcF0Condition',
+        'btnVcConvert','vcProgress','vcProgressFill','vcProgressText',
+        'vcResult','vcAudioPlayer','btnVcDownload',
         'renderStatus',
         'prepareModal','prepareText',
         'batchLyricsModal','batchLyricsInput','batchCharSplit',
@@ -509,6 +519,14 @@ function cacheDom() {
         'midiImportModal','midiImportClose','midiImportBpm',
         'midiImportTsNum','midiImportTsDen',
         'midiImportCancel','midiImportConfirm',
+        'menuNewProject','newProjectModal','newProjectClose',
+        'newProjectBpm','newProjectTsNum','newProjectTsDen',
+        'newProjectTrackName','newProjectCancel','newProjectConfirm',
+        'btnRecord','midiInputSelect',
+        'bgLayer','bgFileInput','btnSettings',
+        'settingsModal','settingsClose','settingsOk',
+        'btnBgChoose','btnBgClear','bgPreviewThumb',
+        'bgOpacitySlider','bgOpacityVal','bgDimSlider','bgDimVal','bgBlurSlider','bgBlurVal',
     ];
     ids.forEach(id => { dom[id] = document.getElementById(id); });
     dom.toolBtns = document.querySelectorAll('.tool-btn');
@@ -555,9 +573,13 @@ document.addEventListener('DOMContentLoaded', () => {
     bindTrackInspectorEvents();
     bindPianoRollEvents();
     loadVoicebanks();
+    initMidiInput();
     initPanelResizers();
     updateSnapDisplay();
     initPianoSampler();
+    initBackground();
+    bindSettingsEvents();
+    bindVcEvents();
     // 默认钢琴卷帘隐藏
     dom.pianoRoll.parentElement.classList.add('piano-hidden');
 });
@@ -1185,21 +1207,40 @@ function createNote(tick, durTick, midi, trackId, lyric) {
     return n;
 }
 
+/** 当某轨道音符清空后，清除该轨道的音高曲线、偏差数据，并停止渲染轮询 */
+function clearEmptyTrackPitch(trackId) {
+    if (!trackId) return;
+    const hasNotes = state.notes.some(n => n.trackId === trackId);
+    if (hasNotes) return;
+    const track = state.tracks.find(t => t.id === trackId);
+    if (!track) return;
+    track.pitchCurve = [];
+    track.pitchDeviation = { xs: [], ys: [] };
+    // 停止渲染轮询，防止后端数据覆盖回来
+    if (track._pollTimer) { clearInterval(track._pollTimer); track._pollTimer = null; }
+    track.synthJobId = null;
+    track.synthState = 'idle';
+    track.phraseBuffers = [];
+}
+
 function deleteNote(id) {
     const note = state.notes.find(n => n.id === id);
     if (note && getActiveJobId()) {
         pushNoteEdit({ action: 'remove', position: note.tick, duration: note.durTick, tone: note.midi });
     }
+    const trackId = note ? note.trackId : null;
     state.notes = state.notes.filter(n => n.id !== id);
     state.selectedIds.delete(id);
     if (state.notes.length === 0) {
         state.pitchCurve = [];
     }
+    clearEmptyTrackPitch(trackId);
     invalidateNotes();
 }
 
 function deleteSelected() {
     if (state.selectedIds.size === 0) return;
+    const affectedTrackIds = new Set();
     if (getActiveJobId()) {
         for (const n of state.notes) {
             if (state.selectedIds.has(n.id)) {
@@ -1207,11 +1248,15 @@ function deleteSelected() {
             }
         }
     }
+    for (const n of state.notes) {
+        if (state.selectedIds.has(n.id)) affectedTrackIds.add(n.trackId);
+    }
     state.notes = state.notes.filter(n => !state.selectedIds.has(n.id));
     state.selectedIds.clear();
     if (state.notes.length === 0) {
         state.pitchCurve = [];
     }
+    for (const tid of affectedTrackIds) clearEmptyTrackPitch(tid);
     invalidateNotes();
 }
 
@@ -1922,6 +1967,116 @@ function cancelMidiImport() {
     _pendingMidiImport = null;
 }
 
+// ===== 新建项目 =====
+function showNewProjectModal() {
+    dom.newProjectBpm.value = 120;
+    dom.newProjectTsNum.value = 4;
+    dom.newProjectTsDen.value = 4;
+    dom.newProjectTrackName.value = 'Track 1';
+    dom.newProjectModal.style.display = '';
+}
+
+function applyNewProject() {
+    const bpm = clamp(parseFloat(dom.newProjectBpm.value) || 120, 20, 300);
+    const tsNum = clamp(parseInt(dom.newProjectTsNum.value) || 4, 1, 16);
+    const tsDen = clamp(parseInt(dom.newProjectTsDen.value) || 4, 1, 16);
+    const trackName = dom.newProjectTrackName.value.trim() || 'Track 1';
+
+    dom.newProjectModal.style.display = 'none';
+
+    // 清理旧状态（与 applyMidiImport 相同）
+    for (const oldTrack of state.tracks) {
+        if (oldTrack._pollTimer) { clearInterval(oldTrack._pollTimer); oldTrack._pollTimer = null; }
+        oldTrack.synthJobId = null;
+    }
+    stopRenderPolling();
+    hidePrepareModal();
+    _pendingEdits.length = 0;
+    clearTimeout(_editFlushTimer);
+    _editFlushTimer = null;
+
+    state.notes = [];
+    state.tracks = [];
+    state.selectedIds.clear();
+    noteIdCounter = 0;
+    _undoStack.length = 0;
+    _redoStack.length = 0;
+
+    // 设置项目参数
+    state.midiFile = null;
+    state.midiFileName = '';
+    state.ppq = 480;
+    state.bpm = bpm;
+    state.timeSig = [tsNum, tsDen];
+    dom.bpmDisplay.textContent = 'BPM: ' + state.bpm;
+
+    // 创建默认轨道
+    const trackId = 'track_0';
+    state.tracks.push({
+        id: trackId, name: trackName,
+        color: TRACK_COLORS[0],
+        muted: false, solo: false, volume: 1.0,
+        _gainNode: null, channel: 0,
+        renderer: 'vocal',
+        voicebankId: null, instrumentId: null,
+        synthJobId: null, synthState: 'idle',
+        phraseBuffers: [], pitchCurve: [],
+        pitchDeviation: { xs: [], ys: [] },
+    });
+    state.activeTrackId = trackId;
+
+    // 重建 UI
+    resizeCanvases();
+    buildRuler();
+    buildTrackRuler();
+    requestRedraw('all');
+    renderTrackPanel();
+    renderTrackTimeline();
+    updateInspector();
+    updateSnapDisplay();
+    dom.btnSynthesize.disabled = false;
+
+    // 重置合成状态
+    state.synthDirty = true;
+    state.synthState = 'idle';
+    state.synthJobId = null;
+    state.pitchCurve = [];
+    state.pitchDeviation = { xs: [], ys: [] };
+    state.phraseBuffers = [];
+    state.synthPhrases = [];
+    state.phrasesTotal = 0;
+
+    // 自动打开钢琴卷帘，让用户可以直接画音符
+    openPianoRoll(trackId);
+}
+
+function cancelNewProject() {
+    dom.newProjectModal.style.display = 'none';
+}
+
+/** 添加一条新轨道 */
+function addTrack(name) {
+    const idx = state.tracks.length;
+    const trackId = 'track_' + Date.now();
+    const trackName = name || ('Track ' + (idx + 1));
+    state.tracks.push({
+        id: trackId, name: trackName,
+        color: TRACK_COLORS[idx % TRACK_COLORS.length],
+        muted: false, solo: false, volume: 1.0,
+        _gainNode: null, channel: idx,
+        renderer: 'vocal',
+        voicebankId: null, instrumentId: null,
+        synthJobId: null, synthState: 'idle',
+        phraseBuffers: [], pitchCurve: [],
+        pitchDeviation: { xs: [], ys: [] },
+    });
+    state.activeTrackId = trackId;
+    dom.btnSynthesize.disabled = false;
+    renderTrackPanel();
+    renderTrackTimeline();
+    return trackId;
+}
+
 // ===== SECTION 19: 缩放与平移 =====
 function setZoom(newZoom, pivotClientX) {
     newZoom = clamp(newZoom, ZOOM_MIN, ZOOM_MAX);
@@ -2208,6 +2363,9 @@ function startTrackRenderPolling(track) {
                 if (dom.btnTrackSynth && track.id === state.activeTrackId) {
                     dom.btnTrackSynth.textContent = '合成';
                 }
+                // 显示合成结果区和音色转换区
+                dom.resultSection.style.display = 'block';
+                dom.vcSection.style.display = 'block';
                 // 最终再拉一次音高曲线确保完整
                 fetchTrackPitchCurve(track);
                 // 触发 UI 刷新：音高曲线显示 + 播放系统识别到 ready
@@ -2315,7 +2473,7 @@ async function loadVocalIR(irName) {
     const ctx = ensureAudioCtx();
     if (!_vocalConvolver) getVocalBus();
     try {
-        const res = await fetch(`../samples/ir/${irName}.mp3`);
+        const res = await fetch(`./samples/ir/${irName}.mp3`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const arrayBuf = await res.arrayBuffer();
         const audioBuf = await ctx.decodeAudioData(arrayBuf);
@@ -2350,7 +2508,7 @@ async function startPlayback() {
         await flushNoteEdits();
     }
 
-    if (state.notes.length === 0) return;
+    if (state.notes.length === 0 && !state.midiRecording) return;
 
     // 确保 Tone.js AudioContext 可用
     if (typeof Tone !== 'undefined' && Tone.context.state !== 'running') {
@@ -2420,6 +2578,21 @@ function findNextPhraseAfter(timeSec) {
         }
     }
     return best;
+}
+
+/** 获取乐曲结束时间（秒），取音符和合成短语的最晚结束时间 */
+function getSongEndTimeSec() {
+    let endSec = 0;
+    for (const n of state.notes) {
+        const noteEnd = tickToTime(n.tick + n.durTick);
+        if (noteEnd > endSec) endSec = noteEnd;
+    }
+    const phrases = getActiveSynthPhrases();
+    for (const p of phrases) {
+        const phraseEnd = (p.startMs + p.durationMs) / 1000;
+        if (phraseEnd > endSec) endSec = phraseEnd;
+    }
+    return endSec;
 }
 
 /** 检查某个短语是否已经被解码到 phraseBuffers 中 */
@@ -2625,6 +2798,7 @@ function cancelPendingPlay() {
 }
 
 function pausePlayback() {
+    if (state._activeMidiNotes.size > 0) finalizeMidiNotes();
     state.playing = false;
     state.pendingPlay = false;
     state.waitingForPhrase = -1;
@@ -2714,6 +2888,15 @@ function animatePlayback() {
         return;
     }
 
+    // 自动停止：所有音符和短语播放完毕后停止计时器（录制模式下不停）
+    if (!state.midiRecording) {
+        const songEnd = getSongEndTimeSec();
+        if (songEnd > 0 && state.playheadTime >= songEnd + 0.5) {
+            stopPlayback();
+            return;
+        }
+    }
+
     state.animFrameId = requestAnimationFrame(animatePlayback);
 }
 
@@ -2770,7 +2953,7 @@ function autoScrollPlayhead() {
 function renderTrackPanel() {
     dom.trackHeaderCol.innerHTML = '';
     if (state.tracks.length === 0) {
-        dom.trackHeaderCol.innerHTML = '<div class="track-empty-hint"><i class="fas fa-music"></i> 打开 MIDI 文件以加载轨道</div>';
+        dom.trackHeaderCol.innerHTML = '<div class="track-empty-hint"><i class="fas fa-music"></i> 新建项目或打开 MIDI 以开始</div>';
         return;
     }
     state.tracks.forEach(track => {
@@ -2838,6 +3021,12 @@ function renderTrackPanel() {
         });
         dom.trackHeaderCol.appendChild(item);
     });
+    // "添加轨道"按钮
+    const addBtn = document.createElement('div');
+    addBtn.className = 'track-add-btn';
+    addBtn.innerHTML = '<i class="fas fa-plus"></i> 添加轨道';
+    addBtn.addEventListener('click', () => addTrack());
+    dom.trackHeaderCol.appendChild(addBtn);
 }
 
 function renderTrackTimeline() {
@@ -3304,7 +3493,16 @@ async function loadVoicebanks(retries = 10, interval = 2000) {
 
 /** 导入 MIDI 后自动触发：提交合成 → 弹窗等待准备阶段 → 关闭弹窗 → 后台渲染 */
 async function autoSynthesize() {
-    if (!state.midiFile) return;
+    // 支持无 MIDI 文件场景（新建项目）：从当前音符动态构建 MIDI
+    let midiToSend = state.midiFile;
+    if (!midiToSend) {
+        if (state.notes.length === 0) return;
+        const bytes = encodeMidiWithLyrics(
+            state.notes.slice().sort((a, b) => a.tick - b.tick),
+            state.bpm, state.timeSig
+        );
+        midiToSend = new File([bytes], 'project.mid', { type: 'audio/midi' });
+    }
     const singerId = dom.voicebankSelect.value;
     if (!singerId) {
         dom.synthError.textContent = '没有可用的声库，请先上传声库。';
@@ -3325,7 +3523,7 @@ async function autoSynthesize() {
 
     try {
         const fd = new FormData();
-        fd.append('midi', state.midiFile);
+        fd.append('midi', midiToSend);
         fd.append('singerId', singerId);
         const res = await fetch(API_BASE + '/api/synthesize', { method: 'POST', body: fd });
         const data = await res.json();
@@ -3611,6 +3809,7 @@ async function pollRenderStatus() {
             stopRenderPolling();
             state.synthState = 'ready';
             dom.resultSection.style.display = 'block';
+            dom.vcSection.style.display = 'block';
         }
 
         if (data.status === 'failed') {
@@ -3752,6 +3951,126 @@ function scheduleInstrumentTracks(fromTimeSec) {
 
 function startSynthesis() { autoSynthesize(); }
 
+// ===== SECTION 23b: MIDI 键盘输入 =====
+
+/** 初始化 Web MIDI API，枚举设备并绑定消息监听 */
+async function initMidiInput() {
+    if (!navigator.requestMIDIAccess) return;
+    try {
+        const access = await navigator.requestMIDIAccess();
+        state._midiAccess = access;
+        refreshMidiDevices();
+        access.onstatechange = () => refreshMidiDevices();
+    } catch (err) {
+        console.warn('[MIDI] 无法访问 MIDI 设备:', err);
+    }
+}
+
+function refreshMidiDevices() {
+    const sel = dom.midiInputSelect;
+    const prevValue = sel.value;
+    sel.innerHTML = '';
+    const noneOpt = document.createElement('option');
+    noneOpt.value = '';
+    noneOpt.textContent = '无';
+    sel.appendChild(noneOpt);
+
+    if (!state._midiAccess) return;
+    for (const [id, input] of state._midiAccess.inputs) {
+        const opt = document.createElement('option');
+        opt.value = id;
+        opt.textContent = input.name || id;
+        sel.appendChild(opt);
+    }
+    // 恢复之前的选择，或自动选第一个设备
+    if (prevValue && sel.querySelector(`option[value="${prevValue}"]`)) {
+        sel.value = prevValue;
+    } else if (sel.options.length > 1) {
+        sel.value = sel.options[1].value;
+    }
+    bindMidiDevice(sel.value);
+}
+
+let _boundMidiInput = null;
+function bindMidiDevice(deviceId) {
+    // 解绑旧设备
+    if (_boundMidiInput) {
+        _boundMidiInput.onmidimessage = null;
+        _boundMidiInput = null;
+    }
+    if (!deviceId || !state._midiAccess) return;
+    const input = state._midiAccess.inputs.get(deviceId);
+    if (!input) return;
+    input.onmidimessage = onMidiMessage;
+    _boundMidiInput = input;
+}
+
+function onMidiMessage(event) {
+    const [status, note, velocity] = event.data;
+    const cmd = status & 0xF0;
+    if (cmd === 0x90 && velocity > 0) {
+        handleMidiNoteOn(note, velocity);
+    } else if (cmd === 0x80 || (cmd === 0x90 && velocity === 0)) {
+        handleMidiNoteOff(note);
+    }
+}
+
+function handleMidiNoteOn(midi, velocity) {
+    // 音频预览：始终发声
+    const track = state.tracks.find(t => t.id === state.activeTrackId);
+    const instrId = (track && track.instrumentId) || 'piano';
+    const sampler = getInstrumentSampler(instrId);
+    if (sampler) {
+        sampler.triggerAttack(midiNoteName(midi), Tone.now(), velocity / 127);
+    }
+    // 录制模式 + 播放中 → 记录起始位置
+    if (state.midiRecording && state.playing) {
+        const startTick = snapTick(timeToTick(state.playheadTime));
+        state._activeMidiNotes.set(midi, { startTick });
+    }
+}
+
+function handleMidiNoteOff(midi) {
+    // 停止音频预览
+    const track = state.tracks.find(t => t.id === state.activeTrackId);
+    const instrId = (track && track.instrumentId) || 'piano';
+    const sampler = getInstrumentSampler(instrId);
+    if (sampler) {
+        sampler.triggerRelease(midiNoteName(midi), Tone.now());
+    }
+    // 结束录制中的音符
+    if (state._activeMidiNotes.has(midi)) {
+        const { startTick } = state._activeMidiNotes.get(midi);
+        state._activeMidiNotes.delete(midi);
+        const endTick = snapTick(timeToTick(state.playheadTime));
+        const durTick = Math.max(getSnapTicks(), endTick - startTick);
+        createNote(startTick, durTick, midi);
+        requestRedraw('notes');
+    }
+}
+
+/** 切换录制模式 */
+function toggleMidiRecording() {
+    state.midiRecording = !state.midiRecording;
+    dom.btnRecord.classList.toggle('active', state.midiRecording);
+    if (state.midiRecording) {
+        snapshot(); // 保存撤销点
+    } else {
+        finalizeMidiNotes();
+    }
+}
+
+/** 结束所有正在按下的 MIDI 音符 */
+function finalizeMidiNotes() {
+    for (const [midi, info] of state._activeMidiNotes) {
+        const endTick = snapTick(timeToTick(state.playheadTime));
+        const durTick = Math.max(getSnapTicks(), endTick - info.startTick);
+        createNote(info.startTick, durTick, midi);
+    }
+    state._activeMidiNotes.clear();
+    requestRedraw('notes');
+}
+
 // ===== SECTION 24: 面板拖拽 =====
 function initPanelResizers() {
     setupResizer(dom.trackResizer, dom.trackView, 60, 400);
@@ -3793,7 +4112,7 @@ function bindEvents() {
 
     // 右侧面板折叠/展开
     const inspector = document.querySelector('.inspector');
-    const sideIcons = document.querySelectorAll('.side-icon');
+    const sideIcons = document.querySelectorAll('.side-icon:not(#btnSettings)');
     sideIcons.forEach(icon => {
         icon.addEventListener('click', () => {
             inspector.classList.toggle('collapsed');
@@ -4001,6 +4320,17 @@ function bindEvents() {
     dom.midiImportConfirm.addEventListener('click', applyMidiImport);
     dom.midiImportModal.addEventListener('click', e => { if (e.target === dom.midiImportModal) cancelMidiImport(); });
 
+    // 新建项目弹窗
+    dom.menuNewProject.addEventListener('click', showNewProjectModal);
+    dom.newProjectClose.addEventListener('click', cancelNewProject);
+    dom.newProjectCancel.addEventListener('click', cancelNewProject);
+    dom.newProjectConfirm.addEventListener('click', applyNewProject);
+    dom.newProjectModal.addEventListener('click', e => { if (e.target === dom.newProjectModal) cancelNewProject(); });
+
+    // MIDI 录制
+    dom.btnRecord.addEventListener('click', toggleMidiRecording);
+    dom.midiInputSelect.addEventListener('change', () => bindMidiDevice(dom.midiInputSelect.value));
+
     // 键盘快捷键
     document.addEventListener('keydown', e => {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
@@ -4017,6 +4347,7 @@ function bindEvents() {
             case 'e': setTool('eraser'); break;
             case 'x': setTool('knife'); break;
             case 'p': setTool('pitchpen'); break;
+            case 'r': toggleMidiRecording(); break;
             case ' ':
                 e.preventDefault();
                 if (e.ctrlKey || e.metaKey) stopPlayback();
@@ -4065,3 +4396,357 @@ function syncPianoScroll() {
 }
 
 // (syncScroll 已删除，由 mutateScrollX 统一处理)
+
+// ===== SECTION: 自定义背景 =====
+function initBackground() {
+    const saved = localStorage.getItem('ms_bg');
+    if (saved) {
+        try {
+            const cfg = JSON.parse(saved);
+            if (cfg.image) applyBackground(cfg.image, cfg.opacity ?? 80, cfg.dim ?? 0, cfg.blur ?? 0, false);
+        } catch (_) {}
+    }
+}
+
+function applyBackground(dataUrl, opacity, dim, blur, save) {
+    const layer = dom.bgLayer;
+    layer.style.backgroundImage = `url("${dataUrl}")`;
+    layer.classList.add('active');
+    document.body.classList.add('has-bg');
+    const panelAlpha = opacity / 100;
+    document.documentElement.style.setProperty('--panel-alpha', panelAlpha.toFixed(2));
+    document.documentElement.style.setProperty('--bg-dim', (dim / 100).toFixed(2));
+    document.documentElement.style.setProperty('--bg-blur', blur + 'px');
+    layer.style.filter = `blur(${blur}px)`;
+    if (dom.bgPreviewThumb) {
+        dom.bgPreviewThumb.style.backgroundImage = `url("${dataUrl}")`;
+        dom.bgPreviewThumb.innerHTML = '';
+    }
+    if (save !== false) {
+        localStorage.setItem('ms_bg', JSON.stringify({ image: dataUrl, opacity, dim, blur }));
+    }
+}
+
+function clearBackground() {
+    dom.bgLayer.style.backgroundImage = '';
+    dom.bgLayer.classList.remove('active');
+    document.body.classList.remove('has-bg');
+    document.documentElement.style.removeProperty('--panel-alpha');
+    document.documentElement.style.removeProperty('--bg-dim');
+    document.documentElement.style.removeProperty('--bg-blur');
+    if (dom.bgPreviewThumb) {
+        dom.bgPreviewThumb.style.backgroundImage = '';
+        dom.bgPreviewThumb.innerHTML = '<i class="fas fa-image"></i>';
+    }
+    localStorage.removeItem('ms_bg');
+}
+
+function openSettings() {
+    dom.settingsModal.style.display = '';
+    // 从 localStorage 恢复当前值
+    const saved = localStorage.getItem('ms_bg');
+    if (saved) {
+        try {
+            const cfg = JSON.parse(saved);
+            dom.bgOpacitySlider.value = cfg.opacity ?? 80;
+            dom.bgOpacityVal.textContent = dom.bgOpacitySlider.value + '%';
+            dom.bgDimSlider.value = cfg.dim ?? 0;
+            dom.bgDimVal.textContent = dom.bgDimSlider.value + '%';
+            dom.bgBlurSlider.value = cfg.blur ?? 0;
+            dom.bgBlurVal.textContent = dom.bgBlurSlider.value + 'px';
+        } catch (_) {}
+    } else {
+        dom.bgOpacitySlider.value = 80;
+        dom.bgOpacityVal.textContent = '80%';
+        dom.bgDimSlider.value = 0;
+        dom.bgDimVal.textContent = '0%';
+        dom.bgBlurSlider.value = 0;
+        dom.bgBlurVal.textContent = '0px';
+    }
+}
+
+function closeSettings() {
+    dom.settingsModal.style.display = 'none';
+}
+
+function bindSettingsEvents() {
+    dom.btnSettings.addEventListener('click', e => {
+        e.stopPropagation();
+        openSettings();
+    });
+    dom.settingsClose.addEventListener('click', closeSettings);
+    dom.settingsOk.addEventListener('click', closeSettings);
+    dom.settingsModal.addEventListener('click', e => {
+        if (e.target === dom.settingsModal) closeSettings();
+    });
+
+    dom.btnBgChoose.addEventListener('click', () => dom.bgFileInput.click());
+    dom.bgFileInput.addEventListener('change', e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = ev => {
+            const opacity = parseInt(dom.bgOpacitySlider.value) || 80;
+            const dim = parseInt(dom.bgDimSlider.value) || 0;
+            const blur = parseInt(dom.bgBlurSlider.value) || 0;
+            applyBackground(ev.target.result, opacity, dim, blur, true);
+        };
+        reader.readAsDataURL(file);
+        e.target.value = '';
+    });
+    dom.btnBgClear.addEventListener('click', clearBackground);
+
+    dom.bgOpacitySlider.addEventListener('input', () => {
+        const v = parseInt(dom.bgOpacitySlider.value);
+        dom.bgOpacityVal.textContent = v + '%';
+        if (document.body.classList.contains('has-bg')) {
+            document.documentElement.style.setProperty('--panel-alpha', (v / 100).toFixed(2));
+            // 保存
+            const saved = localStorage.getItem('ms_bg');
+            if (saved) {
+                try {
+                    const cfg = JSON.parse(saved);
+                    cfg.opacity = v;
+                    localStorage.setItem('ms_bg', JSON.stringify(cfg));
+                } catch (_) {}
+            }
+        }
+    });
+
+    dom.bgDimSlider.addEventListener('input', () => {
+        const v = parseInt(dom.bgDimSlider.value);
+        dom.bgDimVal.textContent = v + '%';
+        if (document.body.classList.contains('has-bg')) {
+            document.documentElement.style.setProperty('--bg-dim', (v / 100).toFixed(2));
+            const saved = localStorage.getItem('ms_bg');
+            if (saved) {
+                try {
+                    const cfg = JSON.parse(saved);
+                    cfg.dim = v;
+                    localStorage.setItem('ms_bg', JSON.stringify(cfg));
+                } catch (_) {}
+            }
+        }
+    });
+
+    dom.bgBlurSlider.addEventListener('input', () => {
+        const v = parseInt(dom.bgBlurSlider.value);
+        dom.bgBlurVal.textContent = v + 'px';
+        if (document.body.classList.contains('has-bg')) {
+            document.documentElement.style.setProperty('--bg-blur', v + 'px');
+            dom.bgLayer.style.filter = `blur(${v}px)`;
+            // 保存
+            const saved = localStorage.getItem('ms_bg');
+            if (saved) {
+                try {
+                    const cfg = JSON.parse(saved);
+                    cfg.blur = v;
+                    localStorage.setItem('ms_bg', JSON.stringify(cfg));
+                } catch (_) {}
+            }
+        }
+    });
+}
+
+// ===== SECTION: 导出干声 =====
+function exportDryVocal() {
+    const jobId = getActiveJobId();
+    if (!jobId) return;
+    const a = document.createElement('a');
+    a.href = API_BASE + '/api/jobs/' + jobId + '/download';
+    a.download = (state.midiFileName || 'vocal').replace(/\.\w+$/, '') + '_dry.wav';
+    a.click();
+}
+
+// ===== SECTION: Seed-VC 音色转换 =====
+const SEEDVC_HF_SPACE = 'https://plachta-seed-vc.hf.space';
+const SEEDVC_API_ENDPOINT = '/predict_1';
+let _vcRefFile = null;
+let _vcResultUrl = null;
+
+async function hfUploadFile(blob, filename) {
+    const formData = new FormData();
+    formData.append('files', blob, filename);
+    const resp = await fetch(`${SEEDVC_HF_SPACE}/gradio_api/upload`, {
+        method: 'POST', body: formData
+    });
+    if (!resp.ok) throw new Error(`上传失败: ${resp.status}`);
+    const paths = await resp.json();
+    return paths[0];
+}
+
+async function hfPredict(sourcePath, refPath, params) {
+    const body = {
+        data: [
+            { path: sourcePath, meta: { _type: 'gradio.FileData' } },
+            { path: refPath, meta: { _type: 'gradio.FileData' } },
+            params.diffusionSteps || 10,
+            params.lengthAdjust || 1.0,
+            params.cfgRate || 0.7,
+            params.f0Condition || false,
+            params.autoF0Adjust !== undefined ? params.autoF0Adjust : true,
+            params.pitchShift || 0
+        ]
+    };
+    const resp = await fetch(`${SEEDVC_HF_SPACE}/gradio_api/call${SEEDVC_API_ENDPOINT}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    });
+    if (!resp.ok) throw new Error(`API 调用失败: ${resp.status}`);
+    const { event_id } = await resp.json();
+    return event_id;
+}
+
+function hfGetResult(eventId, onProgress) {
+    return new Promise((resolve, reject) => {
+        const url = `${SEEDVC_HF_SPACE}/gradio_api/call${SEEDVC_API_ENDPOINT}/${eventId}`;
+        const evtSource = new EventSource(url);
+        evtSource.addEventListener('heartbeat', () => {
+            if (onProgress) onProgress('处理中...');
+        });
+        evtSource.addEventListener('progress', () => {
+            if (onProgress) onProgress('AI 转换中...');
+        });
+        evtSource.addEventListener('complete', (e) => {
+            evtSource.close();
+            try {
+                const data = JSON.parse(e.data);
+                const fullOutput = data[1];
+                if (fullOutput && fullOutput.url) {
+                    resolve(fullOutput.url);
+                } else if (fullOutput && fullOutput.path) {
+                    resolve(`${SEEDVC_HF_SPACE}/gradio_api/file=${fullOutput.path}`);
+                } else {
+                    reject(new Error('未获取到输出音频'));
+                }
+            } catch (err) {
+                reject(new Error('解析结果失败: ' + err.message));
+            }
+        });
+        evtSource.addEventListener('error', (e) => {
+            evtSource.close();
+            if (e.data && e.data !== 'null') {
+                try {
+                    const parsed = JSON.parse(e.data);
+                    reject(new Error(parsed.error || parsed.message || JSON.stringify(parsed)));
+                } catch (_) {
+                    reject(new Error(e.data));
+                }
+            } else {
+                reject(new Error('AI 服务错误，请确认 HuggingFace Space 已启动后重试'));
+            }
+        });
+        evtSource.onerror = () => {
+            evtSource.close();
+            reject(new Error('无法连接 AI 服务，请检查网络或稍后重试'));
+        };
+    });
+}
+
+async function startVcConvert() {
+    const jobId = getActiveJobId();
+    if (!jobId || !_vcRefFile) return;
+
+    dom.btnVcConvert.disabled = true;
+    dom.vcProgress.style.display = 'block';
+    dom.vcResult.style.display = 'none';
+    dom.vcProgressFill.style.width = '10%';
+    dom.vcProgressText.textContent = '上传源音频...';
+
+    try {
+        // 1. 下载渲染好的人声 WAV
+        const vocalResp = await fetch(API_BASE + '/api/jobs/' + jobId + '/download');
+        if (!vocalResp.ok) throw new Error('获取人声失败');
+        const vocalBlob = await vocalResp.blob();
+        dom.vcProgressFill.style.width = '20%';
+        dom.vcProgressText.textContent = '上传到 Seed-VC...';
+
+        // 2. 上传源音频和参考音频到 HF
+        const [sourcePath, refPath] = await Promise.all([
+            hfUploadFile(vocalBlob, 'source.wav'),
+            hfUploadFile(_vcRefFile, 'reference.wav')
+        ]);
+        dom.vcProgressFill.style.width = '35%';
+        dom.vcProgressText.textContent = '启动转换...';
+
+        // 3. 调用 predict
+        const steps = parseInt(dom.vcStepsSlider.value) || 10;
+        const lengthAdjust = parseInt(dom.vcLengthSlider.value) / 100;
+        const cfg = parseInt(dom.vcCfgSlider.value) / 100;
+        const pitchShift = parseInt(dom.vcPitchSlider.value) || 0;
+        const autoF0 = dom.vcAutoF0.checked;
+        const f0Cond = dom.vcF0Condition.checked;
+        const eventId = await hfPredict(sourcePath, refPath, {
+            diffusionSteps: steps,
+            lengthAdjust: lengthAdjust,
+            cfgRate: cfg,
+            f0Condition: f0Cond,
+            autoF0Adjust: autoF0,
+            pitchShift: pitchShift
+        });
+        dom.vcProgressFill.style.width = '45%';
+
+        // 4. 等待结果（SSE）
+        const resultUrl = await hfGetResult(eventId, msg => {
+            dom.vcProgressText.textContent = msg;
+            dom.vcProgressFill.style.width = '60%';
+        });
+
+        dom.vcProgressFill.style.width = '100%';
+        dom.vcProgressText.textContent = '转换完成!';
+        _vcResultUrl = resultUrl;
+
+        // 5. 显示播放器
+        dom.vcAudioPlayer.src = resultUrl;
+        dom.vcResult.style.display = 'block';
+        setTimeout(() => { dom.vcProgress.style.display = 'none'; }, 800);
+
+    } catch (err) {
+        dom.vcProgressText.textContent = '转换失败: ' + err.message;
+        dom.vcProgressFill.style.width = '0%';
+    } finally {
+        dom.btnVcConvert.disabled = false;
+    }
+}
+
+function bindVcEvents() {
+    // 导出干声
+    dom.btnExportDry.addEventListener('click', exportDryVocal);
+
+    // 参考音频选择
+    dom.btnVcRef.addEventListener('click', () => dom.vcRefInput.click());
+    dom.vcRefInput.addEventListener('change', e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        _vcRefFile = file;
+        dom.vcRefName.textContent = file.name;
+        e.target.value = '';
+    });
+
+    // 滑块实时更新
+    dom.vcStepsSlider.addEventListener('input', () => {
+        dom.vcStepsVal.textContent = dom.vcStepsSlider.value;
+    });
+    dom.vcLengthSlider.addEventListener('input', () => {
+        dom.vcLengthVal.textContent = (parseInt(dom.vcLengthSlider.value) / 100).toFixed(2);
+    });
+    dom.vcCfgSlider.addEventListener('input', () => {
+        dom.vcCfgVal.textContent = (parseInt(dom.vcCfgSlider.value) / 100).toFixed(2);
+    });
+    dom.vcPitchSlider.addEventListener('input', () => {
+        dom.vcPitchVal.textContent = dom.vcPitchSlider.value;
+    });
+
+    // 开始转换
+    dom.btnVcConvert.addEventListener('click', startVcConvert);
+
+    // 下载转换结果
+    dom.btnVcDownload.addEventListener('click', () => {
+        if (!_vcResultUrl) return;
+        const a = document.createElement('a');
+        a.href = _vcResultUrl;
+        a.download = (state.midiFileName || 'vocal').replace(/\.\w+$/, '') + '_vc.wav';
+        a.click();
+    });
+}

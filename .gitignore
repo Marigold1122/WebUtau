@@ -8,6 +8,10 @@ server/DiffSingerApi/uploads/
 server/DiffSingerApi/output/
 server/DiffSingerApi/voicebanks/
 
+# Large dependencies (download separately)
+DiffSinger/
+OpenUtau/
+
 # IDE
 .vs/
 .vscode/
