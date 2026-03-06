@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Melody Singer - 改进样式演示</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #1e1e1e;
+    color: #d4d4d4;
+    overflow: hidden;
+    height: 100vh;
+}
+
+/* 顶部工具栏 - 48px 高，强边界 */
+.toolbar {
+    height: 48px;
+    background: linear-gradient(180deg, #323232 0%, #2a2a2a 100%);
+    border-bottom: 2px solid #1a1a1a;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 20px;
+}
+
+/* 传输控制 - 更大的按钮 */
+.transport {
+    display: flex;
+    gap: 6px;
+}
+.transport-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 6px;
+    border: 1px solid #4a4a4a;
+    background: linear-gradient(180deg, #3e3e3e 0%, #343434 100%);
+    color: #e0e0e0;
+    cursor: pointer;
+    font-size: 18px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+    transition: all 0.15s;
+}
+.transport-btn:hover {
+    background: linear-gradient(180deg, #4e4e4e 0%, #444 100%);
+    border-color: #5a5a5a;
+}
+.transport-btn:active { transform: translateY(1px); }
+.transport-btn.play { color: #4a9eff; }
+.transport-btn.record {
+    background: linear-gradient(180deg, #d42e4a 0%, #b41e3a 100%);
+    border-color: #a41e3a;
+    color: white;
+}
+
+/* LCD 显示 */
+.lcd-display {
+    background: #0a0a0a;
+    border: 2px solid #2a2a2a;
+    border-radius: 8px;
+    padding: 6px 20px;
+    font-family: 'Courier New', monospace;
+    font-size: 20px;
+    font-weight: bold;
+    color: #4aff4a;
+    text-shadow: 0 0 8px rgba(74, 255, 74, 0.5);
+    letter-spacing: 2px;
+    box-shadow: inset 0 2px 6px rgba(0,0,0,0.6);
+}
+
+.spacer { flex: 1; }
+
+/* 工具按钮 */
+.tool-btns {
+    display: flex;
+    gap: 8px;
+}
+.tool-btn {
+    padding: 10px 18px;
+    background: linear-gradient(180deg, #3e3e3e 0%, #343434 100%);
+    border: 1px solid #4a4a4a;
+    border-radius: 6px;
+    color: #d4d4d4;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    transition: all 0.15s;
+}
+.tool-btn:hover {
+    background: linear-gradient(180deg, #4e4e4e 0%, #444 100%);
+    border-color: #5a5a5a;
+}
+.tool-btn.active {
+    background: linear-gradient(180deg, #4a7aaa 0%, #3a6a9a 100%);
+    border-color: #5a8aba;
+    color: white;
+}
+
+/* 主布局 */
+.main {
+    display: flex;
+    height: calc(100vh - 48px);
+}
+
+/* 左侧轨道列表 */
+.track-list {
+    width: 260px;
+    background: #252525;
+    border-right: 2px solid #1a1a1a;
+    box-shadow: 2px 0 8px rgba(0,0,0,0.3);
+    display: flex;
+    flex-direction: column;
+}
+.track-list-header {
+    height: 44px;
+    background: linear-gradient(180deg, #2e2e2e 0%, #282828 100%);
+    border-bottom: 2px solid #1a1a1a;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #aaa;
+}
+.tracks {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+}
+
+/* 轨道项 - 更大更清晰 */
+.track-item {
+    background: linear-gradient(180deg, #2d2d2d 0%, #272727 100%);
+    border: 2px solid #3a3a3a;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+}
+.track-item:hover {
+    background: linear-gradient(180deg, #353535 0%, #2f2f2f 100%);
+    border-color: #4a4a4a;
+}
+.track-item.active {
+    background: linear-gradient(180deg, #3a4a5a 0%, #2a3a4a 100%);
+    border-color: #5a7a9a;
+    box-shadow: 0 0 12px rgba(90, 122, 154, 0.3);
+}
+.track-icon {
+    font-size: 20px;
+    margin-right: 8px;
+}
+.track-name {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+}
+.track-controls {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+}
+.track-control-btn {
+    width: 32px;
+    height: 28px;
+    background: #3a3a3a;
+    border: 1px solid #4a4a4a;
+    border-radius: 4px;
+    color: #aaa;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.track-control-btn:hover { background: #4a4a4a; color: #ddd; }
+.track-control-btn.active { background: #d42e4a; color: white; border-color: #e43e5a; }
+
+/* 中央工作区 */
+.center {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: #1a1a1a;
+}
+
+/* 轨道视图区域 */
+.track-view {
+    height: 40%;
+    background: #1e1e1e;
+    border-bottom: 2px solid #0a0a0a;
+    position: relative;
+}
+.ruler {
+    height: 32px;
+    background: linear-gradient(180deg, #2a2a2a 0%, #242424 100%);
+    border-bottom: 2px solid #1a1a1a;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    font-size: 11px;
+    color: #888;
+    font-weight: 600;
+}
+.track-canvas {
+    height: calc(100% - 32px);
+    background:
+        repeating-linear-gradient(90deg, transparent, transparent 99px, #2a2a2a 99px, #2a2a2a 100px),
+        repeating-linear-gradient(0deg, transparent, transparent 59px, #222 59px, #222 60px);
+    position: relative;
+    overflow: auto;
+}
+
+/* MIDI 区域 */
+.midi-region {
+    position: absolute;
+    background: linear-gradient(135deg, #d4a017 0%, #b48f15 100%);
+    border: 2px solid #e4b027;
+    border-radius: 6px;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.2);
+    padding: 8px 12px;
+    color: #1a1a1a;
+    font-weight: 700;
+    font-size: 12px;
+    cursor: move;
+}
+
+/* 钢琴卷帘 */
+.piano-roll {
+    flex: 1;
+    display: flex;
+    background: #1a1a1a;
+}
+.piano-keys {
+    width: 80px;
+    background: #252525;
+    border-right: 2px solid #1a1a1a;
+    box-shadow: 2px 0 6px rgba(0,0,0,0.3);
+}
+.piano-canvas {
+    flex: 1;
+    background:
+        repeating-linear-gradient(90deg, transparent, transparent 24px, #222 24px, #222 25px),
+        repeating-linear-gradient(0deg, transparent, transparent 11px, #222 11px, #222 12px);
+    position: relative;
+}
+
+/* 右侧检查器 */
+.inspector {
+    width: 300px;
+    background: #252525;
+    border-left: 2px solid #1a1a1a;
+    box-shadow: -2px 0 8px rgba(0,0,0,0.3);
+    overflow-y: auto;
+}
+.inspector-section {
+    border-bottom: 2px solid #1a1a1a;
+    padding: 16px;
+}
+.inspector-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 14px;
+}
+.control-group {
+    margin-bottom: 14px;
+}
+.control-label {
+    font-size: 12px;
+    color: #aaa;
+    margin-bottom: 6px;
+    font-weight: 500;
+}
+.control-input {
+    width: 100%;
+    padding: 10px 12px;
+    background: #2d2d2d;
+    border: 2px solid #3a3a3a;
+    border-radius: 6px;
+    color: #d4d4d4;
+    font-size: 13px;
+    transition: all 0.15s;
+}
+.control-input:focus {
+    outline: none;
+    border-color: #5a7a9a;
+    box-shadow: 0 0 8px rgba(90, 122, 154, 0.3);
+}
+.control-btn {
+    width: 100%;
+    padding: 12px;
+    background: linear-gradient(180deg, #3e3e3e 0%, #343434 100%);
+    border: 2px solid #4a4a4a;
+    border-radius: 6px;
+    color: #d4d4d4;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.control-btn:hover {
+    background: linear-gradient(180deg, #4e4e4e 0%, #444 100%);
+    border-color: #5a5a5a;
+}
+.control-btn.primary {
+    background: linear-gradient(180deg, #4a7aaa 0%, #3a6a9a 100%);
+    border-color: #5a8aba;
+    color: white;
+}
+</style>
+</head>
+<body>
+
+<!-- 顶部工具栏 -->
+<div class="toolbar">
+    <div class="transport">
+        <button class="transport-btn">⏮</button>
+        <button class="transport-btn play">▶</button>
+        <button class="transport-btn record">●</button>
+        <button class="transport-btn">⏹</button>
+    </div>
+    <div class="lcd-display">1 1 1 110</div>
+    <div class="spacer"></div>
+    <div class="tool-btns">
+        <button class="tool-btn active">吸附</button>
+        <button class="tool-btn">循环</button>
+        <button class="tool-btn">节拍器</button>
+    </div>
+</div>
+
+<!-- 主布局 -->
+<div class="main">
+    <div class="track-list">
+        <div class="track-list-header">轨道</div>
+        <div class="tracks">
+            <div class="track-item active">
+                <div class="track-name"><span class="track-icon">🎤</span>南加风情</div>
+                <div class="track-controls">
+                    <button class="track-control-btn">M</button>
+                    <button class="track-control-btn">S</button>
+                    <button class="track-control-btn active">R</button>
+                </div>
+            </div>
+            <div class="track-item">
+                <div class="track-name"><span class="track-icon">🎹</span>钢琴</div>
+                <div class="track-controls">
+                    <button class="track-control-btn">M</button>
+                    <button class="track-control-btn">S</button>
+                    <button class="track-control-btn">R</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="center">
+        <div class="track-view">
+            <div class="ruler">
+                <span style="margin-right: 100px;">1</span>
+                <span style="margin-right: 100px;">2</span>
+                <span style="margin-right: 100px;">3</span>
+            </div>
+            <div class="track-canvas">
+                <div class="midi-region" style="left: 120px; top: 30px; width: 380px; height: 50px;">鼓手 - 流行摇滚</div>
+            </div>
+        </div>
+        <div class="piano-roll">
+            <div class="piano-keys"></div>
+            <div class="piano-canvas"></div>
+        </div>
+    </div>
+    
+    <div class="inspector">
+        <div class="inspector-section">
+            <div class="inspector-title">轨道设置</div>
+            <div class="control-group">
+                <div class="control-label">歌手</div>
+                <select class="control-input"><option>南加风情</option></select>
+            </div>
+        </div>
+        <div class="inspector-section">
+            <div class="inspector-title">合成</div>
+            <div class="control-group">
+                <button class="control-btn primary">开始合成</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>

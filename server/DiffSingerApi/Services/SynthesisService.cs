@@ -29,8 +29,11 @@ public class SynthesisService : IHostedService {
         var basePath = AppContext.BaseDirectory;
         _outputDir = Path.Combine(basePath, "output");
         _uploadsDir = Path.Combine(basePath, "uploads");
-        _voicebanksDir = config.GetValue<string>("VoicebanksPath")
-            ?? Path.Combine(basePath, "voicebanks");
+        var vbPath = config.GetValue<string>("VoicebanksPath");
+        if (!string.IsNullOrEmpty(vbPath))
+            _voicebanksDir = Path.GetFullPath(vbPath, Directory.GetCurrentDirectory());
+        else
+            _voicebanksDir = Path.Combine(basePath, "voicebanks");
         Directory.CreateDirectory(_outputDir);
         Directory.CreateDirectory(_uploadsDir);
         Directory.CreateDirectory(_voicebanksDir);

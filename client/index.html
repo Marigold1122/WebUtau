@@ -15,12 +15,14 @@
     <!-- 顶部菜单栏 -->
     <header class="menubar">
         <div class="menu-items">
-            <span class="menu-item" id="menuNewProject"><i class="fas fa-file"></i> 新建项目</span>
-            <span class="menu-item" id="menuFile"><i class="fas fa-folder-open"></i> 打开 MIDI</span>
+            <div class="menu-dropdown">
+                <span class="menu-item" id="menuFileToggle"><i class="fas fa-file"></i> 文件</span>
+                <div class="menu-dropdown-list" id="menuFileDropdown">
+                    <div class="menu-dropdown-item" id="menuNewProject"><i class="fas fa-file-circle-plus"></i> 新建项目</div>
+                    <div class="menu-dropdown-item" id="menuFile"><i class="fas fa-folder-open"></i> 打开 MIDI</div>
+                </div>
+            </div>
             <input type="file" id="midiFileInput" accept=".mid,.midi" style="display:none">
-            <span class="menu-item">编辑</span>
-            <span class="menu-item">视图</span>
-            <span class="menu-item">项目</span>
         </div>
         <div class="transport-info">
             <span class="bpm-display" id="bpmDisplay">BPM: 120</span>
@@ -85,6 +87,7 @@
                         <i class="fas fa-music"></i> 打开 MIDI 文件以加载轨道
                     </div>
                 </div>
+                <div class="track-header-resize" id="trackHeaderResize"></div>
                 <div class="track-timeline-wrapper">
                     <div class="track-ruler" id="trackRuler"></div>
                     <div class="track-timeline" id="trackTimeline"></div>
@@ -155,15 +158,6 @@
                     <div class="prop-row"><label>歌词</label><input type="text" class="sv-input" id="inspectorLyrics" placeholder="选择音符..."></div>
                     <div class="prop-row"><label>音高</label><input type="text" class="sv-input" id="inspectorPitch" readonly placeholder="-"></div>
                     <div class="prop-row"><label>力度</label><input type="text" class="sv-input" id="inspectorVelocity" readonly placeholder="-"></div>
-                </div>
-                <div class="panel-section">
-                    <h3>声线</h3>
-                    <div class="slider-group">
-                        <div class="slider-row"><label>Tension</label><span class="val" id="tensionVal">50%</span></div>
-                        <input type="range" class="sv-slider" id="tensionSlider" value="50" min="0" max="100">
-                        <div class="slider-row"><label>Breathiness</label><span class="val" id="breathVal">50%</span></div>
-                        <input type="range" class="sv-slider" id="breathSlider" value="50" min="0" max="100">
-                    </div>
                 </div>
                 <div class="panel-section">
                     <h3>合成</h3>

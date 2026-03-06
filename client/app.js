@@ -15,8 +15,9 @@ const DBLCLICK_MS = 400;
 const ZOOM_MIN = 0.15;
 const ZOOM_MAX = 6;
 const ZOOM_STEP = 1.15;
+const UI_ZOOM = 1.25; // CSS body zoom — getBoundingClientRect 返回缩放后坐标，需要除以此值转换回 CSS 像素
 const API_BASE = window.location.origin;
-const TRACK_COLORS = ['#3cc5b2','#e04d7f','#e0b820','#4aad5e','#884de0','#e06a28','#2fafa0','#e04a4a'];
+const TRACK_COLORS = ['#7eb8ff','#e06090','#f0a030','#6bcb77','#a78bfa','#e05555','#50c0c0','#f0c040'];
 const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 
 // ===== 乐器采样配置 =====
@@ -35,16 +36,12 @@ const INSTRUMENT_CONFIGS = {
     },
     violin: {
         baseUrl: './samples/violin/',
-        samples: {
-            'G3': 'LLVln_ArcoVib_G3_p.mp3', 'A3': 'LLVln_ArcoVib_A3_p.mp3',
-            'C4': 'LLVln_ArcoVib_C4_p.mp3', 'E4': 'LLVln_ArcoVib_E4_p.mp3',
-            'G4': 'LLVln_ArcoVib_G4_p.mp3', 'A4': 'LLVln_ArcoVib_A4_p.mp3',
-            'C5': 'LLVln_ArcoVib_C5_p.mp3', 'E5': 'LLVln_ArcoVib_E5_p.mp3',
-            'G5': 'LLVln_ArcoVib_G5_p.mp3', 'A5': 'LLVln_ArcoVib_A5_p.mp3',
-            'C6': 'LLVln_ArcoVib_C6_p.mp3', 'E6': 'LLVln_ArcoVib_E6_p.mp3',
-            'G6': 'LLVln_ArcoVib_G6_p.mp3', 'A6': 'LLVln_ArcoVib_A6_p.mp3',
-            'C7': 'LLVln_ArcoVib_C7_p.mp3',
-        },
+        velocityLayers: [
+            { maxVel: 0.55, suffix: '_p', volume: 3 },
+            { maxVel: 1.00, suffix: '_f', volume: 0 },
+        ],
+        noteKeys: ['G3','A3','C4','E4','G4','A4','C5','E5','G5','A5','C6','E6','G6','A6','C7'],
+        noteFileBase: note => 'LLVln_ArcoVib_' + note,
         release: 0.8,
     },
     guitar: {
@@ -73,23 +70,78 @@ const INSTRUMENT_CONFIGS = {
 // 采样器缓存：{ instrumentId: { sampler, ready } }
 const _samplers = {};
 
-/** 获取指定乐器的采样器（懒加载） */
+/** 获取指定乐器的采样器（懒加载）
+ *  对于有 velocityLayers 的乐器，返回 null 并由 getLayeredSampler 处理。
+ *  普通乐器直接返回单个 Sampler。 */
 function getInstrumentSampler(instrumentId) {
     const id = instrumentId || 'piano';
-    if (_samplers[id]) return _samplers[id].ready ? _samplers[id].sampler : null;
     const cfg = INSTRUMENT_CONFIGS[id];
     if (!cfg || typeof Tone === 'undefined') return null;
+    // 有力度分层的乐器走分层逻辑
+    if (cfg.velocityLayers) {
+        _initLayeredSampler(id, cfg);
+        // 返回默认层（最高力度层）供非力度场景使用
+        const layers = _samplers[id];
+        if (!layers) return null;
+        const last = layers[layers.length - 1];
+        return last && last.ready ? last.sampler : null;
+    }
+    if (_samplers[id]) return _samplers[id].ready ? _samplers[id].sampler : null;
     _samplers[id] = { sampler: null, ready: false };
     _samplers[id].sampler = new Tone.Sampler({
         urls: cfg.samples,
         baseUrl: cfg.baseUrl,
         release: cfg.release || 1.0,
+        volume: cfg.volume || 0,
         onload: () => {
             _samplers[id].ready = true;
             console.log(id + ' sampler loaded');
         },
     }).toDestination();
-    return null; // 首次调用，还在加载
+    return null;
+}
+
+/** 初始化力度分层采样器 */
+function _initLayeredSampler(id, cfg) {
+    if (_samplers[id]) return; // 已初始化
+    const layers = [];
+    for (const layer of cfg.velocityLayers) {
+        const samples = {};
+        for (const note of cfg.noteKeys) {
+            const base = cfg.noteFileBase(note);
+            samples[note] = base + layer.suffix + '.mp3';
+        }
+        const entry = { sampler: null, ready: false, maxVel: layer.maxVel };
+        entry.sampler = new Tone.Sampler({
+            urls: samples,
+            baseUrl: cfg.baseUrl,
+            release: cfg.release || 1.0,
+            volume: layer.volume || 0,
+            onload: () => {
+                entry.ready = true;
+                console.log(id + ' layer ' + layer.suffix + ' loaded');
+            },
+        }).toDestination();
+        layers.push(entry);
+    }
+    _samplers[id] = layers;
+}
+
+/** 根据力度获取合适的采样器（力度分层乐器） */
+function getSamplerForVelocity(instrumentId, velocity) {
+    const id = instrumentId || 'piano';
+    const cfg = INSTRUMENT_CONFIGS[id];
+    if (!cfg || typeof Tone === 'undefined') return null;
+    if (!cfg.velocityLayers) return getInstrumentSampler(id);
+    _initLayeredSampler(id, cfg);
+    const layers = _samplers[id];
+    if (!layers) return null;
+    const vel = velocity ?? 0.8;
+    for (const layer of layers) {
+        if (vel <= layer.maxVel) return layer.ready ? layer.sampler : null;
+    }
+    const last = layers[layers.length - 1];
+    return last && last.ready ? last.sampler : null;
 }
 
 
@@ -497,7 +549,6 @@ function cacheDom() {
         'canvasStack','canvasGrid','canvasNotes','canvasOverlay',
         'playhead',
         'inspectorLyrics','inspectorPitch','inspectorVelocity',
-        'tensionSlider','tensionVal','breathSlider','breathVal',
         'voicebankSelect','btnSynthesize',
         'synthProgress','progressFill','progressText','synthError',
         'resultSection','btnDownload','btnExportDry',
@@ -854,11 +905,11 @@ function drawSingleNote(c, note, isOverlap) {
     c.roundRect(x, y, w, h, NOTE_RADIUS);
     if (playing) {
         // 播放态：高亮白边 + 增亮填充
-        c.fillStyle = selected ? '#7df0e6' : lightenColor(note.color || '#4caf50', 50);
+        c.fillStyle = selected ? '#a8d4ff' : lightenColor(note.color || '#4caf50', 50);
         c.strokeStyle = '#ffffff';
         c.lineWidth = 1.5;
     } else if (selected) {
-        c.fillStyle = '#5bead6';
+        c.fillStyle = '#7eb8ff';
         c.strokeStyle = '#ffffff';
         c.lineWidth = 1;
     } else if (isOverlap) {
@@ -1110,7 +1161,7 @@ function drawOverlay() {
         const w = Math.abs(state.dragCurrentX - state.dragStartX);
         const h = Math.abs(state.dragCurrentY - state.dragStartY);
         c.fillStyle = 'rgba(91,234,214,0.1)';
-        c.strokeStyle = '#5bead6';
+        c.strokeStyle = '#7eb8ff';
         c.lineWidth = 1;
         c.fillRect(x, y, w, h);
         c.strokeRect(x + 0.5, y + 0.5, w, h);
@@ -1118,7 +1169,7 @@ function drawOverlay() {
     if (state.tool === 'pencil' && state.ghostNote) {
         const gn = state.ghostNote;
         c.fillStyle = 'rgba(91,234,214,0.3)';
-        c.strokeStyle = '#5bead6';
+        c.strokeStyle = '#7eb8ff';
         c.setLineDash([4, 4]);
         c.lineWidth = 1;
         c.beginPath();
@@ -1178,11 +1229,11 @@ function hitTest(cx, cy) {
 function canvasCoords(e) {
     const rect = dom.gridScrollContainer.getBoundingClientRect();
     return {
-        x: e.clientX - rect.left + dom.gridScrollContainer.scrollLeft,
+        x: (e.clientX - rect.left) / UI_ZOOM + dom.gridScrollContainer.scrollLeft,
         // canvas-stack 在文档流中位于 ruler (20px) 之后，
         // 而 prepareCanvas 的 CSS transform 又加了 RULER_HEIGHT，
         // 所以需要减去 2 * RULER_HEIGHT 才能正确映射到内容坐标
-        y: e.clientY - rect.top + dom.gridScrollContainer.scrollTop - 2 * RULER_HEIGHT
+        y: (e.clientY - rect.top) / UI_ZOOM + dom.gridScrollContainer.scrollTop - 2 * RULER_HEIGHT
     };
 }
 
@@ -2088,7 +2139,7 @@ function setZoom(newZoom, pivotClientX) {
     let mouseXInContent, mouseXInView;
     if (pivotClientX !== undefined) {
         const rect = ac.getBoundingClientRect();
-        mouseXInView = pivotClientX - rect.left;
+        mouseXInView = (pivotClientX - rect.left) / UI_ZOOM;
         mouseXInContent = mouseXInView + state.scrollX;
     } else {
         mouseXInView = vw / 2;
@@ -3907,7 +3958,7 @@ function tickPianoPlayback(currentTimeSec) {
         const n = _pianoQueue.notes[_pianoQueue.idx];
         if (n.startSec > targetTime) break;
 
-        const sampler = getInstrumentSampler(n.instrumentId);
+        const sampler = getSamplerForVelocity(n.instrumentId, n.baseVolume);
         if (sampler) {
             const noteName = midiNoteName(n.midi);
             const delay = Math.max(0, n.startSec - currentTimeSec);
@@ -4016,12 +4067,13 @@ function onMidiMessage(event) {
 }
 
 function handleMidiNoteOn(midi, velocity) {
-    // 音频预览：始终发声
+    // 音频预览：始终发声，按力度选择采样层
     const track = state.tracks.find(t => t.id === state.activeTrackId);
     const instrId = (track && track.instrumentId) || 'piano';
-    const sampler = getInstrumentSampler(instrId);
+    const vel01 = velocity / 127;
+    const sampler = getSamplerForVelocity(instrId, vel01);
     if (sampler) {
-        sampler.triggerAttack(midiNoteName(midi), Tone.now(), velocity / 127);
+        sampler.triggerAttack(midiNoteName(midi), Tone.now(), vel01);
     }
     // 录制模式 + 播放中 → 记录起始位置
     if (state.midiRecording && state.playing) {
@@ -4034,9 +4086,15 @@ function handleMidiNoteOff(midi) {
     // 停止音频预览
     const track = state.tracks.find(t => t.id === state.activeTrackId);
     const instrId = (track && track.instrumentId) || 'piano';
-    const sampler = getInstrumentSampler(instrId);
-    if (sampler) {
-        sampler.triggerRelease(midiNoteName(midi), Tone.now());
+    // 释放所有力度层
+    const cfg = INSTRUMENT_CONFIGS[instrId || 'piano'];
+    if (cfg && cfg.velocityLayers && _samplers[instrId]) {
+        for (const layer of _samplers[instrId]) {
+            if (layer.ready) layer.sampler.triggerRelease(midiNoteName(midi), Tone.now());
+        }
+    } else {
+        const sampler = getInstrumentSampler(instrId);
+        if (sampler) sampler.triggerRelease(midiNoteName(midi), Tone.now());
     }
     // 结束录制中的音符
     if (state._activeMidiNotes.has(midi)) {
@@ -4074,11 +4132,36 @@ function finalizeMidiNotes() {
 // ===== SECTION 24: 面板拖拽 =====
 function initPanelResizers() {
     setupResizer(dom.trackResizer, dom.trackView, 60, 400);
+    setupTrackHeaderResizer();
+}
+
+function setupTrackHeaderResizer() {
+    const handle = document.getElementById('trackHeaderResize');
+    const col = document.getElementById('trackHeaderCol');
+    if (!handle || !col) return;
+    let startX, startW;
+    const onMove = e => {
+        const newW = clamp(startW + (e.clientX - startX) / UI_ZOOM, 120, 400);
+        col.style.width = newW + 'px';
+    };
+    const onUp = () => {
+        handle.classList.remove('dragging');
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+    };
+    handle.addEventListener('mousedown', e => {
+        e.preventDefault();
+        startX = e.clientX;
+        startW = col.offsetWidth;
+        handle.classList.add('dragging');
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    });
 }
 function setupResizer(handle, panel, min, max) {
     let startY, startH;
     const onMove = e => {
-        const newH = clamp(startH + e.clientY - startY, min, max);
+        const newH = clamp(startH + (e.clientY - startY) / UI_ZOOM, min, max);
         panel.style.height = newH + 'px';
         panel.style.flex = '0 0 auto';
         resizeCanvases();
@@ -4096,7 +4179,7 @@ function setupResizer(handle, panel, min, max) {
         if (dom.pianoRoll.classList.contains('hidden')) return;
         e.preventDefault();
         startY = e.clientY;
-        startH = panel.getBoundingClientRect().height;
+        startH = panel.offsetHeight;
         handle.classList.add('active');
         document.addEventListener('mousemove', onMove);
         document.addEventListener('mouseup', onUp);
@@ -4105,6 +4188,18 @@ function setupResizer(handle, panel, min, max) {
 
 // ===== SECTION 26: 事件绑定 =====
 function bindEvents() {
+    // 文件下拉菜单
+    const fileToggle = document.getElementById('menuFileToggle');
+    const fileDropdown = fileToggle?.closest('.menu-dropdown');
+    if (fileToggle && fileDropdown) {
+        fileToggle.addEventListener('click', e => {
+            e.stopPropagation();
+            fileDropdown.classList.toggle('open');
+        });
+        document.addEventListener('click', () => fileDropdown.classList.remove('open'));
+        fileDropdown.querySelector('.menu-dropdown-list')?.addEventListener('click', () => fileDropdown.classList.remove('open'));
+    }
+
     dom.menuFile.addEventListener('click', () => dom.midiFileInput.click());
     dom.midiFileInput.addEventListener('change', e => { if (e.target.files[0]) loadMidiFile(e.target.files[0]); });
 
@@ -4135,7 +4230,7 @@ function bindEvents() {
     dom.gridScrollContainer.addEventListener('mousedown', e => {
         if (e.target.closest('.ruler')) {
             const rect = dom.gridScrollContainer.getBoundingClientRect();
-            const x = e.clientX - rect.left + dom.gridScrollContainer.scrollLeft;
+            const x = (e.clientX - rect.left) / UI_ZOOM + dom.gridScrollContainer.scrollLeft;
             seekTo(tickToTime(xToTick(x)));
             return;
         }
@@ -4161,8 +4256,8 @@ function bindEvents() {
 
     document.addEventListener('mousemove', e => {
         if (state.dragType === 'pan') {
-            dom.gridScrollContainer.scrollLeft = state._panScrollLeft - (e.clientX - state.dragStartX);
-            dom.gridScrollContainer.scrollTop = state._panScrollTop - (e.clientY - state.dragStartY);
+            dom.gridScrollContainer.scrollLeft = state._panScrollLeft - (e.clientX - state.dragStartX) / UI_ZOOM;
+            dom.gridScrollContainer.scrollTop = state._panScrollTop - (e.clientY - state.dragStartY) / UI_ZOOM;
             syncPianoScroll();
             return;
         }
@@ -4250,7 +4345,7 @@ function bindEvents() {
     dom.trackTimeline.addEventListener('click', (e) => {
         if (e.detail >= 2) return;
         const rect = dom.trackTimeline.getBoundingClientRect();
-        const x = e.clientX - rect.left + state.scrollX;
+        const x = (e.clientX - rect.left) / UI_ZOOM + state.scrollX;
         const tick = xToTick(x);
         const time = tick / state.ppq * (60 / state.bpm);
         seekTo(Math.max(0, time));
@@ -4268,9 +4363,6 @@ function bindEvents() {
             }
         }
     });
-
-    dom.tensionSlider.addEventListener('input', () => { dom.tensionVal.textContent = dom.tensionSlider.value + '%'; });
-    dom.breathSlider.addEventListener('input', () => { dom.breathVal.textContent = dom.breathSlider.value + '%'; });
 
     // 人声混响控件
     const vrToggle = document.getElementById('vocalReverbToggle');
@@ -4374,7 +4466,7 @@ function bindEvents() {
         if (!phDragging) return;
         const ac = getActiveScrollContainer();
         const rect = ac.getBoundingClientRect();
-        const x = e.clientX - rect.left + state.scrollX;
+        const x = (e.clientX - rect.left) / UI_ZOOM + state.scrollX;
         seekTo(tickToTime(xToTick(Math.max(0, x))));
     });
     document.addEventListener('mouseup', () => { phDragging = false; });
