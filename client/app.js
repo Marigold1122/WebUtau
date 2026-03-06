@@ -17,7 +17,8 @@ const ZOOM_MAX = 6;
 const ZOOM_STEP = 1.15;
 const UI_ZOOM = 1.25; // CSS body zoom — getBoundingClientRect 返回缩放后坐标，需要除以此值转换回 CSS 像素
 const API_BASE = window.location.origin;
-const TRACK_COLORS = ['#7eb8ff','#e06090','#f0a030','#6bcb77','#a78bfa','#e05555','#50c0c0','#f0c040'];
+const TRACK_COLORS = ['#4a90d9','#e06090','#e8a735','#5ec455','#a78bfa','#e04040','#50c0c0','#f0c040'];
+const TRACK_ROW_H = 54; // 必须与 CSS .track-item height 一致
 const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 
 // ===== 乐器采样配置 =====
@@ -905,11 +906,11 @@ function drawSingleNote(c, note, isOverlap) {
     c.roundRect(x, y, w, h, NOTE_RADIUS);
     if (playing) {
         // 播放态：高亮白边 + 增亮填充
-        c.fillStyle = selected ? '#a8d4ff' : lightenColor(note.color || '#4caf50', 50);
+        c.fillStyle = selected ? '#80b8e8' : lightenColor(note.color || '#4caf50', 50);
         c.strokeStyle = '#ffffff';
         c.lineWidth = 1.5;
     } else if (selected) {
-        c.fillStyle = '#7eb8ff';
+        c.fillStyle = '#4a90d9';
         c.strokeStyle = '#ffffff';
         c.lineWidth = 1;
     } else if (isOverlap) {
@@ -1161,7 +1162,7 @@ function drawOverlay() {
         const w = Math.abs(state.dragCurrentX - state.dragStartX);
         const h = Math.abs(state.dragCurrentY - state.dragStartY);
         c.fillStyle = 'rgba(91,234,214,0.1)';
-        c.strokeStyle = '#7eb8ff';
+        c.strokeStyle = '#4a90d9';
         c.lineWidth = 1;
         c.fillRect(x, y, w, h);
         c.strokeRect(x + 0.5, y + 0.5, w, h);
@@ -1169,7 +1170,7 @@ function drawOverlay() {
     if (state.tool === 'pencil' && state.ghostNote) {
         const gn = state.ghostNote;
         c.fillStyle = 'rgba(91,234,214,0.3)';
-        c.strokeStyle = '#7eb8ff';
+        c.strokeStyle = '#4a90d9';
         c.setLineDash([4, 4]);
         c.lineWidth = 1;
         c.beginPath();
@@ -2150,7 +2151,7 @@ function setZoom(newZoom, pivotClientX) {
     state.zoom = newZoom;
     mutateZoom();                                       // 同步重建 DOM
     mutateScrollX(mouseXInContent * ratio - mouseXInView); // 用新 scrollX 对齐锚点
-    dom.zoomLevel.textContent = Math.round(state.zoom * 100) + '%';
+    if (dom.zoomLevel) dom.zoomLevel.textContent = Math.round(state.zoom * 100) + '%';
 }
 
 function startMiddlePan(e) {
@@ -3021,7 +3022,7 @@ function renderTrackPanel() {
             iconClass = 'instrument';
             iconHtml = '<i class="fas fa-music"></i>';
         } else {
-            iconHtml = '<i class="fas fa-circle" style="font-size:6px"></i>';
+            iconHtml = '<i class="fas fa-plus" style="font-size:9px"></i>';
         }
 
         item.innerHTML = `
@@ -3090,7 +3091,7 @@ function renderTrackTimeline() {
         maxTick = Math.max(maxTick, last + 16 * state.ppq);
     }
     const totalWidth = Math.ceil(tickToX(maxTick));
-    const totalHeight = Math.max(state.tracks.length * 50, 120);
+    const totalHeight = Math.max(state.tracks.length * TRACK_ROW_H, 120);
 
     // 撑开滚动区域的占位容器
     const spacer = document.createElement('div');
@@ -3100,8 +3101,8 @@ function renderTrackTimeline() {
 
     state.tracks.forEach((track, i) => {
         const notes = state.notes.filter(n => n.trackId === track.id);
-        const blockTop = i * 50 + 2;
-        const blockHeight = 46;
+        const blockTop = i * TRACK_ROW_H + 2;
+        const blockHeight = TRACK_ROW_H - 4;
 
         // 轨道行背景
         const row = document.createElement('div');
@@ -4223,8 +4224,8 @@ function bindEvents() {
     dom.btnPrev.addEventListener('click', () => seekTo(state.playheadTime - tickToTime(state.ppq * 4)));
     dom.btnNext.addEventListener('click', () => seekTo(state.playheadTime + tickToTime(state.ppq * 4)));
 
-    dom.btnZoomIn.addEventListener('click', () => setZoom(state.zoom * ZOOM_STEP));
-    dom.btnZoomOut.addEventListener('click', () => setZoom(state.zoom / ZOOM_STEP));
+    if (dom.btnZoomIn) dom.btnZoomIn.addEventListener('click', () => setZoom(state.zoom * ZOOM_STEP));
+    if (dom.btnZoomOut) dom.btnZoomOut.addEventListener('click', () => setZoom(state.zoom / ZOOM_STEP));
 
     // Canvas 区域鼠标事件
     dom.gridScrollContainer.addEventListener('mousedown', e => {
@@ -4306,7 +4307,8 @@ function bindEvents() {
         }
     });
 
-    // timeline 滚动 → 更新 state.scrollX，同步 grid + ruler
+    // timeline 滚动 → 更新 state.scrollX，同步 grid + ruler + header col
+    let _vScrollSyncing = false;
     dom.trackTimeline.addEventListener('scroll', () => {
         if (!_scrollSyncing) {
             mutateScrollX(dom.trackTimeline.scrollLeft);
@@ -4316,8 +4318,23 @@ function bindEvents() {
                 requestRedraw('all');
             }
         }
+        // 垂直滚动同步 → header col
+        if (!_vScrollSyncing) {
+            _vScrollSyncing = true;
+            dom.trackHeaderCol.scrollTop = dom.trackTimeline.scrollTop;
+            _vScrollSyncing = false;
+        }
         if (state.playing && !state._autoScrolling) {
             state._autoFollow = false;
+        }
+    });
+
+    // header col 垂直滚动 → 同步到 timeline
+    dom.trackHeaderCol.addEventListener('scroll', () => {
+        if (!_vScrollSyncing) {
+            _vScrollSyncing = true;
+            dom.trackTimeline.scrollTop = dom.trackHeaderCol.scrollTop;
+            _vScrollSyncing = false;
         }
     });
 

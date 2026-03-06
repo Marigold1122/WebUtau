@@ -12,27 +12,50 @@
     <div id="bgLayer" class="bg-layer"></div>
     <input type="file" id="bgFileInput" accept="image/*" style="display:none">
 
-    <!-- 顶部菜单栏 -->
+    <!-- 顶部菜单栏（含工具栏） -->
     <header class="menubar">
-        <div class="menu-items">
-            <div class="menu-dropdown">
-                <span class="menu-item" id="menuFileToggle"><i class="fas fa-file"></i> 文件</span>
-                <div class="menu-dropdown-list" id="menuFileDropdown">
-                    <div class="menu-dropdown-item" id="menuNewProject"><i class="fas fa-file-circle-plus"></i> 新建项目</div>
-                    <div class="menu-dropdown-item" id="menuFile"><i class="fas fa-folder-open"></i> 打开 MIDI</div>
+        <div class="menubar-left">
+            <div class="menu-items">
+                <div class="menu-dropdown">
+                    <span class="menu-item" id="menuFileToggle"><i class="fas fa-file"></i></span>
+                    <div class="menu-dropdown-list" id="menuFileDropdown">
+                        <div class="menu-dropdown-item" id="menuNewProject"><i class="fas fa-file-circle-plus"></i> 新建项目</div>
+                        <div class="menu-dropdown-item" id="menuFile"><i class="fas fa-folder-open"></i> 打开 MIDI</div>
+                    </div>
                 </div>
+                <input type="file" id="midiFileInput" accept=".mid,.midi" style="display:none">
             </div>
-            <input type="file" id="midiFileInput" accept=".mid,.midi" style="display:none">
+            <span class="toolbar-divider"></span>
+            <div class="btn-group">
+                <span class="tool-btn active" data-tool="pointer" title="指针 (V)"><i class="fas fa-mouse-pointer"></i></span>
+                <span class="tool-btn" data-tool="pencil" title="铅笔 (B)"><i class="fas fa-pencil-alt"></i></span>
+                <span class="tool-btn" data-tool="eraser" title="橡皮擦 (E)"><i class="fas fa-eraser"></i></span>
+                <span class="tool-btn" data-tool="knife" title="切刀 (X)"><i class="fas fa-cut"></i></span>
+                <span class="tool-btn" data-tool="pitchpen" title="音高画笔 (P)"><i class="fas fa-wave-square"></i></span>
+            </div>
+            <span class="toolbar-divider"></span>
+            <span class="grid-snap" id="gridSnapDisplay">SNAP: 1/16</span>
         </div>
-        <div class="transport-info">
-            <span class="bpm-display" id="bpmDisplay">BPM: 120</span>
-            <span class="time-display" id="timeDisplay">00:00.000</span>
-            <span class="render-status" id="renderStatus"></span>
+        <div class="menubar-center">
+            <div class="tools-center">
+                <i class="fas fa-step-backward transport-btn" id="btnPrev" title="后退"></i>
+                <i class="fas fa-play transport-btn" id="btnPlay" title="播放 (Space)"></i>
+                <i class="fas fa-stop transport-btn" id="btnStop" title="停止 (Ctrl+Space)"></i>
+                <i class="fas fa-step-forward transport-btn" id="btnNext" title="前进"></i>
+                <i class="fas fa-circle transport-btn record-btn" id="btnRecord" title="MIDI 录制 (R)"></i>
+            </div>
+            <div class="transport-info">
+                <span class="bpm-display" id="bpmDisplay">BPM: 120</span>
+                <span class="time-display" id="timeDisplay">00:00.000</span>
+                <span class="render-status" id="renderStatus"></span>
+            </div>
         </div>
-        <div class="window-controls">
-            <span class="win-btn"><i class="fas fa-minus"></i></span>
-            <span class="win-btn"><i class="fas fa-expand"></i></span>
-            <span class="win-btn close"><i class="fas fa-times"></i></span>
+        <div class="menubar-right">
+            <div class="window-controls">
+                <span class="win-btn"><i class="fas fa-minus"></i></span>
+                <span class="win-btn"><i class="fas fa-expand"></i></span>
+                <span class="win-btn close"><i class="fas fa-times"></i></span>
+            </div>
         </div>
     </header>
 
@@ -95,33 +118,6 @@
             </section>
 
             <div class="panel-resizer" id="trackResizer"></div>
-
-            <!-- 工具栏 -->
-            <div class="toolbar-strip">
-                <div class="tools-left">
-                    <div class="btn-group">
-                        <span class="tool-btn active" data-tool="pointer" title="指针 (V)"><i class="fas fa-mouse-pointer"></i></span>
-                        <span class="tool-btn" data-tool="pencil" title="铅笔 (B)"><i class="fas fa-pencil-alt"></i></span>
-                        <span class="tool-btn" data-tool="eraser" title="橡皮擦 (E)"><i class="fas fa-eraser"></i></span>
-                        <span class="tool-btn" data-tool="knife" title="切刀 (X)"><i class="fas fa-cut"></i></span>
-                        <span class="tool-btn" data-tool="pitchpen" title="音高画笔 (P)"><i class="fas fa-wave-square"></i></span>
-                    </div>
-                    <span class="toolbar-divider"></span>
-                    <span class="grid-snap" id="gridSnapDisplay">SNAP: 1/16</span>
-                </div>
-                <div class="tools-center">
-                    <i class="fas fa-step-backward transport-btn" id="btnPrev" title="后退"></i>
-                    <i class="fas fa-play transport-btn" id="btnPlay" title="播放 (Space)"></i>
-                    <i class="fas fa-stop transport-btn" id="btnStop" title="停止 (Ctrl+Space)"></i>
-                    <i class="fas fa-step-forward transport-btn" id="btnNext" title="前进"></i>
-                    <i class="fas fa-circle transport-btn record-btn" id="btnRecord" title="MIDI 录制 (R)"></i>
-                </div>
-                <div class="tools-right">
-                    <i class="fas fa-search-minus zoom-btn" id="btnZoomOut"></i>
-                    <span class="zoom-level" id="zoomLevel">100%</span>
-                    <i class="fas fa-search-plus zoom-btn" id="btnZoomIn"></i>
-                </div>
-            </div>
 
             <!-- 钢琴卷帘窗 -->
             <section class="piano-roll hidden" id="pianoRoll">

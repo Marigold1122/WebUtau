@@ -1,27 +1,27 @@
-/* ===== Melody Singer v3 — Minimalist Dark Theme ===== */
+/* ===== Melody Singer v3 — Logic Pro Theme ===== */
 
 /* === 1. CSS 变量 === */
 :root {
-    --bg-dark: #0c0c0e;
-    --bg-panel: #131316;
-    --bg-lighter: #1f1f24;
-    --bg-hover: #28282e;
-    --border-color: #1e1e24;
-    --border-light: #2a2a32;
-    --accent-color: #7eb8ff;
-    --accent-dim: #162640;
-    --accent-mid: rgba(126,184,255,0.18);
-    --green: #6bcb77;
-    --orange: #f0a030;
-    --red: #e05555;
-    --text-main: #cccccc;
-    --text-muted: #606068;
-    --text-faint: #3a3a42;
-    --key-white: #d0d0d0;
-    --key-black: #151515;
-    --grid-line: #1a1a1e;
-    --radius: 8px;
-    --radius-sm: 5px;
+    --bg-dark: #1c1d1d;
+    --bg-panel: #2a2b2b;
+    --bg-lighter: #383939;
+    --bg-hover: #434444;
+    --border-color: #353636;
+    --border-light: #484949;
+    --accent-color: #4a90d9;
+    --accent-dim: #1e3250;
+    --accent-mid: rgba(74,144,217,0.18);
+    --green: #5ec455;
+    --orange: #e8a735;
+    --red: #e04040;
+    --text-main: #d2d3d3;
+    --text-muted: #a5a6a6;
+    --text-faint: #5a5b5b;
+    --key-white: #c8c9c9;
+    --key-black: #1c1d1d;
+    --grid-line: #2c2d2d;
+    --radius: 6px;
+    --radius-sm: 4px;
 }
 
 /* === 2. 基础重置 === */
@@ -52,20 +52,19 @@ html, body {
 
 /* 背景激活时 body 透明，面板使用半透明 */
 body.has-bg { background: transparent; }
-body.has-bg .menubar { background: rgba(12,12,14, var(--panel-alpha, 0.85)); }
+body.has-bg .menubar { background: rgba(28,29,29, var(--panel-alpha, 0.85)); }
 body.has-bg .app-container { background: transparent; }
-body.has-bg .track-view { background: rgba(19,19,22, var(--panel-alpha, 0.85)); }
-body.has-bg .track-header-col { background: rgba(19,19,22, var(--panel-alpha, 0.85)); }
-body.has-bg .track-timeline { background: rgba(12,12,14, var(--panel-alpha, 0.85)); }
-body.has-bg .toolbar-strip { background: rgba(19,19,22, var(--panel-alpha, 0.85)); }
-body.has-bg .piano-roll { background: rgba(12,12,14, var(--panel-alpha, 0.85)); }
-body.has-bg .piano-roll-header { background: rgba(19,19,22, var(--panel-alpha, 0.85)); }
-body.has-bg .piano-keys { background: rgba(19,19,22, var(--panel-alpha, 0.85)); }
-body.has-bg .inspector { background: rgba(19,19,22, var(--panel-alpha, 0.85)); }
-body.has-bg .side-toolbar { background: rgba(12,12,14, var(--panel-alpha, 0.85)); }
-body.has-bg .track-inspector { background: rgba(19,19,22, var(--panel-alpha, 0.85)); }
-body.has-bg .ruler { background: rgba(19,19,22, var(--panel-alpha, 0.85)); }
-body.has-bg .track-ruler { background: rgba(19,19,22, var(--panel-alpha, 0.85)); }
+body.has-bg .track-view { background: rgba(42,43,43, var(--panel-alpha, 0.85)); }
+body.has-bg .track-header-col { background: rgba(42,43,43, var(--panel-alpha, 0.85)); }
+body.has-bg .track-timeline { background: rgba(28,29,29, var(--panel-alpha, 0.85)); }
+body.has-bg .piano-roll { background: rgba(28,29,29, var(--panel-alpha, 0.85)); }
+body.has-bg .piano-roll-header { background: rgba(42,43,43, var(--panel-alpha, 0.85)); }
+body.has-bg .piano-keys { background: rgba(42,43,43, var(--panel-alpha, 0.85)); }
+body.has-bg .inspector { background: rgba(42,43,43, var(--panel-alpha, 0.85)); }
+body.has-bg .side-toolbar { background: rgba(28,29,29, var(--panel-alpha, 0.85)); }
+body.has-bg .track-inspector { background: rgba(42,43,43, var(--panel-alpha, 0.85)); }
+body.has-bg .ruler { background: rgba(42,43,43, var(--panel-alpha, 0.85)); }
+body.has-bg .track-ruler { background: rgba(42,43,43, var(--panel-alpha, 0.85)); }
 
 /* 设置弹窗：背景预览行 */
 .bg-preview-row {
@@ -90,10 +89,15 @@ body { display: flex; flex-direction: column; zoom: 1.25; }
     display: flex; align-items: center; justify-content: space-between;
     background: var(--bg-panel);
     border-bottom: 1px solid var(--border-color);
-    padding: 0 16px;
+    padding: 0 12px;
     -webkit-app-region: drag;
 }
-.menu-items { display: flex; gap: 2px; -webkit-app-region: no-drag; }
+.menubar-left, .menubar-center, .menubar-right {
+    display: flex; align-items: center; gap: 6px;
+    -webkit-app-region: no-drag;
+}
+.menubar-center { gap: 10px; }
+.menu-items { display: flex; gap: 2px; }
 .menu-item {
     padding: 5px 12px; border-radius: var(--radius); cursor: pointer;
     color: var(--text-muted); font-size: 12px;
@@ -134,16 +138,16 @@ body { display: flex; flex-direction: column; zoom: 1.25; }
 }
 .time-display {
     font-family: 'Consolas', 'JetBrains Mono', monospace;
-    color: #eee; min-width: 80px; text-align: right;
+    color: #eef0f0; min-width: 80px; text-align: right;
     font-size: 12px;
 }
 .render-status { font-size: 10px; padding: 2px 10px; border-radius: 10px; margin-left: 4px; white-space: nowrap; }
 .render-status.idle { display: none; }
-.render-status.rendering { color: #1e1e1e; background: #ffd93d; animation: render-pulse 1s ease-in-out infinite; }
-.render-status.ready { color: #1e1e1e; background: var(--green); }
+.render-status.rendering { color: #1e1f1f; background: #ffd93d; animation: render-pulse 1s ease-in-out infinite; }
+.render-status.ready { color: #1e1f1f; background: var(--green); }
 .render-status.dirty { color: var(--text-muted); background: var(--bg-lighter); }
 @keyframes render-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
-.window-controls { display: flex; gap: 4px; -webkit-app-region: no-drag; }
+.window-controls { display: flex; gap: 4px; }
 .win-btn {
     width: 28px; height: 22px;
     display: flex; align-items: center; justify-content: center;
@@ -172,7 +176,9 @@ body { display: flex; flex-direction: column; zoom: 1.25; }
     overflow-y: auto;
     background: var(--bg-panel);
     padding-top: 22px;
+    scrollbar-width: none;
 }
+.track-header-col::-webkit-scrollbar { display: none; }
 .track-header-resize {
     width: 6px; flex-shrink: 0;
     cursor: col-resize; background: transparent;
@@ -193,10 +199,10 @@ body { display: flex; flex-direction: column; zoom: 1.25; }
 }
 .track-ruler-inner { position: relative; height: 100%; }
 .track-ruler .ruler-line { position: absolute; bottom: 0; width: 1px; pointer-events: none; }
-.track-ruler .ruler-line.bar { height: 20px; background: #444; }
-.track-ruler .ruler-line.beat { height: 10px; background: rgba(255,255,255,0.08); }
+.track-ruler .ruler-line.bar { height: 20px; background: #565757; }
+.track-ruler .ruler-line.beat { height: 10px; background: rgba(255,255,255,0.1); }
 .track-ruler .ruler-mark { position: absolute; top: 2px; font-size: 9px; color: var(--text-muted); pointer-events: none; }
-.track-ruler .ruler-mark.bar { color: #aaa; font-weight: 600; }
+.track-ruler .ruler-mark.bar { color: #bbbcbc; font-weight: 600; }
 .track-timeline {
     flex: 1; overflow: auto;
     position: relative; background: var(--bg-dark);
@@ -222,24 +228,24 @@ body { display: flex; flex-direction: column; zoom: 1.25; }
 .track-add-btn:hover { background: var(--bg-lighter); color: var(--text-main); }
 .track-color-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .track-name {
-    flex: 1; font-size: 11px; font-weight: 500; color: #ddd;
+    flex: 1; font-size: 11px; font-weight: 500; color: #dddede;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .track-channel { font-size: 9px; color: var(--text-muted); margin-right: 4px; }
 .track-volume {
     width: 50px; height: 4px; -webkit-appearance: none; appearance: none;
-    background: #2a2a2a; border-radius: 2px; outline: none; cursor: pointer;
+    background: #383939; border-radius: 2px; outline: none; cursor: pointer;
     flex-shrink: 0;
 }
 .track-volume::-webkit-slider-thumb {
     -webkit-appearance: none; width: 10px; height: 10px;
-    background: #bbb; border-radius: 50%; cursor: pointer;
+    background: #bbbcbc; border-radius: 50%; cursor: pointer;
     transition: background 0.15s;
 }
 .track-volume::-webkit-slider-thumb:hover { background: var(--accent-color); }
 .track-volume::-moz-range-thumb {
     width: 10px; height: 10px; border: none;
-    background: #bbb; border-radius: 50%; cursor: pointer;
+    background: #bbbcbc; border-radius: 50%; cursor: pointer;
 }
 .track-btns { display: flex; gap: 3px; }
 .track-btn {
@@ -249,7 +255,7 @@ body { display: flex; flex-direction: column; zoom: 1.25; }
     display: flex; align-items: center; justify-content: center;
     transition: all 0.15s;
 }
-.track-btn:hover { background: #333; color: #ddd; }
+.track-btn:hover { background: #4a4b4b; color: #dddede; }
 .track-btn.mute-active { background: var(--red); color: white; }
 .track-btn.solo-active { background: var(--orange); color: black; }
 .track-block {
@@ -266,7 +272,7 @@ body { display: flex; flex-direction: column; zoom: 1.25; }
     background: var(--accent-color);
     z-index: 10;
     pointer-events: none;
-    box-shadow: 0 0 8px rgba(126,184,255,0.3);
+    box-shadow: 0 0 8px rgba(74,144,217,0.3);
 }
 
 /* === 6b. 左侧轨道配置面板 === */
@@ -284,7 +290,7 @@ body { display: flex; flex-direction: column; zoom: 1.25; }
 }
 .track-inspector-header h3 {
     margin: 0; font-size: 13px; font-weight: 600;
-    color: #eee;
+    color: #eef0f0;
 }
 .track-inspector-close {
     color: var(--text-muted); cursor: pointer; font-size: 12px;
@@ -307,7 +313,7 @@ body { display: flex; flex-direction: column; zoom: 1.25; }
     color: var(--accent-color); font-weight: 600;
 }
 .renderer-option:has(input:checked) {
-    background: rgba(126, 184, 255, 0.08);
+    background: rgba(74, 144, 217, 0.08);
     border-left: 3px solid var(--accent-color);
 }
 .renderer-label { display: flex; align-items: center; gap: 8px; }
@@ -323,7 +329,7 @@ body { display: flex; flex-direction: column; zoom: 1.25; }
 }
 .voicebank-item:hover { background: var(--bg-lighter); color: var(--text-main); }
 .voicebank-item.selected {
-    background: rgba(126, 184, 255, 0.08);
+    background: rgba(74, 144, 217, 0.08);
     color: var(--accent-color);
     border-left: 3px solid var(--accent-color);
     font-weight: 600;
@@ -341,7 +347,7 @@ body { display: flex; flex-direction: column; zoom: 1.25; }
 }
 .track-renderer-icon.vocal {
     border-color: var(--accent-color); color: var(--accent-color);
-    background: rgba(126, 184, 255, 0.1);
+    background: rgba(74, 144, 217, 0.1);
 }
 .track-renderer-icon.instrument {
     border-color: var(--orange); color: var(--orange);
@@ -363,15 +369,14 @@ body { display: flex; flex-direction: column; zoom: 1.25; }
     background: var(--accent-color); opacity: 0.4;
 }
 
-/* === 8. 工具栏 === */
-.toolbar-strip {
-    height: 34px; flex-shrink: 0;
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 0 12px;
-    background: var(--bg-panel);
-    border-bottom: 1px solid var(--border-color);
+/* === 8. 工具栏（已合并到菜单栏） === */
+.tools-center {
+    display: flex; align-items: center; gap: 2px;
+    background: var(--bg-dark);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 2px 6px;
 }
-.tools-left, .tools-center, .tools-right { display: flex; align-items: center; gap: 6px; }
 .btn-group { display: flex; border-radius: var(--radius); overflow: hidden; }
 .tool-btn {
     padding: 5px 10px; background: var(--bg-lighter); border: none;
@@ -380,7 +385,7 @@ body { display: flex; flex-direction: column; zoom: 1.25; }
     transition: all 0.15s;
 }
 .tool-btn:last-child { border-right: none; }
-.tool-btn:hover { background: var(--bg-hover); color: #ddd; }
+.tool-btn:hover { background: var(--bg-hover); color: #dddede; }
 .tool-btn.active {
     background: var(--accent-dim); color: var(--accent-color);
 }
@@ -400,17 +405,8 @@ body { display: flex; flex-direction: column; zoom: 1.25; }
     color: var(--text-muted); cursor: pointer; padding: 3px 5px;
     border-radius: var(--radius-sm); transition: all 0.15s;
 }
-.zoom-btn:hover { color: #ccc; background: var(--bg-lighter); }
+.zoom-btn:hover { color: #cccdcd; background: var(--bg-lighter); }
 .zoom-level { font-size: 10px; color: var(--text-muted); min-width: 36px; text-align: center; }
-
-/* Transport 胶囊容器 */
-.tools-center {
-    background: var(--bg-dark);
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
-    padding: 2px 6px;
-    gap: 2px;
-}
 
 /* === 9. 钢琴卷帘窗 === */
 .piano-roll {
@@ -461,9 +457,9 @@ body { display: flex; flex-direction: column; zoom: 1.25; }
     padding-right: 4px;
     font-size: 9px; border-bottom: 1px solid transparent;
 }
-.key.white { background: var(--key-white); color: #666; border-bottom-color: #bbb; }
-.key.black { background: var(--key-black); color: #555; border-bottom-color: #111; }
-.key.c-note { font-weight: 700; color: #444; }
+.key.white { background: var(--key-white); color: #666767; border-bottom-color: #aaabab; }
+.key.black { background: var(--key-black); color: #666767; border-bottom-color: #222323; }
+.key.c-note { font-weight: 700; color: #444545; }
 .key:hover { filter: brightness(0.85); }
 .grid-scroll-container {
     position: absolute; top: 0; bottom: 0; left: 60px; right: 0;
@@ -479,12 +475,12 @@ body { display: flex; flex-direction: column; zoom: 1.25; }
     position: absolute; top: 2px;
     font-size: 9px; color: var(--text-muted); pointer-events: none;
 }
-.ruler-mark.bar { color: #aaa; font-weight: 600; }
+.ruler-mark.bar { color: #bbbcbc; font-weight: 600; }
 .ruler-line {
     position: absolute; bottom: 0; width: 1px; pointer-events: none;
 }
-.ruler-line.bar { height: 20px; background: #444; }
-.ruler-line.beat { height: 10px; background: rgba(255,255,255,0.08); }
+.ruler-line.bar { height: 20px; background: #565757; }
+.ruler-line.beat { height: 10px; background: rgba(255,255,255,0.1); }
 .canvas-stack { position: relative; }
 .piano-canvas { position: absolute; top: 0; left: 0; }
 #canvasGrid   { z-index: 1; }
@@ -502,7 +498,7 @@ body { display: flex; flex-direction: column; zoom: 1.25; }
 .playhead-line {
     position: absolute; top: 14px; left: 6px;
     width: 2px; background: var(--accent-color); opacity: 0.8;
-    box-shadow: 0 0 6px rgba(126,184,255,0.3);
+    box-shadow: 0 0 6px rgba(74,144,217,0.3);
 }
 .lyric-input {
     position: absolute; z-index: 30;
@@ -554,12 +550,12 @@ body { display: flex; flex-direction: column; zoom: 1.25; }
 .prop-row label { width: 40px; font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
 .sv-input {
     flex: 1; background: var(--bg-lighter); border: 1px solid var(--border-light);
-    color: #ccc; padding: 5px 8px; border-radius: var(--radius-sm);
+    color: #cccdcd; padding: 5px 8px; border-radius: var(--radius-sm);
     font-size: 11px; outline: none;
     font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
     transition: border-color 0.2s;
 }
-.sv-input:focus { border-color: #383840; }
+.sv-input:focus { border-color: #383940; }
 select.sv-input { cursor: pointer; }
 .slider-group { margin-top: 4px; }
 .slider-row {
@@ -569,30 +565,30 @@ select.sv-input { cursor: pointer; }
 .slider-row .val { font-size: 10px; color: var(--text-muted); }
 .sv-slider {
     width: 100%; height: 4px; -webkit-appearance: none; appearance: none;
-    background: #2a2a2a; border-radius: 2px; outline: none; margin-bottom: 12px;
+    background: #383939; border-radius: 2px; outline: none; margin-bottom: 12px;
 }
 .sv-slider::-webkit-slider-thumb {
     -webkit-appearance: none; appearance: none;
     width: 12px; height: 12px; border-radius: 50%;
-    background: #bbb; cursor: pointer; transition: background 0.15s;
+    background: #bbbcbc; cursor: pointer; transition: background 0.15s;
 }
 .sv-slider::-webkit-slider-thumb:hover { background: var(--accent-color); }
 .synth-btn {
     width: 100%; padding: 9px; margin-top: 8px;
     border: none; border-radius: var(--radius);
-    background: linear-gradient(135deg, rgba(126,184,255,0.12), rgba(126,184,255,0.05));
+    background: linear-gradient(135deg, rgba(74,144,217,0.12), rgba(74,144,217,0.05));
     color: var(--accent-color); font-size: 12px; font-weight: 600;
     cursor: pointer; transition: all 0.15s;
 }
 .synth-btn:hover:not(:disabled) {
-    background: linear-gradient(135deg, rgba(126,184,255,0.22), rgba(126,184,255,0.1));
+    background: linear-gradient(135deg, rgba(74,144,217,0.22), rgba(74,144,217,0.1));
     color: #fff;
 }
 .synth-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 .synth-btn.synthesizing { animation: pulse-synth 1.5s ease-in-out infinite; }
 @keyframes pulse-synth { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
 .synth-progress { margin-top: 8px; }
-.progress-bar { height: 4px; background: #1a1a1e; border-radius: 2px; overflow: hidden; }
+.progress-bar { height: 4px; background: #2a2b2b; border-radius: 2px; overflow: hidden; }
 .progress-fill {
     height: 100%; width: 0%; background: var(--accent-color);
     border-radius: 2px; transition: width 0.3s;
@@ -655,8 +651,8 @@ select.sv-input { cursor: pointer; }
     border-radius: var(--radius); transition: all 0.15s;
     margin-bottom: 2px;
 }
-.side-icon:hover { color: #aaa; background: var(--bg-lighter); }
-.side-icon.active { color: var(--accent-color); background: rgba(126,184,255,0.08); }
+.side-icon:hover { color: #aaabab; background: var(--bg-lighter); }
+.side-icon.active { color: var(--accent-color); background: rgba(74,144,217,0.08); }
 .side-icon.active::after {
     content: ''; position: absolute;
     right: -3px; top: 50%; transform: translateY(-50%);
@@ -700,7 +696,7 @@ select.sv-input { cursor: pointer; }
     resize: vertical; outline: none;
     transition: border-color 0.2s;
 }
-.modal-textarea:focus { border-color: #383840; }
+.modal-textarea:focus { border-color: #383940; }
 .modal-checkbox {
     display: flex; align-items: center; gap: 6px;
     margin-top: 8px; font-size: 11px; color: var(--text-muted); cursor: pointer;
@@ -719,10 +715,10 @@ select.sv-input { cursor: pointer; }
 }
 .modal-btn:hover { background: var(--bg-hover); color: white; }
 .modal-btn.primary {
-    background: rgba(126,184,255,0.12); color: var(--accent-color);
-    border-color: rgba(126,184,255,0.2);
+    background: rgba(74,144,217,0.12); color: var(--accent-color);
+    border-color: rgba(74,144,217,0.2);
 }
-.modal-btn.primary:hover { background: rgba(126,184,255,0.22); color: #fff; }
+.modal-btn.primary:hover { background: rgba(74,144,217,0.22); color: #fff; }
 .modal-form-row {
     display: flex; align-items: center; gap: 8px;
     margin-bottom: 8px; font-size: 12px; color: var(--text-main);
@@ -733,8 +729,8 @@ select.sv-input { cursor: pointer; }
 /* === 14. 滚动条 === */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #444; }
+::-webkit-scrollbar-thumb { background: #3a3b3b; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #565757; }
 ::-webkit-scrollbar-corner { background: transparent; }
 
 /* === 15. 准备阶段弹窗 === */
