@@ -2,6 +2,7 @@ using DiffSingerApi.Services;
 using Microsoft.Extensions.FileProviders;
 using Serilog;
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -53,10 +54,7 @@ app.UseCors();
 app.MapControllers();
 
 // 输出局域网地址
-var lanIp = Dns.GetHostEntry(Dns.GetHostName())
-    .AddressList
-    .FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork)?
-    .ToString() ?? "unknown";
+var lanIp = GetLanIp();
 
 Log.Information("========================================");
 Log.Information("  Melody Singer 已启动");
@@ -65,3 +63,49 @@ Log.Information("  局域网访问: http://{LanIp}:5000", lanIp);
 Log.Information("========================================");
 
 app.Run("http://0.0.0.0:5000");
+
+static string GetLanIp()
+{
+    var ipv4Addresses = NetworkInterface.GetAllNetworkInterfaces()
+        .Where(nic => nic.OperationalStatus == OperationalStatus.Up)
+        .Where(nic => nic.NetworkInterfaceType != NetworkInterfaceType.Loopback)
+        .Where(nic => nic.NetworkInterfaceType != NetworkInterfaceType.Tunnel)
+        .SelectMany(nic => nic.GetIPProperties().UnicastAddresses)
+        .Select(addressInfo => addressInfo.Address)
+        .Where(address => address.AddressFamily == AddressFamily.InterNetwork)
+        .ToList();
+
+    return ipv4Addresses.FirstOrDefault(IsPrivateLanAddress)?.ToString()
+        ?? ipv4Addresses.FirstOrDefault(IsUsableLanFallbackAddress)?.ToString()
+        ?? "unknown";
+}
+
+static bool IsPrivateLanAddress(IPAddress address)
+{
+    var bytes = address.GetAddressBytes();
+    return bytes[0] == 10
+        || (bytes[0] == 172 && bytes[1] is >= 16 and <= 31)
+        || (bytes[0] == 192 && bytes[1] == 168);
+}
+
+static bool IsUsableLanFallbackAddress(IPAddress address)
+{
+    if (IPAddress.IsLoopback(address))
+    {
+        return false;
+    }
+
+    var bytes = address.GetAddressBytes();
+
+    if (bytes[0] == 169 && bytes[1] == 254)
+    {
+        return false;
+    }
+
+    if (bytes[0] == 198 && (bytes[1] == 18 || bytes[1] == 19))
+    {
+        return false;
+    }
+
+    return true;
+}

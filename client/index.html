@@ -12,14 +12,158 @@
     <div id="bgLayer" class="bg-layer"></div>
     <input type="file" id="bgFileInput" accept="image/*" style="display:none">
 
-    <!-- 顶部菜单栏 -->
-    <header class="menubar">
+    <div class="mobile-app-shell" id="mobileAppShell">
+        <section class="mobile-hero">
+            <div class="mobile-hero-badge">Melody Singer Mobile</div>
+        </section>
+
+        <section class="mobile-card mobile-card-primary">
+            <div class="mobile-card-head">
+                <div>
+                    <span class="mobile-label">当前工程</span>
+                    <h2 id="mobileProjectName">未导入 MIDI</h2>
+                </div>
+                <span class="mobile-status-badge" id="mobileStatusBadge">等待导入</span>
+            </div>
+            <div class="mobile-meta-grid">
+                <div class="mobile-meta-item">
+                    <span class="mobile-meta-label">轨道数量</span>
+                    <strong id="mobileTrackCount">0</strong>
+                </div>
+                <div class="mobile-meta-item">
+                    <span class="mobile-meta-label">当前轨道</span>
+                    <strong id="mobileActiveTrackMeta">导入后可选择</strong>
+                </div>
+            </div>
+            <button class="mobile-primary-btn" id="btnMobileImport" type="button">
+                <i class="fas fa-folder-open"></i>
+                导入 MIDI
+            </button>
+        </section>
+
+        <section class="mobile-card">
+            <div class="mobile-card-head compact">
+                <div>
+                    <span class="mobile-label">选择轨道</span>
+                    <h2 id="mobileActiveTrackName">尚未选择</h2>
+                </div>
+            </div>
+            <div class="mobile-track-list" id="mobileTrackList"></div>
+        </section>
+
+        <section class="mobile-card">
+            <div class="mobile-card-head compact">
+                <div>
+                    <span class="mobile-label">演唱配置</span>
+                    <h2>合成人声</h2>
+                </div>
+            </div>
+            <div class="mobile-field">
+                <label for="mobileVoicebankSelect">声库</label>
+                <select class="mobile-select" id="mobileVoicebankSelect">
+                    <option value="">加载中...</option>
+                </select>
+            </div>
+            <button class="mobile-primary-btn" id="btnMobileSynthesize" type="button">
+                <i class="fas fa-magic"></i>
+                合成当前轨道
+            </button>
+            <div class="mobile-inline-status">
+                <div class="mobile-inline-text" id="mobileSynthStatus">导入 MIDI 后即可开始</div>
+                <div class="mobile-progress-bar"><span id="mobileSynthProgressFill"></span></div>
+            </div>
+        </section>
+
+        <section class="mobile-card">
+            <div class="mobile-card-head compact">
+                <div>
+                    <span class="mobile-label">ZeroShot 变声</span>
+                    <h2>参考音频驱动</h2>
+                </div>
+            </div>
+            <div class="mobile-upload-row">
+                <button class="mobile-secondary-btn" id="btnMobileVcRef" type="button">
+                    <i class="fas fa-upload"></i>
+                    选择参考音频
+                </button>
+                <span class="mobile-upload-name" id="mobileVcRefName">未选择</span>
+            </div>
+            <div class="mobile-vc-param-list">
+                <div class="mobile-vc-param">
+                    <div class="mobile-vc-param-row">
+                        <label for="mobileVcStepsSlider">扩散步数</label>
+                        <span id="mobileVcStepsVal">10</span>
+                    </div>
+                    <input class="mobile-vc-slider" id="mobileVcStepsSlider" type="range" min="1" max="200" step="1" value="10">
+                </div>
+                <div class="mobile-vc-param">
+                    <div class="mobile-vc-param-row">
+                        <label for="mobileVcLengthSlider">长度调整</label>
+                        <span id="mobileVcLengthVal">1.00</span>
+                    </div>
+                    <input class="mobile-vc-slider" id="mobileVcLengthSlider" type="range" min="50" max="200" step="1" value="100">
+                </div>
+                <div class="mobile-vc-param">
+                    <div class="mobile-vc-param-row">
+                        <label for="mobileVcCfgSlider">引导强度</label>
+                        <span id="mobileVcCfgVal">0.70</span>
+                    </div>
+                    <input class="mobile-vc-slider" id="mobileVcCfgSlider" type="range" min="0" max="100" step="1" value="70">
+                </div>
+                <div class="mobile-vc-param">
+                    <div class="mobile-vc-param-row">
+                        <label for="mobileVcPitchSlider">变调 (半音)</label>
+                        <span id="mobileVcPitchVal">0</span>
+                    </div>
+                    <input class="mobile-vc-slider" id="mobileVcPitchSlider" type="range" min="-12" max="12" step="1" value="0">
+                </div>
+            </div>
+            <div class="mobile-vc-checks">
+                <label class="mobile-vc-check"><input id="mobileVcAutoF0" type="checkbox" checked> 自动F0调整</label>
+                <label class="mobile-vc-check"><input id="mobileVcF0Condition" type="checkbox"> F0条件约束</label>
+            </div>
+            <button class="mobile-primary-btn alt" id="btnMobileVcConvert" type="button">
+                <i class="fas fa-exchange-alt"></i>
+                开始 ZeroShot 变声
+            </button>
+            <div class="mobile-inline-status">
+                <div class="mobile-inline-text" id="mobileVcStatus">先完成一版合成，再上传参考音频</div>
+                <div class="mobile-progress-bar pink"><span id="mobileVcProgressFill"></span></div>
+            </div>
+            <audio id="mobileVcAudio" class="mobile-audio" controls style="display:none"></audio>
+        </section>
+
+        <section class="mobile-card">
+            <div class="mobile-card-head compact">
+                <div>
+                    <span class="mobile-label">导出结果</span>
+                    <h2>下载音频</h2>
+                </div>
+            </div>
+            <div class="mobile-export-grid">
+                <button class="mobile-secondary-btn" id="btnMobileDownload" type="button">
+                    <i class="fas fa-download"></i>
+                    导出成品
+                </button>
+                <button class="mobile-secondary-btn" id="btnMobileDry" type="button">
+                    <i class="fas fa-microphone"></i>
+                    导出干声
+                </button>
+                <button class="mobile-secondary-btn" id="btnMobileVcDownload" type="button">
+                    <i class="fas fa-wave-square"></i>
+                    导出变声版
+                </button>
+            </div>
+        </section>
+    </div>
+
+    <header class="menubar" data-tour="menubar">
         <div class="menu-items">
             <div class="menu-dropdown">
                 <span class="menu-item" id="menuFileToggle"><i class="fas fa-file"></i> 文件</span>
                 <div class="menu-dropdown-list" id="menuFileDropdown">
-                    <div class="menu-dropdown-item" id="menuNewProject"><i class="fas fa-file-circle-plus"></i> 新建项目</div>
-                    <div class="menu-dropdown-item" id="menuFile"><i class="fas fa-folder-open"></i> 打开 MIDI</div>
+                    <div class="menu-dropdown-item" id="menuNewProject" data-tour="menu-new-project"><i class="fas fa-file-circle-plus"></i> 新建项目</div>
+                    <div class="menu-dropdown-item" id="menuFile" data-tour="menu-file"><i class="fas fa-folder-open"></i> 打开 MIDI</div>
                 </div>
             </div>
             <input type="file" id="midiFileInput" accept=".mid,.midi" style="display:none">
@@ -39,7 +183,7 @@
     <!-- 主容器 -->
     <div class="app-container">
         <!-- 左侧轨道配置面板 -->
-        <aside class="track-inspector" id="trackInspector" style="display:none">
+        <aside class="track-inspector" id="trackInspector" style="display:none" data-tour="track-inspector">
             <div class="track-inspector-header">
                 <h3 id="trackInspectorName">轨道配置</h3>
                 <i class="fas fa-times track-inspector-close" id="trackInspectorClose"></i>
@@ -47,7 +191,7 @@
             <div class="track-inspector-content">
                 <div class="panel-section">
                     <h3>渲染器</h3>
-                    <div class="renderer-options" id="rendererOptions">
+                    <div class="renderer-options" id="rendererOptions" data-tour="renderer-options">
                         <label class="renderer-option">
                             <input type="radio" name="trackRenderer" value="none" checked>
                             <span class="renderer-label"><i class="fas fa-ban"></i> 不渲染</span>
@@ -89,7 +233,7 @@
         <!-- 工作区 -->
         <main class="workspace">
             <!-- 轨道视图 -->
-            <section class="track-view" id="trackView">
+            <section class="track-view" id="trackView" data-tour="track-view">
                 <div class="track-header-col" id="trackHeaderCol">
                     <div class="track-empty-hint" id="trackEmptyHint">
                         <i class="fas fa-music"></i> 打开 MIDI 文件以加载轨道
@@ -106,25 +250,25 @@
 
             <!-- 工具栏 -->
             <div class="toolbar-strip">
-                <div class="tools-left">
+                <div class="tools-left" data-tour="edit-tools">
                     <div class="btn-group">
-                        <span class="tool-btn active" data-tool="pointer" title="指针 (V)"><i class="fas fa-mouse-pointer"></i></span>
-                        <span class="tool-btn" data-tool="pencil" title="铅笔 (B)"><i class="fas fa-pencil-alt"></i></span>
-                        <span class="tool-btn" data-tool="eraser" title="橡皮擦 (E)"><i class="fas fa-eraser"></i></span>
-                        <span class="tool-btn" data-tool="knife" title="切刀 (X)"><i class="fas fa-cut"></i></span>
-                        <span class="tool-btn" data-tool="pitchpen" title="音高画笔 (P)"><i class="fas fa-wave-square"></i></span>
+                        <span class="tool-btn active" data-tool="pointer" data-tour="tool-pointer" title="指针 (V)"><i class="fas fa-mouse-pointer"></i></span>
+                        <span class="tool-btn" data-tool="pencil" data-tour="tool-pencil" title="铅笔 (B)"><i class="fas fa-pencil-alt"></i></span>
+                        <span class="tool-btn" data-tool="eraser" data-tour="tool-eraser" title="橡皮擦 (E)"><i class="fas fa-eraser"></i></span>
+                        <span class="tool-btn" data-tool="knife" data-tour="tool-knife" title="切刀 (X)"><i class="fas fa-cut"></i></span>
+                        <span class="tool-btn" data-tool="pitchpen" data-tour="tool-pitchpen" title="音高画笔 (P)"><i class="fas fa-wave-square"></i></span>
                     </div>
                     <span class="toolbar-divider"></span>
                     <span class="grid-snap" id="gridSnapDisplay">SNAP: 1/16</span>
                 </div>
-                <div class="tools-center">
+                <div class="tools-center" data-tour="transport-controls">
                     <i class="fas fa-step-backward transport-btn" id="btnPrev" title="后退"></i>
                     <i class="fas fa-play transport-btn" id="btnPlay" title="播放 (Space)"></i>
                     <i class="fas fa-stop transport-btn" id="btnStop" title="停止 (Ctrl+Space)"></i>
                     <i class="fas fa-step-forward transport-btn" id="btnNext" title="前进"></i>
                     <i class="fas fa-circle transport-btn record-btn" id="btnRecord" title="MIDI 录制 (R)"></i>
                 </div>
-                <div class="tools-right">
+                <div class="tools-right" data-tour="zoom-controls">
                     <i class="fas fa-search-minus zoom-btn" id="btnZoomOut"></i>
                     <span class="zoom-level" id="zoomLevel">100%</span>
                     <i class="fas fa-search-plus zoom-btn" id="btnZoomIn"></i>
@@ -136,8 +280,8 @@
                 <div class="piano-roll-header">
                     <span>编辑:</span>
                     <span class="piano-roll-track-name" id="pianoRollTrackName">—</span>
-                    <button class="piano-roll-solo-btn" id="btnSoloPlay" title="单轨播放"><i class="fas fa-headphones"></i> 播放</button>
-                    <button class="piano-roll-solo-btn" id="btnTrackSynth" title="合成当前轨道"><i class="fas fa-magic"></i> 合成</button>
+                    <button class="piano-roll-solo-btn" id="btnSoloPlay" title="单轨播放" data-tour="solo-play"><i class="fas fa-headphones"></i> 播放</button>
+                    <button class="piano-roll-solo-btn" id="btnTrackSynth" title="合成当前轨道" data-tour="track-synth"><i class="fas fa-magic"></i> 合成</button>
                     <span class="piano-roll-close" id="pianoRollClose" title="关闭钢琴卷帘"><i class="fas fa-times"></i> 关闭</span>
                 </div>
                 <div class="piano-roll-body">
@@ -159,7 +303,7 @@
         </main>
 
         <!-- 右侧检查器 -->
-        <aside class="inspector">
+        <aside class="inspector" id="mainInspector" data-tour="inspector-panel">
             <div class="inspector-content">
                 <div class="panel-section">
                     <h3>音符属性</h3>
@@ -167,10 +311,10 @@
                     <div class="prop-row"><label>音高</label><input type="text" class="sv-input" id="inspectorPitch" readonly placeholder="-"></div>
                     <div class="prop-row"><label>力度</label><input type="text" class="sv-input" id="inspectorVelocity" readonly placeholder="-"></div>
                 </div>
-                <div class="panel-section">
-                    <h3>合成</h3>
+                <div class="panel-section" data-tour="singing-settings">
+                    <h3>演唱设置</h3>
                     <div class="prop-row"><label>MIDI 输入</label><select class="sv-input" id="midiInputSelect"><option value="">未检测到设备</option></select></div>
-                    <div class="prop-row"><label>声库</label><select class="sv-input" id="voicebankSelect"><option value="">加载中...</option></select></div>
+                    <div class="prop-row"><label>声库</label><select class="sv-input" id="voicebankSelect" data-tour="voicebank-select"><option value="">加载中...</option></select></div>
                     <div class="prop-row">
                         <label><input type="checkbox" id="vocalReverbToggle"> 混响</label>
                         <select class="sv-input" id="vocalIRSelect" style="flex:1;display:none">
@@ -185,29 +329,28 @@
                         <div class="slider-row"><label>混响量</label><span class="val" id="vocalReverbVal">55%</span></div>
                         <input type="range" class="sv-slider" id="vocalReverbSend" value="55" min="0" max="100" step="5">
                     </div>
-                    <button class="synth-btn" id="btnSynthesize" disabled><i class="fas fa-magic"></i> 开始合成</button>
                     <div class="synth-progress" id="synthProgress" style="display:none">
                         <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
                         <div class="progress-text" id="progressText">等待中...</div>
                     </div>
                     <div class="synth-error" id="synthError" style="display:none"></div>
                 </div>
-                <div class="panel-section" id="resultSection" style="display:none">
+                <div class="panel-section" id="resultSection" style="display:none" data-tour="result-section">
                     <h3>合成结果</h3>
                     <div class="result-controls">
                         <button class="result-btn" id="btnDownload"><i class="fas fa-download"></i> 下载</button>
                         <button class="result-btn" id="btnExportDry"><i class="fas fa-microphone"></i> 导出干声</button>
                     </div>
                 </div>
-                <div class="panel-section" id="vcSection" style="display:none">
-                    <h3>音色转换 <span class="vc-badge">Seed-VC</span></h3>
+                <div class="panel-section" id="vcSection" style="display:none" data-tour="vc-section">
+                    <h3>SeedVC 声音克隆 <span class="vc-badge">声音克隆</span></h3>
                     <div class="vc-ref-row">
                         <label>参考音频</label>
-                        <button class="result-btn small" id="btnVcRef"><i class="fas fa-upload"></i> 选择</button>
+                        <button class="result-btn small" id="btnVcRef" data-tour="vc-upload"><i class="fas fa-upload"></i> 选择</button>
                         <span class="vc-ref-name" id="vcRefName">未选择</span>
                         <input type="file" id="vcRefInput" accept="audio/*" style="display:none">
                     </div>
-                    <div class="slider-group">
+                    <div class="slider-group" data-tour="vc-params">
                         <div class="slider-row"><label>扩散步数</label><span class="val" id="vcStepsVal">10</span></div>
                         <input type="range" class="sv-slider" id="vcStepsSlider" value="10" min="1" max="200" step="1">
                         <div class="slider-row"><label>长度调整</label><span class="val" id="vcLengthVal">1.00</span></div>
@@ -221,7 +364,7 @@
                         <label class="vc-check"><input type="checkbox" id="vcAutoF0" checked> 自动F0调整</label>
                         <label class="vc-check"><input type="checkbox" id="vcF0Condition"> F0条件约束</label>
                     </div>
-                    <button class="result-btn primary full-width" id="btnVcConvert"><i class="fas fa-exchange-alt"></i> 开始转换</button>
+                    <button class="result-btn primary full-width" id="btnVcConvert" data-tour="vc-convert"><i class="fas fa-exchange-alt"></i> 开始转换</button>
                     <div class="vc-progress" id="vcProgress" style="display:none">
                         <div class="progress-bar"><div class="progress-fill vc-fill" id="vcProgressFill"></div></div>
                         <div class="progress-text" id="vcProgressText">准备中...</div>
@@ -233,11 +376,10 @@
                 </div>
             </div>
             <div class="side-toolbar">
-                <div class="side-icon active"><i class="fas fa-music"></i></div>
-                <div class="side-icon"><i class="fas fa-microphone-alt"></i></div>
-                <div class="side-icon"><i class="fas fa-layer-group"></i></div>
-                <div class="side-icon"><i class="fas fa-sliders-h"></i></div>
-                <div class="side-icon bottom" id="btnSettings"><i class="fas fa-cog"></i></div>
+                <button class="side-icon active" id="btnInspectorToggle" data-tour="inspector-toggle" title="展开或收起右侧面板" aria-label="展开或收起右侧面板" aria-pressed="true">
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+                <button class="side-icon bottom" id="btnSettings" title="界面设置" aria-label="界面设置"><i class="fas fa-cog"></i></button>
             </div>
         </aside>
     </div>
@@ -368,6 +510,24 @@
             </div>
         </div>
     </div>
+
+    <div class="tour-welcome-overlay" id="tourWelcomeOverlay" style="display:none">
+        <div class="tour-welcome-card">
+            <div class="tour-welcome-badge">Melody Singer 使用指引</div>
+            <h2>从熟悉界面，到完成一次 `MIDI → AI 歌声合成`</h2>
+            <p class="tour-welcome-text">
+                指引会先从空白界面开始，带你认识左上角文件菜单、轨道配置、右侧边板和工具栏。
+                讲到导入步骤时，系统会自动放入一条内置示例 MIDI，继续介绍钢琴卷帘、真实合成和 SeedVC 声音克隆。
+            </p>
+            <div class="tour-welcome-actions">
+                <button class="modal-btn ghost" id="btnTourSkip">跳过教程</button>
+                <button class="modal-btn primary" id="btnTourStart">开始教程</button>
+            </div>
+            <div class="tour-welcome-error" id="tourWelcomeError" style="display:none"></div>
+        </div>
+    </div>
+
+    <button id="tourHelpBtn" class="tour-help-btn" title="使用指引">?</button>
 
     <script src="./lib/Tone.js"></script>
     <script src="./lib/Midi.min.js"></script>

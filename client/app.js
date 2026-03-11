@@ -20,6 +20,11 @@ const API_BASE = window.location.origin;
 const TRACK_COLORS = ['#7eb8ff','#e06090','#f0a030','#6bcb77','#a78bfa','#e05555','#50c0c0','#f0c040'];
 const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 const DEFAULT_LANGUAGE_CODE = 'ZH';
+const BUILTIN_DEMO_FILE_NAME = 'melody-singer-demo.mid';
+const BUILTIN_DEMO_BPM = 150;
+const BUILTIN_DEMO_TIME_SIG = [4, 4];
+const MOBILE_SHELL_BREAKPOINT = 900;
+const TOUR_STORAGE_KEY = 'ms_tour_done';
 const NOTE_LANGUAGE_OPTIONS = [
     { code: 'ZH', label: '中文' },
     { code: 'EN', label: '英语' },
@@ -209,6 +214,7 @@ const state = {
     playStartTime: 0,
     animFrameId: null,
     _playStartWall: 0,
+    isMobileLayout: false,
     // === 合成 & 短语系统 ===
     synthJobId: null,
     synthDirty: true,
@@ -616,10 +622,14 @@ function extractAllLyrics(arrayBuffer) {
 // ===== SECTION 4: DOM 引用与 Canvas 上下文 =====
 const dom = {};
 const ctx = {};
+let guidedTour = null;
+const tourSession = {
+    demoImported: false,
+};
 
 function cacheDom() {
     const ids = [
-        'midiFileInput','menuFile','bpmDisplay','timeDisplay',
+        'midiFileInput','menuFile','menuFileToggle','menuFileDropdown','bpmDisplay','timeDisplay',
         'trackView','trackHeaderCol','trackEmptyHint','trackTimeline',
         'trackResizer',
         'gridSnapDisplay','btnPrev','btnPlay','btnStop','btnNext',
@@ -628,7 +638,7 @@ function cacheDom() {
         'canvasStack','canvasGrid','canvasNotes','canvasOverlay',
         'playhead',
         'inspectorLyrics','inspectorPitch','inspectorVelocity',
-        'voicebankSelect','btnSynthesize',
+        'voicebankSelect',
         'synthProgress','progressFill','progressText','synthError',
         'resultSection','btnDownload','btnExportDry',
         'vcSection','btnVcRef','vcRefName','vcRefInput',
@@ -654,13 +664,505 @@ function cacheDom() {
         'newProjectBpm','newProjectTsNum','newProjectTsDen',
         'newProjectTrackName','newProjectCancel','newProjectConfirm',
         'btnRecord','midiInputSelect',
-        'bgLayer','bgFileInput','btnSettings',
+        'bgLayer','bgFileInput','btnSettings','btnInspectorToggle',
+        'mobileAppShell','mobileProjectName','mobileTrackCount','mobileStatusBadge',
+        'mobileActiveTrackName','mobileActiveTrackMeta','mobileTrackList',
+        'btnMobileImport','mobileVoicebankSelect','btnMobileSynthesize',
+        'mobileSynthStatus','mobileSynthProgressFill',
+        'btnMobileVcRef','mobileVcRefName',
+        'mobileVcStepsSlider','mobileVcStepsVal','mobileVcLengthSlider','mobileVcLengthVal',
+        'mobileVcCfgSlider','mobileVcCfgVal','mobileVcPitchSlider','mobileVcPitchVal',
+        'mobileVcAutoF0','mobileVcF0Condition','btnMobileVcConvert',
+        'mobileVcStatus','mobileVcProgressFill','mobileVcAudio',
+        'btnMobileDownload','btnMobileDry','btnMobileVcDownload',
         'settingsModal','settingsClose','settingsOk',
         'btnBgChoose','btnBgClear','bgPreviewThumb',
         'bgOpacitySlider','bgOpacityVal','bgDimSlider','bgDimVal','bgBlurSlider','bgBlurVal',
+        'tourWelcomeOverlay','tourWelcomeError','btnTourStart','btnTourSkip','tourHelpBtn',
     ];
     ids.forEach(id => { dom[id] = document.getElementById(id); });
     dom.toolBtns = document.querySelectorAll('.tool-btn');
+}
+
+function setFileDropdownOpen(isOpen) {
+    const fileDropdown = dom.menuFileToggle?.closest('.menu-dropdown');
+    if (!fileDropdown) return;
+    fileDropdown.classList.toggle('open', !!isOpen);
+}
+
+function hasAvailableVoicebanks() {
+    if (!dom.voicebankSelect) return false;
+    return Array.from(dom.voicebankSelect.options).some(opt => !!opt.value);
+}
+
+function setRenderStatus(text = '') {
+    if (dom.renderStatus) dom.renderStatus.textContent = text;
+    updateMobileShell();
+}
+
+function showSynthesisError(message = '') {
+    if (!dom.synthError) return;
+    dom.synthError.textContent = message;
+    dom.synthError.style.display = message ? 'block' : 'none';
+    updateMobileShell();
+}
+
+function setSynthesisProgress(visible, text = '等待中...', percent = 0) {
+    if (!dom.synthProgress || !dom.progressFill || !dom.progressText) return;
+    dom.synthProgress.style.display = visible ? 'block' : 'none';
+    dom.progressText.textContent = text;
+    dom.progressFill.style.width = `${clamp(Math.round(percent), 0, 100)}%`;
+    updateMobileShell();
+}
+
+function resetSynthesisUiPanels() {
+    setRenderStatus('');
+    setSynthesisProgress(false, '等待中...', 0);
+    showSynthesisError('');
+    if (dom.resultSection) dom.resultSection.style.display = 'none';
+    if (dom.vcSection) dom.vcSection.style.display = 'none';
+    if (dom.vcProgress) dom.vcProgress.style.display = 'none';
+    if (dom.vcResult) dom.vcResult.style.display = 'none';
+}
+
+function isMobileShellViewport() {
+    return window.innerWidth <= MOBILE_SHELL_BREAKPOINT;
+}
+
+function getSelectedTrack() {
+    return state.tracks.find(track => track.id === state.activeTrackId) || state.tracks[0] || null;
+}
+
+function getCurrentRenderedJobContext() {
+    const track = state.tracks.find(item => item.id === state.activeTrackId) || null;
+    if (track && track.synthJobId) {
+        return { track, jobId: track.synthJobId };
+    }
+    return { track: null, jobId: state.synthJobId || null };
+}
+
+function getTrackMobileState(track) {
+    if (!track) return '未选择';
+    if (track.synthState === 'preparing') return '准备中';
+    if (track.synthState === 'rendering') return '合成中';
+    if (track.synthState === 'ready' || track.synthJobId) return '已完成';
+    if (track.renderer === 'vocal') return '人声';
+    if (track.renderer === 'instrument') return '乐器';
+    return '未渲染';
+}
+
+function getTrackMobileSubtitle(track) {
+    if (!track) return '导入后可选择';
+    const parts = ['CH' + track.channel];
+    if (track.voicebankId) parts.push('已选声库');
+    else if (track.renderer === 'vocal') parts.push('待选声库');
+    else parts.push('可直接合成');
+    return parts.join(' · ');
+}
+
+function getTrackMobileSynthesisLabel(track) {
+    if (!track) return '导入 MIDI 后即可开始';
+    if (track.synthState === 'preparing') return '正在准备 ' + track.name;
+    if (track.synthState === 'rendering') return '正在合成 ' + track.name;
+    if (track.synthState === 'ready' || track.synthJobId) return track.name + ' 已可导出';
+    if (track.renderer === 'vocal') return '已切到人声，可开始合成';
+    return '选择轨道后可直接合成';
+}
+
+function syncMobileVoicebankOptions() {
+    if (!dom.mobileVoicebankSelect || !dom.voicebankSelect) return;
+    const activeTrack = getSelectedTrack();
+    const previousValue = dom.mobileVoicebankSelect.value;
+    dom.mobileVoicebankSelect.innerHTML = dom.voicebankSelect.innerHTML || '<option value="">无法加载声库</option>';
+    const preferredValue = (activeTrack && activeTrack.voicebankId) || dom.voicebankSelect.value || previousValue || '';
+    if (preferredValue && Array.from(dom.mobileVoicebankSelect.options).some(opt => opt.value === preferredValue)) {
+        dom.mobileVoicebankSelect.value = preferredValue;
+    }
+}
+
+function syncMobileVcControls() {
+    const syncSlider = (mobileSlider, mobileValue, desktopSlider, formatter) => {
+        if (!mobileSlider || !mobileValue || !desktopSlider) return;
+        mobileSlider.value = desktopSlider.value;
+        mobileValue.textContent = formatter(desktopSlider.value);
+    };
+
+    syncSlider(dom.mobileVcStepsSlider, dom.mobileVcStepsVal, dom.vcStepsSlider, value => String(parseInt(value, 10) || 0));
+    syncSlider(dom.mobileVcLengthSlider, dom.mobileVcLengthVal, dom.vcLengthSlider, value => ((parseInt(value, 10) || 0) / 100).toFixed(2));
+    syncSlider(dom.mobileVcCfgSlider, dom.mobileVcCfgVal, dom.vcCfgSlider, value => ((parseInt(value, 10) || 0) / 100).toFixed(2));
+    syncSlider(dom.mobileVcPitchSlider, dom.mobileVcPitchVal, dom.vcPitchSlider, value => String(parseInt(value, 10) || 0));
+
+    if (dom.mobileVcAutoF0 && dom.vcAutoF0) {
+        dom.mobileVcAutoF0.checked = dom.vcAutoF0.checked;
+    }
+    if (dom.mobileVcF0Condition && dom.vcF0Condition) {
+        dom.mobileVcF0Condition.checked = dom.vcF0Condition.checked;
+    }
+}
+
+function renderMobileTrackList() {
+    if (!dom.mobileTrackList) return;
+    dom.mobileTrackList.innerHTML = '';
+    if (state.tracks.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'mobile-empty-state';
+        empty.textContent = '导入 MIDI 后，这里会出现可以切换的人声轨道。';
+        dom.mobileTrackList.appendChild(empty);
+        return;
+    }
+    state.tracks.forEach(track => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'mobile-track-chip' + (track.id === state.activeTrackId ? ' active' : '');
+
+        const main = document.createElement('span');
+        main.className = 'mobile-track-main';
+
+        const name = document.createElement('span');
+        name.className = 'mobile-track-name';
+        name.textContent = track.name;
+        main.appendChild(name);
+
+        const subtitle = document.createElement('span');
+        subtitle.className = 'mobile-track-subtitle';
+        subtitle.textContent = getTrackMobileSubtitle(track);
+        main.appendChild(subtitle);
+
+        const stateTag = document.createElement('span');
+        stateTag.className = 'mobile-track-state';
+        stateTag.textContent = getTrackMobileState(track);
+
+        button.appendChild(main);
+        button.appendChild(stateTag);
+        button.addEventListener('click', () => {
+            state.activeTrackId = track.id;
+            renderTrackPanel();
+        });
+        dom.mobileTrackList.appendChild(button);
+    });
+}
+
+function updateMobileShell() {
+    if (!dom.mobileAppShell) return;
+
+    const activeTrack = getSelectedTrack();
+    const renderedContext = getCurrentRenderedJobContext();
+
+    syncMobileVoicebankOptions();
+    syncMobileVcControls();
+    renderMobileTrackList();
+
+    if (dom.mobileProjectName) dom.mobileProjectName.textContent = state.midiFileName || '未导入 MIDI';
+    if (dom.mobileTrackCount) dom.mobileTrackCount.textContent = String(state.tracks.length);
+    if (dom.mobileStatusBadge) {
+        dom.mobileStatusBadge.textContent = state.tracks.length === 0
+            ? '等待导入'
+            : ((activeTrack && (activeTrack.synthState === 'preparing' || activeTrack.synthState === 'rendering')) ? '处理中' : '已导入');
+    }
+    if (dom.mobileActiveTrackName) dom.mobileActiveTrackName.textContent = activeTrack ? activeTrack.name : '尚未选择';
+    if (dom.mobileActiveTrackMeta) dom.mobileActiveTrackMeta.textContent = activeTrack ? getTrackMobileState(activeTrack) : '导入后可选择';
+
+    const selectedVoicebank = (activeTrack && activeTrack.voicebankId) || (dom.voicebankSelect ? dom.voicebankSelect.value : '');
+    if (dom.mobileVoicebankSelect && selectedVoicebank && Array.from(dom.mobileVoicebankSelect.options).some(opt => opt.value === selectedVoicebank)) {
+        dom.mobileVoicebankSelect.value = selectedVoicebank;
+    }
+
+    const synthMessage = (dom.synthError && dom.synthError.style.display !== 'none' && dom.synthError.textContent.trim())
+        || (dom.synthProgress && dom.synthProgress.style.display !== 'none' ? dom.progressText.textContent : getTrackMobileSynthesisLabel(activeTrack));
+    if (dom.mobileSynthStatus) dom.mobileSynthStatus.textContent = synthMessage;
+
+    let synthPercent = 0;
+    if (dom.synthProgress && dom.synthProgress.style.display !== 'none') {
+        synthPercent = parseInt(dom.progressFill.style.width, 10) || 0;
+    } else if (activeTrack && (activeTrack.synthState === 'ready' || activeTrack.synthJobId)) {
+        synthPercent = 100;
+    }
+    if (dom.mobileSynthProgressFill) dom.mobileSynthProgressFill.style.width = clamp(synthPercent, 0, 100) + '%';
+    if (dom.btnMobileSynthesize) dom.btnMobileSynthesize.disabled = !activeTrack || !hasAvailableVoicebanks();
+
+    if (dom.mobileVcRefName) dom.mobileVcRefName.textContent = _vcRefFile ? _vcRefFile.name : '未选择';
+    const vcMessage = dom.vcProgress && dom.vcProgress.style.display !== 'none'
+        ? dom.vcProgressText.textContent
+        : (_vcResultUrl ? 'ZeroShot 变声已完成' : (renderedContext.jobId ? '可以开始 ZeroShot 变声' : '请先完成当前轨道合成'));
+    if (dom.mobileVcStatus) dom.mobileVcStatus.textContent = vcMessage;
+
+    let vcPercent = 0;
+    if (dom.vcProgress && dom.vcProgress.style.display !== 'none') {
+        vcPercent = parseInt(dom.vcProgressFill.style.width, 10) || 0;
+    } else if (_vcResultUrl) {
+        vcPercent = 100;
+    }
+    if (dom.mobileVcProgressFill) dom.mobileVcProgressFill.style.width = clamp(vcPercent, 0, 100) + '%';
+
+    if (dom.btnMobileVcConvert) dom.btnMobileVcConvert.disabled = !renderedContext.jobId || !_vcRefFile;
+    if (dom.btnMobileDownload) dom.btnMobileDownload.disabled = !renderedContext.jobId;
+    if (dom.btnMobileDry) dom.btnMobileDry.disabled = !renderedContext.jobId;
+    if (dom.btnMobileVcDownload) dom.btnMobileVcDownload.disabled = !_vcResultUrl;
+
+    if (dom.mobileVcAudio) {
+        dom.mobileVcAudio.src = _vcResultUrl || '';
+        dom.mobileVcAudio.style.display = _vcResultUrl ? 'block' : 'none';
+    }
+}
+
+function syncMobileLayout(force = false) {
+    const nextIsMobile = isMobileShellViewport();
+    if (!force && state.isMobileLayout === nextIsMobile) return;
+    state.isMobileLayout = nextIsMobile;
+    document.body.classList.toggle('mobile-layout', nextIsMobile);
+    if (nextIsMobile) hideTourWelcome();
+    updateMobileShell();
+}
+
+function downloadCurrentRender(suffix = '') {
+    const { jobId } = getCurrentRenderedJobContext();
+    if (!jobId) return false;
+    const a = document.createElement('a');
+    const baseName = (state.midiFileName || 'vocal').replace(/\.\w+$/, '');
+    a.href = API_BASE + '/api/jobs/' + jobId + '/download';
+    a.download = baseName + suffix + '.wav';
+    a.click();
+    return true;
+}
+
+function bindMobileEvents() {
+    const bindMobileVcSlider = (mobileSlider, desktopSlider) => {
+        mobileSlider?.addEventListener('input', () => {
+            if (!desktopSlider) return;
+            desktopSlider.value = mobileSlider.value;
+            desktopSlider.dispatchEvent(new Event('input', { bubbles: true }));
+            updateMobileShell();
+        });
+    };
+    const bindMobileVcToggle = (mobileToggle, desktopToggle) => {
+        mobileToggle?.addEventListener('change', () => {
+            if (!desktopToggle) return;
+            desktopToggle.checked = mobileToggle.checked;
+            desktopToggle.dispatchEvent(new Event('change', { bubbles: true }));
+            updateMobileShell();
+        });
+    };
+
+    dom.btnMobileImport?.addEventListener('click', () => dom.midiFileInput.click());
+
+    dom.mobileVoicebankSelect?.addEventListener('change', () => {
+        const track = getSelectedTrack();
+        const singerId = dom.mobileVoicebankSelect.value;
+        if (track) track.voicebankId = singerId || null;
+        if (dom.voicebankSelect) dom.voicebankSelect.value = singerId;
+        renderTrackPanel();
+        updateMobileShell();
+    });
+
+    dom.btnMobileSynthesize?.addEventListener('click', () => {
+        const track = getSelectedTrack();
+        if (!track) {
+            showSynthesisError('???? MIDI???????????');
+            return;
+        }
+        const singerId = dom.mobileVoicebankSelect?.value || dom.voicebankSelect?.value || '';
+        if (singerId) {
+            track.voicebankId = singerId;
+            if (dom.voicebankSelect) dom.voicebankSelect.value = singerId;
+        }
+        if (track.renderer !== 'vocal') {
+            mutateTrack(track.id, { renderer: 'vocal' });
+        }
+        synthesizeTrack(track.id);
+    });
+
+    bindMobileVcSlider(dom.mobileVcStepsSlider, dom.vcStepsSlider);
+    bindMobileVcSlider(dom.mobileVcLengthSlider, dom.vcLengthSlider);
+    bindMobileVcSlider(dom.mobileVcCfgSlider, dom.vcCfgSlider);
+    bindMobileVcSlider(dom.mobileVcPitchSlider, dom.vcPitchSlider);
+    bindMobileVcToggle(dom.mobileVcAutoF0, dom.vcAutoF0);
+    bindMobileVcToggle(dom.mobileVcF0Condition, dom.vcF0Condition);
+
+    dom.btnMobileVcRef?.addEventListener('click', () => dom.vcRefInput.click());
+    dom.btnMobileVcConvert?.addEventListener('click', () => {
+        const { jobId } = getCurrentRenderedJobContext();
+        if (!jobId) {
+            showSynthesisError('?????????????? ZeroShot ???');
+            return;
+        }
+        if (!_vcRefFile) {
+            showSynthesisError('?????????');
+            return;
+        }
+        startVcConvert();
+    });
+
+    dom.btnMobileDownload?.addEventListener('click', () => {
+        if (!downloadCurrentRender('')) {
+            showSynthesisError('?????????????????');
+        }
+    });
+    dom.btnMobileDry?.addEventListener('click', exportDryVocal);
+    dom.btnMobileVcDownload?.addEventListener('click', () => {
+        if (dom.btnVcDownload) dom.btnVcDownload.click();
+    });
+}
+
+function ensureActiveTrackSelected() {
+    const activeTrack = state.tracks.find(track => track.id === state.activeTrackId) || state.tracks[0] || null;
+    if (activeTrack && state.activeTrackId !== activeTrack.id) {
+        state.activeTrackId = activeTrack.id;
+        renderTrackPanel();
+    }
+    return activeTrack;
+}
+
+function ensureTrackInspectorOpen(trackId) {
+    if (!trackId) return null;
+    const track = state.tracks.find(item => item.id === trackId);
+    if (!track) return null;
+    state.configTrackId = trackId;
+    dom.trackInspector.style.display = 'flex';
+    updateTrackInspector();
+    return track;
+}
+
+function updateInspectorToggleButton(collapsed) {
+    if (!dom.btnInspectorToggle) return;
+    const icon = dom.btnInspectorToggle.querySelector('i');
+    dom.btnInspectorToggle.classList.toggle('active', !collapsed);
+    dom.btnInspectorToggle.setAttribute('aria-pressed', String(!collapsed));
+    dom.btnInspectorToggle.title = collapsed ? '展开右侧面板' : '收起右侧面板';
+    dom.btnInspectorToggle.setAttribute('aria-label', dom.btnInspectorToggle.title);
+    if (icon) {
+        icon.className = collapsed ? 'fas fa-chevron-left' : 'fas fa-chevron-right';
+    }
+}
+
+function setInspectorCollapsed(collapsed) {
+    const inspector = document.querySelector('.inspector');
+    if (!inspector) return;
+    inspector.classList.toggle('collapsed', !!collapsed);
+    updateInspectorToggleButton(!!collapsed);
+}
+
+function isBuiltInDemoLoaded() {
+    return state.midiFileName === BUILTIN_DEMO_FILE_NAME && state.tracks.length > 0 && state.notes.length > 0;
+}
+
+function resetTourSession() {
+    tourSession.demoImported = false;
+}
+
+function showTrackInspectorTourPreview() {
+    if (!dom.trackInspector) return;
+    state.configTrackId = null;
+    dom.trackInspector.style.display = 'flex';
+    dom.trackInspectorName.textContent = '轨道配置（导入后可用）';
+    dom.rendererOptions.querySelectorAll('input[name="trackRenderer"]').forEach(radio => {
+        radio.checked = radio.value === 'none';
+    });
+    dom.vocalSection.style.display = 'none';
+    dom.instrumentSection.style.display = 'none';
+}
+
+function resetToEmptyWorkspace() {
+    stopPlayback();
+    seekTo(0);
+    closePianoRoll();
+
+    for (const oldTrack of state.tracks) {
+        if (oldTrack._pollTimer) { clearInterval(oldTrack._pollTimer); oldTrack._pollTimer = null; }
+        oldTrack.synthJobId = null;
+    }
+    stopRenderPolling();
+    hidePrepareModal();
+    resetSynthesisUiPanels();
+    _pendingEdits.length = 0;
+    clearTimeout(_editFlushTimer);
+    _editFlushTimer = null;
+
+    state.notes = [];
+    state.tracks = [];
+    state.activeTrackId = null;
+    state.configTrackId = null;
+    state.selectedIds.clear();
+    state.selectionAnchorId = null;
+    noteIdCounter = 0;
+    _undoStack.length = 0;
+    _redoStack.length = 0;
+
+    state.midiFile = null;
+    state.midiFileName = '';
+    state.ppq = 480;
+    state.bpm = 120;
+    state.timeSig = [4, 4];
+    dom.bpmDisplay.textContent = 'BPM: ' + state.bpm;
+
+    state.synthDirty = true;
+    state.synthState = 'idle';
+    state.synthJobId = null;
+    state.pitchCurve = [];
+    state.pitchDeviation = { xs: [], ys: [] };
+    state.phraseBuffers = [];
+    state.synthPhrases = [];
+    state.phrasesTotal = 0;
+
+    setFileDropdownOpen(false);
+    closeTrackInspector();
+    setInspectorCollapsed(false);
+    mutateScrollX(0);
+    resizeCanvases();
+    buildRuler();
+    buildTrackRuler();
+    requestRedraw('all');
+    renderTrackPanel();
+    renderTrackTimeline();
+    updateInspector();
+    updateSnapDisplay();
+}
+
+function ensureOverviewWorkspace() {
+    if (state.tracks.length > 0 || state.notes.length > 0 || state.midiFile || state.midiFileName) {
+        resetToEmptyWorkspace();
+        resetTourSession();
+    }
+    setFileDropdownOpen(false);
+    closePianoRoll();
+    closeTrackInspector();
+    setInspectorCollapsed(false);
+}
+
+function ensureDemoWorkspace() {
+    if (!isBuiltInDemoLoaded()) {
+        closeTrackInspector();
+        applyBuiltInDemoProject();
+    }
+    tourSession.demoImported = true;
+    setFileDropdownOpen(false);
+    setInspectorCollapsed(false);
+    return ensureActiveTrackSelected();
+}
+
+function ensureDemoTrack(options = {}) {
+    const track = ensureDemoWorkspace();
+    if (!track) return null;
+    if (options.renderer && track.renderer !== options.renderer) {
+        mutateTrack(track.id, { renderer: options.renderer });
+    }
+    const latestTrack = state.tracks.find(item => item.id === track.id) || track;
+    if (options.openInspector) ensureTrackInspectorOpen(latestTrack.id);
+    if (options.openPianoRoll) ensurePianoRollOpen(latestTrack.id);
+    return latestTrack;
+}
+
+function ensurePianoRollOpen(trackId) {
+    if (!trackId) return;
+    const isOpen = !dom.pianoRoll.classList.contains('hidden');
+    if (isOpen && state.activeTrackId === trackId) return;
+    openPianoRoll(trackId);
+}
+
+function isElementVisible(element) {
+    if (!element || !element.isConnected) return false;
+    const style = window.getComputedStyle(element);
+    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+    return element.getClientRects().length > 0;
 }
 
 // ===== SECTION 5: 初始化 =====
@@ -712,6 +1214,11 @@ document.addEventListener('DOMContentLoaded', () => {
     initBackground();
     bindSettingsEvents();
     bindVcEvents();
+    bindMobileEvents();
+    initGuidedExperience();
+    syncMobileLayout(true);
+    resetSynthesisUiPanels();
+    updateMobileShell();
     // 默认钢琴卷帘隐藏
     dom.pianoRoll.parentElement.classList.add('piano-hidden');
 });
@@ -1995,63 +2502,124 @@ function generateMockPitchCurve() {
 // 暂存 MIDI 导入数据（弹窗确认前）
 let _pendingMidiImport = null;
 
+async function parseMidiFile(file) {
+    const buf = await file.arrayBuffer();
+
+    const lyrics = extractAllLyrics(buf);
+    const midi = new Midi(buf);
+
+    if (lyrics.length === 0 && midi.header.meta) {
+        midi.header.meta.forEach(ev => {
+            if (ev.type === 'lyrics' || ev.type === 'text') {
+                let t = ev.text || '';
+                if (t && /[\x80-\xff]/.test(t)) t = fixEncoding(t);
+                t = t.trim();
+                if (t) lyrics.push({ tick: ev.ticks, text: t });
+            }
+        });
+    }
+
+    let detectedBpm = 120;
+    let detectedTsNum = 4;
+    let detectedTsDen = 4;
+    const ppq = midi.header.ppq || 480;
+    if (midi.header.tempos && midi.header.tempos.length > 0) {
+        detectedBpm = Math.round(midi.header.tempos[0].bpm * 100) / 100;
+    }
+    if (midi.header.timeSignatures && midi.header.timeSignatures.length > 0) {
+        const ts = midi.header.timeSignatures[0].timeSignature;
+        detectedTsNum = ts[0];
+        detectedTsDen = ts[1];
+    }
+
+    return { file, midi, lyrics, ppq, detectedBpm, detectedTsNum, detectedTsDen };
+}
+
+function showMidiImportModal(parsed) {
+    _pendingMidiImport = parsed;
+    dom.midiImportBpm.value = parsed.detectedBpm;
+    dom.midiImportTsNum.value = parsed.detectedTsNum;
+    dom.midiImportTsDen.value = parsed.detectedTsDen;
+    dom.midiImportModal.style.display = 'flex';
+}
+
+function readMidiImportSettings() {
+    return {
+        bpm: clamp(parseFloat(dom.midiImportBpm.value) || 120, 20, 300),
+        tsNum: clamp(parseInt(dom.midiImportTsNum.value) || 4, 1, 16),
+        tsDen: clamp(parseInt(dom.midiImportTsDen.value) || 4, 1, 16),
+    };
+}
+
 async function loadMidiFile(file) {
     try {
-        const buf = await file.arrayBuffer();
-
-        // 先从原始二进制提取所有轨道的歌词（在 new Midi 之前，确保 buffer 完好）
-        const lyrics = extractAllLyrics(buf);
-
-        const midi = new Midi(buf);
-
-        // fallback: 如果二进制解析没拿到歌词，从 header.meta 补
-        if (lyrics.length === 0 && midi.header.meta) {
-            midi.header.meta.forEach(ev => {
-                if (ev.type === 'lyrics' || ev.type === 'text') {
-                    let t = ev.text || '';
-                    if (t && /[\x80-\xff]/.test(t)) t = fixEncoding(t);
-                    t = t.trim();
-                    if (t) lyrics.push({ tick: ev.ticks, text: t });
-                }
-            });
-        }
-
-        // 提取 BPM 和拍号
-        let detectedBpm = 120;
-        let detectedTsNum = 4, detectedTsDen = 4;
-        const ppq = midi.header.ppq || 480;
-        if (midi.header.tempos && midi.header.tempos.length > 0) {
-            detectedBpm = Math.round(midi.header.tempos[0].bpm * 100) / 100; // 保留2位小数精度
-        }
-        if (midi.header.timeSignatures && midi.header.timeSignatures.length > 0) {
-            const ts = midi.header.timeSignatures[0].timeSignature;
-            detectedTsNum = ts[0];
-            detectedTsDen = ts[1];
-        }
-
-        // 暂存解析结果
-        _pendingMidiImport = { file, midi, lyrics, ppq, detectedBpm, detectedTsNum, detectedTsDen };
-
-        // 填入弹窗并显示
-        dom.midiImportBpm.value = detectedBpm;
-        dom.midiImportTsNum.value = detectedTsNum;
-        dom.midiImportTsDen.value = detectedTsDen;
-        dom.midiImportModal.style.display = 'flex';
+        const parsed = await parseMidiFile(file);
+        showMidiImportModal(parsed);
     } catch (err) {
         console.error('MIDI 解析失败:', err);
     }
 }
 
-function applyMidiImport() {
-    if (!_pendingMidiImport) return;
-    const { file, midi, lyrics, ppq } = _pendingMidiImport;
+function getBuiltInDemoNotes() {
+    return [
+        { tick: 0, durTick: 480, midi: 67, velocity: 92, lyric: 'la' },
+        { tick: 480, durTick: 480, midi: 69, velocity: 92, lyric: 'la' },
+        { tick: 960, durTick: 480, midi: 71, velocity: 94, lyric: 'la' },
+        { tick: 1440, durTick: 480, midi: 72, velocity: 96, lyric: 'a' },
+        { tick: 1920, durTick: 480, midi: 71, velocity: 92, lyric: 'na' },
+        { tick: 2400, durTick: 480, midi: 69, velocity: 90, lyric: 'na' },
+        { tick: 2880, durTick: 480, midi: 67, velocity: 88, lyric: 'la' },
+        { tick: 3360, durTick: 960, midi: 64, velocity: 86, lyric: 'a' },
+    ];
+}
 
-    // 从弹窗读取用户确认/修改后的值
-    const bpm = clamp(parseFloat(dom.midiImportBpm.value) || 120, 20, 300);
-    const tsNum = clamp(parseInt(dom.midiImportTsNum.value) || 4, 1, 16);
-    const tsDen = clamp(parseInt(dom.midiImportTsDen.value) || 4, 1, 16);
+function buildBuiltInDemoParsedProject() {
+    const demoNotes = getBuiltInDemoNotes();
+    const bytes = encodeMidiWithLyrics(demoNotes, BUILTIN_DEMO_BPM, BUILTIN_DEMO_TIME_SIG);
+    const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    const file = new File([bytes], BUILTIN_DEMO_FILE_NAME, { type: 'audio/midi' });
+    const midi = new Midi(arrayBuffer);
+    const lyrics = extractAllLyrics(arrayBuffer);
+    return {
+        file,
+        midi,
+        lyrics,
+        ppq: MIDI_LIB_PPQ,
+        detectedBpm: BUILTIN_DEMO_BPM,
+        detectedTsNum: BUILTIN_DEMO_TIME_SIG[0],
+        detectedTsDen: BUILTIN_DEMO_TIME_SIG[1],
+    };
+}
 
-    // 关闭弹窗
+function applyBuiltInDemoProject() {
+    const parsed = buildBuiltInDemoParsedProject();
+    applyParsedMidiImport(parsed, {
+        bpm: BUILTIN_DEMO_BPM,
+        tsNum: BUILTIN_DEMO_TIME_SIG[0],
+        tsDen: BUILTIN_DEMO_TIME_SIG[1],
+    });
+
+    const track = state.tracks[0];
+    if (track) {
+        track.name = '示例旋律';
+        track.renderer = 'none';
+        track.defaultLanguageCode = DEFAULT_LANGUAGE_CODE;
+        state.activeTrackId = track.id;
+    }
+
+    renderTrackPanel();
+    renderTrackTimeline();
+    updateInspector();
+    requestRedraw('all');
+}
+
+function applyParsedMidiImport(parsed, settings = {}) {
+    if (!parsed) return;
+    const { file, midi, lyrics, ppq } = parsed;
+    const bpm = clamp(parseFloat(settings.bpm ?? parsed.detectedBpm) || 120, 20, 300);
+    const tsNum = clamp(parseInt(settings.tsNum ?? parsed.detectedTsNum) || 4, 1, 16);
+    const tsDen = clamp(parseInt(settings.tsDen ?? parsed.detectedTsDen) || 4, 1, 16);
+
     dom.midiImportModal.style.display = 'none';
 
     // 应用参数
@@ -2069,6 +2637,7 @@ function applyMidiImport() {
     }
     stopRenderPolling();
     hidePrepareModal();
+    resetSynthesisUiPanels();
     // 清除待发送的编辑队列
     _pendingEdits.length = 0;
     clearTimeout(_editFlushTimer);
@@ -2150,8 +2719,6 @@ function applyMidiImport() {
         // 钢琴卷帘的 Y 位置在 openPianoRoll 里设置
     }
 
-    dom.btnSynthesize.disabled = false;
-
     // 重置合成状态（音高曲线由后端合成后获取，不再生成模拟数据）
     state.synthDirty = true;
     state.synthState = 'idle';
@@ -2165,9 +2732,607 @@ function applyMidiImport() {
     _pendingMidiImport = null;
 }
 
+function applyMidiImport() {
+    if (!_pendingMidiImport) return;
+    applyParsedMidiImport(_pendingMidiImport, readMidiImportSettings());
+}
+
 function cancelMidiImport() {
     dom.midiImportModal.style.display = 'none';
     _pendingMidiImport = null;
+}
+
+function setTourWelcomeBusy(isBusy) {
+    if (!dom.btnTourStart || !dom.btnTourSkip) return;
+    dom.btnTourStart.disabled = isBusy;
+    dom.btnTourSkip.disabled = isBusy;
+    dom.btnTourStart.textContent = isBusy ? '正在启动教程...' : '开始教程';
+}
+
+function showTourWelcome(errorMessage = '') {
+    if (!dom.tourWelcomeOverlay) return;
+    dom.tourWelcomeOverlay.style.display = 'flex';
+    if (dom.tourWelcomeError) {
+        dom.tourWelcomeError.textContent = errorMessage;
+        dom.tourWelcomeError.style.display = errorMessage ? 'block' : 'none';
+    }
+    setTourWelcomeBusy(false);
+}
+
+function hideTourWelcome() {
+    if (!dom.tourWelcomeOverlay) return;
+    dom.tourWelcomeOverlay.style.display = 'none';
+    if (dom.tourWelcomeError) {
+        dom.tourWelcomeError.textContent = '';
+        dom.tourWelcomeError.style.display = 'none';
+    }
+    setTourWelcomeBusy(false);
+}
+
+function getTourTrack() {
+    return state.tracks.find(track => track.id === state.activeTrackId) || state.tracks[0] || null;
+}
+
+async function importBuiltInDemoForTour() {
+    closeTrackInspector();
+    closePianoRoll();
+    applyBuiltInDemoProject();
+    tourSession.demoImported = true;
+    await new Promise(resolve => window.setTimeout(resolve, 180));
+}
+
+function getTourSynthesisContent() {
+    const track = getTourTrack();
+    const synthError = dom.synthError?.textContent?.trim() || '';
+    if (!track) {
+        return '请先导入示例轨道，并进入钢琴卷帘。';
+    }
+    if (!hasAvailableVoicebanks()) {
+        return '这里的 <b>合成</b> 是唯一主动合成入口。当前环境还没有可用歌手，请先加载声库，再继续这一步。';
+    }
+    if (track.synthState === 'ready') {
+        return '合成已经完成，接下来可以查看右侧的结果区和 SeedVC 声音克隆。';
+    }
+    if (track.synthState === 'preparing') {
+        return `已经点击合成，正在准备 <b>${track.name}</b>。等准备结束后会自动进入渲染。`;
+    }
+    if (track.synthState === 'rendering') {
+        return `系统正在渲染 <b>${track.name}</b>。完成后会自动继续到结果区。`;
+    }
+    if (synthError) {
+        return `${synthError}<br><br>请先排除这个问题，再继续下一步。`;
+    }
+    return '请点击这里的 <b>合成</b> 按钮，发起一次真实渲染。只有这一步完成后，右侧结果区和 <b>SeedVC 声音克隆</b> 才会出现。';
+}
+
+function getTourSynthesisWaitingLabel() {
+    const track = getTourTrack();
+    if (!hasAvailableVoicebanks()) return '等待声库就绪';
+    if (!track) return '等待示例轨道';
+    if (track.synthState === 'preparing' || track.synthState === 'rendering') return '等待合成完成';
+    return '请先点击合成';
+}
+
+function buildTourSteps() {
+    return [
+        {
+            target: () => document.querySelector('[data-tour="menubar"]'),
+            position: 'bottom',
+            title: '欢迎使用 Melody Singer',
+            onBefore: () => {
+                resetTourSession();
+                ensureOverviewWorkspace();
+            },
+            content: () => '你将从空白工程开始，依次了解导入方式、轨道配置、钢琴卷帘、AI 歌声合成和 SeedVC 声音克隆。',
+        },
+        {
+            target: () => dom.menuFileToggle || document.querySelector('[data-tour="menubar"]'),
+            position: 'bottom',
+            onBefore: () => {
+                ensureOverviewWorkspace();
+                setFileDropdownOpen(true);
+            },
+            title: '文件菜单',
+            content: () => '左上角的 <b>文件</b> 菜单可以新建空白项目，也可以导入你自己的 MIDI。',
+        },
+        {
+            target: () => document.querySelector('[data-tour="track-view"]'),
+            position: 'right',
+            onBefore: () => {
+                ensureOverviewWorkspace();
+                setFileDropdownOpen(false);
+            },
+            title: '轨道区',
+            content: () => '导入 MIDI 或新建项目后，轨道会显示在这里。单击可以切换轨道，双击会进入钢琴卷帘。',
+        },
+        {
+            target: () => document.querySelector('[data-tour="renderer-options"]') || document.querySelector('[data-tour="track-inspector"]'),
+            position: 'right',
+            onBefore: () => {
+                ensureOverviewWorkspace();
+                showTrackInspectorTourPreview();
+            },
+            title: '轨道配置',
+            content: () => '每条轨道都可以在左侧配置面板里切换成 <b>人声</b>、<b>乐器</b> 或 <b>不渲染</b>。人声轨道才会进入歌声合成流程。',
+        },
+        {
+            target: () => document.querySelector('[data-tour="inspector-panel"]') || document.querySelector('[data-tour="track-view"]'),
+            position: 'left',
+            onBefore: () => {
+                ensureOverviewWorkspace();
+                closeTrackInspector();
+                setInspectorCollapsed(false);
+            },
+            title: '右侧边板',
+            content: () => '右侧边板负责显示演唱设置、合成结果和 SeedVC 声音克隆；右边的小按钮只负责展开和收起。',
+        },
+        {
+            target: () => document.querySelector('.toolbar-strip') || document.querySelector('[data-tour="transport-controls"]'),
+            position: 'top',
+            onBefore: () => ensureOverviewWorkspace(),
+            title: '播放、缩放和编辑工具',
+            content: () => '这一整条工具栏负责试听、缩放和编辑。进入钢琴卷帘后，会继续逐个介绍常用工具。',
+        },
+        {
+            target: () => document.querySelector('[data-tour="menu-file"]') || dom.menuFileToggle,
+            position: 'bottom',
+            onBefore: async () => {
+                ensureOverviewWorkspace();
+                setFileDropdownOpen(true);
+                await importBuiltInDemoForTour();
+            },
+            title: '导入示例 MIDI',
+            content: () => '这里是导入 MIDI 的入口。现在已经自动导入一条示例 MIDI，方便继续了解后面的操作。',
+        },
+        {
+            target: () => document.querySelector('[data-tour="active-track"]') || document.querySelector('[data-tour="track-view"]'),
+            position: 'right',
+            onBefore: () => {
+                const track = ensureDemoWorkspace();
+                if (track) {
+                    state.activeTrackId = track.id;
+                    renderTrackPanel();
+                    renderTrackTimeline();
+                }
+            },
+            title: '示例轨道',
+            content: () => '现在轨道区已经有示例内容了。后面的配置、编辑和合成都围绕这条示例轨道继续。',
+        },
+        {
+            target: () => document.querySelector('[data-tour="voicebank-select"]') || document.querySelector('[data-tour="singing-settings"]') || document.querySelector('[data-tour="inspector-panel"]'),
+            position: 'left',
+            onBefore: () => {
+                const track = ensureDemoTrack({ renderer: 'vocal', openInspector: true });
+                if (track) updateTrackInspector();
+                setInspectorCollapsed(false);
+            },
+            title: '选择歌手',
+            content: () => hasAvailableVoicebanks()
+                ? '示例轨道已经切成人声。现在只需要在这里选择歌手，就可以准备进入歌声合成。'
+                : '示例轨道已经切成人声。继续合成前，还需要先加载可用声库。',
+        },
+        {
+            target: () => isElementVisible(dom.pianoRoll)
+                ? dom.pianoRoll
+                : (document.querySelector('[data-tour="active-track"]') || document.querySelector('[data-tour="track-view"]')),
+            position: 'bottom',
+            onBefore: () => {
+                const track = ensureDemoTrack({ renderer: 'vocal', openPianoRoll: true });
+                if (track) ensurePianoRollOpen(track.id);
+            },
+            beforeDelay: 260,
+            title: '打开钢琴卷帘',
+            content: () => '双击轨道就能进入钢琴卷帘。这里可以逐个编辑音符、歌词和音高。',
+        },
+        {
+            target: () => document.querySelector('[data-tour="tool-pointer"]') || document.querySelector('.tool-btn[data-tool="pointer"]'),
+            position: 'top',
+            onBefore: () => {
+                ensureDemoTrack({ renderer: 'vocal', openPianoRoll: true });
+                setTool('pointer');
+            },
+            beforeDelay: 220,
+            title: '指针工具',
+            content: () => '指针用来选中、拖动和整体调整音符，是最常用的基础工具。',
+        },
+        {
+            target: () => document.querySelector('[data-tour="tool-pencil"]') || document.querySelector('.tool-btn[data-tool="pencil"]'),
+            position: 'top',
+            onBefore: () => {
+                ensureDemoTrack({ renderer: 'vocal', openPianoRoll: true });
+                setTool('pencil');
+            },
+            beforeDelay: 220,
+            title: '铅笔工具',
+            content: () => '铅笔用来新建音符，适合快速补写旋律。',
+        },
+        {
+            target: () => document.querySelector('[data-tour="tool-eraser"]') || document.querySelector('.tool-btn[data-tool="eraser"]'),
+            position: 'top',
+            onBefore: () => {
+                ensureDemoTrack({ renderer: 'vocal', openPianoRoll: true });
+                setTool('eraser');
+            },
+            beforeDelay: 220,
+            title: '橡皮擦工具',
+            content: () => '橡皮擦用来删除不需要的音符。',
+        },
+        {
+            target: () => document.querySelector('[data-tour="tool-knife"]') || document.querySelector('.tool-btn[data-tool="knife"]'),
+            position: 'top',
+            onBefore: () => {
+                ensureDemoTrack({ renderer: 'vocal', openPianoRoll: true });
+                setTool('knife');
+            },
+            beforeDelay: 220,
+            title: '切刀工具',
+            content: () => '切刀会把一个音符切成两段，方便重新分配时值和歌词。',
+        },
+        {
+            target: () => document.querySelector('[data-tour="tool-pitchpen"]') || document.querySelector('.tool-btn[data-tool="pitchpen"]'),
+            position: 'top',
+            onBefore: () => {
+                ensureDemoTrack({ renderer: 'vocal', openPianoRoll: true });
+                setTool('pitchpen');
+            },
+            beforeDelay: 220,
+            title: '音高画笔',
+            content: () => '音高画笔用来绘制和微调音高偏移曲线。',
+        },
+        {
+            target: () => document.querySelector('[data-tour="solo-play"]') || dom.btnSoloPlay,
+            position: 'bottom',
+            onBefore: () => {
+                const track = ensureDemoTrack({ renderer: 'vocal', openPianoRoll: true });
+                if (track) ensurePianoRollOpen(track.id);
+            },
+            beforeDelay: 220,
+            title: '单轨播放',
+            content: () => '这个播放按钮只试听当前打开的轨道，适合逐轨检查歌词、节奏和音准。',
+        },
+        {
+            target: () => isElementVisible(dom.btnTrackSynth)
+                ? dom.btnTrackSynth
+                : (isElementVisible(dom.pianoRoll) ? dom.pianoRoll.querySelector('.piano-roll-header') : document.querySelector('[data-tour="track-view"]')),
+            position: 'bottom',
+            onBefore: () => {
+                const track = ensureDemoTrack({ renderer: 'vocal', openPianoRoll: true });
+                if (track) ensurePianoRollOpen(track.id);
+                setInspectorCollapsed(false);
+            },
+            beforeDelay: 320,
+            title: '开始合成',
+            content: () => getTourSynthesisContent(),
+            liveContent: true,
+            waitFor: () => {
+                const track = getTourTrack();
+                return !!track && track.synthState === 'ready';
+            },
+            waitingLabel: () => getTourSynthesisWaitingLabel(),
+            autoAdvance: true,
+            autoAdvanceDelay: 420,
+            pollInterval: 500,
+        },
+        {
+            target: () => isElementVisible(dom.vcSection)
+                ? dom.vcSection
+                : (isElementVisible(dom.resultSection) ? dom.resultSection : document.querySelector('[data-tour="inspector-panel"]')),
+            position: 'left',
+            onBefore: () => {
+                const track = ensureDemoTrack({ renderer: 'vocal', openPianoRoll: true });
+                if (track) ensurePianoRollOpen(track.id);
+                setInspectorCollapsed(false);
+            },
+            beforeDelay: 260,
+            title: '结果与 SeedVC 声音克隆',
+            content: () => '合成完成后，右侧会出现结果区，可以下载成品或导出干声。下面的 <b>SeedVC 声音克隆</b> 可以上传参考音频、调整参数并开始声音克隆。',
+        },
+    ];
+}
+
+class MelodyGuidedTour {
+    constructor(stepFactory) {
+        this.stepFactory = stepFactory;
+        this.steps = [];
+        this.currentIndex = -1;
+        this.isActive = false;
+        this._repositionHandler = null;
+        this._stepInterval = null;
+        this._stepTimeout = null;
+        this._stepToken = 0;
+        this._createUi();
+    }
+
+    _createUi() {
+        this.overlay = document.createElement('div');
+        this.overlay.className = 'tour-overlay';
+        this.overlay.innerHTML = `<svg width="100%" height="100%" aria-hidden="true">
+            <defs>
+                <mask id="tour-mask">
+                    <rect width="100%" height="100%" fill="white"></rect>
+                    <rect id="tour-cutout" x="0" y="0" width="0" height="0" rx="14" ry="14" fill="black"></rect>
+                </mask>
+            </defs>
+            <rect width="100%" height="100%" fill="rgba(6, 8, 12, 0.72)" mask="url(#tour-mask)"></rect>
+            <rect id="tour-outline" x="0" y="0" width="0" height="0" rx="14" ry="14" fill="none" stroke="rgba(126, 184, 255, 0.95)" stroke-width="2"></rect>
+        </svg>`;
+
+        this.tooltip = document.createElement('div');
+        this.tooltip.className = 'tour-tooltip';
+        this.tooltip.innerHTML = `<div class="tour-tooltip-arrow"></div>
+            <div class="tour-tooltip-header">
+                <span class="tour-tooltip-step"></span>
+                <span class="tour-tooltip-title"></span>
+            </div>
+            <div class="tour-tooltip-body"></div>
+            <div class="tour-tooltip-footer">
+                <div class="tour-tooltip-dots"></div>
+                <div class="tour-tooltip-nav">
+                    <button class="tour-nav-btn tour-btn-skip">跳过教程</button>
+                    <button class="tour-nav-btn tour-btn-prev">← 上一步</button>
+                    <button class="tour-nav-btn tour-btn-next">下一步 →</button>
+                </div>
+            </div>`;
+
+        document.body.appendChild(this.overlay);
+        document.body.appendChild(this.tooltip);
+
+        this.tooltip.querySelector('.tour-btn-next').addEventListener('click', () => this.next());
+        this.tooltip.querySelector('.tour-btn-prev').addEventListener('click', () => this.prev());
+        this.tooltip.querySelector('.tour-btn-skip').addEventListener('click', () => this.end(true));
+    }
+
+    start(fromIndex = 0) {
+        this.steps = this.stepFactory();
+        if (!this.steps.length) return;
+        if (this.isActive) {
+            this.currentIndex = fromIndex - 1;
+            this.next();
+            return;
+        }
+
+        this.isActive = true;
+        this.currentIndex = fromIndex - 1;
+        this.tooltip.style.display = 'block';
+        this.overlay.classList.add('active');
+        this._repositionHandler = () => {
+            if (this.isActive) this._positionCurrent();
+        };
+        window.addEventListener('resize', this._repositionHandler);
+        document.addEventListener('scroll', this._repositionHandler, true);
+        this.next();
+    }
+
+    next() {
+        if (!this.isActive) return;
+        const currentStep = this.steps[this.currentIndex];
+        if (currentStep && typeof currentStep.waitFor === 'function' && !currentStep.waitFor()) return;
+        if (this.currentIndex >= this.steps.length - 1) {
+            this.end(true);
+            return;
+        }
+        this.currentIndex += 1;
+        this._showStep(this.currentIndex);
+    }
+
+    prev() {
+        if (!this.isActive || this.currentIndex <= 0) return;
+        this.currentIndex -= 1;
+        this._showStep(this.currentIndex);
+    }
+
+    end(markComplete = true) {
+        if (!this.isActive) return;
+        this.isActive = false;
+        this._clearStepWatchers();
+        this.overlay.classList.remove('active');
+        this.tooltip.classList.remove('visible');
+        this.tooltip.style.display = 'none';
+        setFileDropdownOpen(false);
+        if (markComplete) {
+            localStorage.setItem(TOUR_STORAGE_KEY, '1');
+        }
+        window.removeEventListener('resize', this._repositionHandler);
+        document.removeEventListener('scroll', this._repositionHandler, true);
+    }
+
+    _showStep(index) {
+        const step = this.steps[index];
+        const stepToken = ++this._stepToken;
+        this._clearStepWatchers();
+        setFileDropdownOpen(false);
+        const beforeWork = typeof step.onBefore === 'function' ? Promise.resolve(step.onBefore()) : Promise.resolve();
+        beforeWork
+            .catch(err => console.error('教程步骤准备失败:', err))
+            .finally(() => {
+                const delay = typeof step.onBefore === 'function' ? (step.beforeDelay ?? 180) : 0;
+                window.setTimeout(() => {
+                    if (!this.isActive || this.currentIndex !== index || stepToken !== this._stepToken) return;
+                    this._updateContent(step, index);
+                    this._positionCurrent();
+                    this._startStepWatchers(step, index, stepToken);
+                }, delay);
+            });
+    }
+
+    _clearStepWatchers() {
+        if (this._stepInterval) {
+            clearInterval(this._stepInterval);
+            this._stepInterval = null;
+        }
+        if (this._stepTimeout) {
+            clearTimeout(this._stepTimeout);
+            this._stepTimeout = null;
+        }
+    }
+
+    _startStepWatchers(step, index, stepToken) {
+        if (!step.liveContent && typeof step.waitFor !== 'function') return;
+        const refresh = () => {
+            if (!this.isActive || this.currentIndex !== index || stepToken !== this._stepToken) {
+                this._clearStepWatchers();
+                return;
+            }
+            this._updateContent(step, index);
+            this._positionCurrent();
+            if (typeof step.waitFor === 'function' && step.waitFor()) {
+                if (step.autoAdvance !== false && !this._stepTimeout) {
+                    this._stepTimeout = window.setTimeout(() => {
+                        if (this.isActive && this.currentIndex === index && stepToken === this._stepToken) {
+                            this.next();
+                        }
+                    }, step.autoAdvanceDelay ?? 360);
+                }
+            } else if (this._stepTimeout) {
+                clearTimeout(this._stepTimeout);
+                this._stepTimeout = null;
+            }
+        };
+        refresh();
+        this._stepInterval = window.setInterval(refresh, step.pollInterval ?? 400);
+    }
+
+    _resolveTarget(step) {
+        let target = typeof step.target === 'function' ? step.target() : step.target;
+        if (typeof target === 'string') {
+            target = document.querySelector(target);
+        }
+        if (!isElementVisible(target)) {
+            target = document.querySelector('[data-tour="track-view"]') || document.body;
+        }
+        return target;
+    }
+
+    _positionCurrent() {
+        const step = this.steps[this.currentIndex];
+        const target = this._resolveTarget(step);
+        const rect = target.getBoundingClientRect();
+        const pad = step.padding ?? 10;
+        const cutout = this.overlay.querySelector('#tour-cutout');
+        const outline = this.overlay.querySelector('#tour-outline');
+
+        cutout.setAttribute('x', Math.max(0, rect.left - pad));
+        cutout.setAttribute('y', Math.max(0, rect.top - pad));
+        cutout.setAttribute('width', rect.width + pad * 2);
+        cutout.setAttribute('height', rect.height + pad * 2);
+        outline.setAttribute('x', Math.max(0, rect.left - pad));
+        outline.setAttribute('y', Math.max(0, rect.top - pad));
+        outline.setAttribute('width', rect.width + pad * 2);
+        outline.setAttribute('height', rect.height + pad * 2);
+
+        this._positionTooltip(rect, step.position || 'bottom', pad);
+    }
+
+    _positionTooltip(targetRect, preferredPosition, pad) {
+        const tooltip = this.tooltip;
+        const arrow = tooltip.querySelector('.tour-tooltip-arrow');
+        tooltip.style.visibility = 'hidden';
+        tooltip.classList.add('visible');
+        const tooltipRect = tooltip.getBoundingClientRect();
+        tooltip.style.visibility = '';
+
+        const gap = 14;
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+        const positions = {
+            bottom: {
+                top: targetRect.bottom + pad + gap,
+                left: targetRect.left + targetRect.width / 2 - tooltipRect.width / 2,
+                fits: targetRect.bottom + pad + gap + tooltipRect.height < viewportHeight,
+            },
+            top: {
+                top: targetRect.top - pad - gap - tooltipRect.height,
+                left: targetRect.left + targetRect.width / 2 - tooltipRect.width / 2,
+                fits: targetRect.top - pad - gap - tooltipRect.height > 0,
+            },
+            right: {
+                top: targetRect.top + targetRect.height / 2 - tooltipRect.height / 2,
+                left: targetRect.right + pad + gap,
+                fits: targetRect.right + pad + gap + tooltipRect.width < viewportWidth,
+            },
+            left: {
+                top: targetRect.top + targetRect.height / 2 - tooltipRect.height / 2,
+                left: targetRect.left - pad - gap - tooltipRect.width,
+                fits: targetRect.left - pad - gap - tooltipRect.width > 0,
+            },
+        };
+
+        let position = preferredPosition;
+        if (!positions[position]?.fits) {
+            position = Object.keys(positions).find(key => positions[key].fits) || 'bottom';
+        }
+        let { top, left } = positions[position];
+        left = Math.max(10, Math.min(left, viewportWidth - tooltipRect.width - 10));
+        top = Math.max(10, Math.min(top, viewportHeight - tooltipRect.height - 10));
+
+        tooltip.style.top = `${top}px`;
+        tooltip.style.left = `${left}px`;
+
+        const arrowStyles = {
+            bottom: { top: '-6px', left: '50%', marginLeft: '-6px', right: '', bottom: '', marginTop: '' },
+            top: { bottom: '-6px', left: '50%', marginLeft: '-6px', right: '', top: '', marginTop: '' },
+            right: { left: '-6px', top: '50%', marginTop: '-6px', right: '', bottom: '', marginLeft: '' },
+            left: { right: '-6px', top: '50%', marginTop: '-6px', left: '', bottom: '', marginLeft: '' },
+        };
+        Object.assign(arrow.style, { top: '', bottom: '', left: '', right: '', marginLeft: '', marginTop: '', ...arrowStyles[position] });
+        tooltip.classList.add('visible');
+    }
+
+    _updateContent(step, index) {
+        const title = typeof step.title === 'function' ? step.title() : step.title;
+        const content = typeof step.content === 'function' ? step.content() : step.content;
+        const prevBtn = this.tooltip.querySelector('.tour-btn-prev');
+        const nextBtn = this.tooltip.querySelector('.tour-btn-next');
+        const waiting = typeof step.waitFor === 'function' && !step.waitFor();
+        this.tooltip.classList.remove('visible');
+        this.tooltip.querySelector('.tour-tooltip-step').textContent = `${index + 1} / ${this.steps.length}`;
+        this.tooltip.querySelector('.tour-tooltip-title').textContent = title;
+        this.tooltip.querySelector('.tour-tooltip-body').innerHTML = content;
+        const maxDots = 7;
+        const dotWindowStart = this.steps.length <= maxDots
+            ? 0
+            : Math.max(0, Math.min(index - Math.floor(maxDots / 2), this.steps.length - maxDots));
+        const dotWindowEnd = Math.min(this.steps.length, dotWindowStart + maxDots);
+        this.tooltip.querySelector('.tour-tooltip-dots').innerHTML = this.steps
+            .slice(dotWindowStart, dotWindowEnd)
+            .map((_, visibleDotIndex) => {
+                const dotIndex = dotWindowStart + visibleDotIndex;
+                return `<div class="tour-dot${dotIndex === index ? ' active' : ''}"></div>`;
+            })
+            .join('');
+        prevBtn.style.display = index === 0 ? 'none' : '';
+        nextBtn.disabled = waiting;
+        nextBtn.textContent = waiting
+            ? (typeof step.waitingLabel === 'function' ? step.waitingLabel() : (step.waitingLabel || '等待完成'))
+            : (index === this.steps.length - 1 ? '完成 ✓' : '下一步 →');
+    }
+}
+
+function startForcedTour() {
+    if (!guidedTour || guidedTour.isActive) return;
+    setTourWelcomeBusy(true);
+    hideTourWelcome();
+    resetTourSession();
+    resetToEmptyWorkspace();
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => guidedTour?.start(0));
+    });
+}
+
+function initGuidedExperience() {
+    guidedTour = new MelodyGuidedTour(buildTourSteps);
+    updateInspectorToggleButton(false);
+
+    dom.btnTourStart?.addEventListener('click', startForcedTour);
+    dom.btnTourSkip?.addEventListener('click', hideTourWelcome);
+    dom.tourHelpBtn?.addEventListener('click', () => {
+        if (guidedTour?.isActive) return;
+        showTourWelcome();
+    });
+
+    if (!localStorage.getItem(TOUR_STORAGE_KEY)) {
+        showTourWelcome();
+    }
 }
 
 // ===== 新建项目 =====
@@ -2194,6 +3359,7 @@ function applyNewProject() {
     }
     stopRenderPolling();
     hidePrepareModal();
+    resetSynthesisUiPanels();
     _pendingEdits.length = 0;
     clearTimeout(_editFlushTimer);
     _editFlushTimer = null;
@@ -2237,7 +3403,6 @@ function applyNewProject() {
     renderTrackTimeline();
     updateInspector();
     updateSnapDisplay();
-    dom.btnSynthesize.disabled = false;
 
     // 重置合成状态
     state.synthDirty = true;
@@ -2274,7 +3439,6 @@ function addTrack(name) {
         pitchDeviation: { xs: [], ys: [] },
     });
     state.activeTrackId = trackId;
-    dom.btnSynthesize.disabled = false;
     renderTrackPanel();
     renderTrackTimeline();
     return trackId;
@@ -2417,6 +3581,8 @@ async function synthesizeTrack(trackId) {
 
     const singerId = track.voicebankId || dom.voicebankSelect.value;
     if (!singerId) {
+        showSynthesisError('当前环境还没有加载歌手，请先选择可用声库后再合成。');
+        setRenderStatus('未检测到可用歌手');
         console.warn('[synth] 轨道', track.name, '没有声库');
         return;
     }
@@ -2433,6 +3599,9 @@ async function synthesizeTrack(trackId) {
     track.synthState = 'preparing';
     track.phraseBuffers = [];
     track.pitchCurve = [];
+    showSynthesisError('');
+    setRenderStatus(track.name + ' 准备中...');
+    setSynthesisProgress(true, '准备 ' + track.name + '...', 8);
 
     showPrepareModal();
     updatePrepareModalText('准备 ' + track.name + '...');
@@ -2452,6 +3621,8 @@ async function synthesizeTrack(trackId) {
 
         hidePrepareModal();
         track.synthState = 'rendering';
+        setRenderStatus(track.name + ' 渲染中...');
+        setSynthesisProgress(true, track.name + '：开始渲染...', 12);
 
         // 获取音高曲线
         fetchTrackPitchCurve(track);
@@ -2462,6 +3633,14 @@ async function synthesizeTrack(trackId) {
         hidePrepareModal();
         track.synthState = 'idle';
         track.synthJobId = null;
+        setRenderStatus(track.name + ' 合成失败');
+        setSynthesisProgress(false, '等待中...', 0);
+        const isFetchError = err instanceof TypeError && /fetch/i.test(err.message || '');
+        showSynthesisError(
+            isFetchError
+                ? (track.name + ' 合成失败：无法连接到合成服务，请确认后端已通过 start.bat 正常启动。')
+                : (track.name + ' 合成失败，请检查后端日志、歌词语言或声库配置。')
+        );
         console.error('[synth] 轨道', track.name, '合成失败:', err);
     }
 }
@@ -2483,6 +3662,7 @@ function waitForTrackPrepare(track) {
                     label = m ? `${track.name}: 音高预测 (${m[1]}/${m[2]})` : track.name + ': 音高预测...';
                 }
                 updatePrepareModalText(label);
+                setSynthesisProgress(true, label, 10);
 
                 if (data.status === 'failed') { reject(new Error(data.error)); return; }
                 if (data.phrases && data.phrases.length > 0) {
@@ -2553,6 +3733,9 @@ function startTrackRenderPolling(track) {
                 if (dom.btnTrackSynth && track.id === state.activeTrackId) {
                     dom.btnTrackSynth.textContent = '渲染中 ' + done + '/' + total;
                 }
+                const ratio = total > 0 ? done / total : 0;
+                setRenderStatus(`${track.name} 渲染中 ${done}/${total}`);
+                setSynthesisProgress(true, `${track.name}：渲染中 ${done}/${total}`, 12 + ratio * 78);
                 for (const p of data.phrases) {
                     if (p.status === 'completed'
                         && !track.phraseBuffers.some(b => b.index === p.index)
@@ -2573,6 +3756,9 @@ function startTrackRenderPolling(track) {
                 if (dom.btnTrackSynth && track.id === state.activeTrackId) {
                     dom.btnTrackSynth.textContent = '合成';
                 }
+                setRenderStatus(track.name + ' 合成完成');
+                setSynthesisProgress(false, '合成完成', 100);
+                showSynthesisError('');
                 // 显示合成结果区和音色转换区
                 dom.resultSection.style.display = 'block';
                 dom.vcSection.style.display = 'block';
@@ -2593,6 +3779,9 @@ function startTrackRenderPolling(track) {
                 if (dom.btnTrackSynth && track.id === state.activeTrackId) {
                     dom.btnTrackSynth.textContent = '合成';
                 }
+                setRenderStatus(track.name + ' 合成失败');
+                setSynthesisProgress(false, '等待中...', 0);
+                showSynthesisError(track.name + ' 合成失败，请检查歌手模型或后端输出。');
                 renderTrackPanel();
             }
         } catch (err) { console.warn('[poll] error:', err); }
@@ -3164,11 +4353,15 @@ function renderTrackPanel() {
     dom.trackHeaderCol.innerHTML = '';
     if (state.tracks.length === 0) {
         dom.trackHeaderCol.innerHTML = '<div class="track-empty-hint"><i class="fas fa-music"></i> 新建项目或打开 MIDI 以开始</div>';
+        updateMobileShell();
         return;
     }
     state.tracks.forEach(track => {
         const item = document.createElement('div');
         item.className = 'track-item' + (track.id === state.activeTrackId ? ' active' : '');
+        if (track.id === state.activeTrackId) {
+            item.dataset.tour = 'active-track';
+        }
 
         // 渲染器图标
         let iconClass = '';
@@ -3192,6 +4385,10 @@ function renderTrackPanel() {
                 <button class="track-btn ${track.muted?'mute-active':''}" data-action="mute" data-track="${track.id}">M</button>
                 <button class="track-btn ${track.solo?'solo-active':''}" data-action="solo" data-track="${track.id}">S</button>
             </div>`;
+        const rendererIcon = item.querySelector('.track-renderer-icon');
+        if (track.id === state.activeTrackId && rendererIcon) {
+            rendererIcon.dataset.tour = 'active-track-config';
+        }
         // 音量滑条：实时调节，播放中立即生效
         const volSlider = item.querySelector('.track-volume');
         volSlider.addEventListener('input', e => {
@@ -3237,6 +4434,7 @@ function renderTrackPanel() {
     addBtn.innerHTML = '<i class="fas fa-plus"></i> 添加轨道';
     addBtn.addEventListener('click', () => addTrack());
     dom.trackHeaderCol.appendChild(addBtn);
+    updateMobileShell();
 }
 
 function renderTrackTimeline() {
@@ -3697,6 +4895,8 @@ async function loadVoicebanks(retries = 10, interval = 2000) {
                     opt.textContent = vb.name;
                     dom.voicebankSelect.appendChild(opt);
                 });
+                syncMobileVoicebankOptions();
+                updateMobileShell();
                 return;
             }
             // 后端还没初始化完，返回了空列表，等待后重试
@@ -3708,6 +4908,8 @@ async function loadVoicebanks(retries = 10, interval = 2000) {
         }
     }
     dom.voicebankSelect.innerHTML = '<option value="">无法加载声库</option>';
+    syncMobileVoicebankOptions();
+    updateMobileShell();
 }
 
 /** 导入 MIDI 后自动触发：提交合成 → 弹窗等待准备阶段 → 关闭弹窗 → 后台渲染 */
@@ -4176,8 +5378,6 @@ function scheduleInstrumentTracks(fromTimeSec) {
     buildPianoPlayQueue(fromTimeSec);
 }
 
-function startSynthesis() { autoSynthesize(); }
-
 // ===== SECTION 23b: MIDI 键盘输入 =====
 
 /** 初始化 Web MIDI API，枚举设备并绑定消息监听 */
@@ -4365,15 +5565,14 @@ function setupResizer(handle, panel, min, max) {
 // ===== SECTION 26: 事件绑定 =====
 function bindEvents() {
     // 文件下拉菜单
-    const fileToggle = document.getElementById('menuFileToggle');
-    const fileDropdown = fileToggle?.closest('.menu-dropdown');
-    if (fileToggle && fileDropdown) {
-        fileToggle.addEventListener('click', e => {
+    const fileDropdown = dom.menuFileToggle?.closest('.menu-dropdown');
+    if (dom.menuFileToggle && fileDropdown) {
+        dom.menuFileToggle.addEventListener('click', e => {
             e.stopPropagation();
-            fileDropdown.classList.toggle('open');
+            setFileDropdownOpen(!fileDropdown.classList.contains('open'));
         });
-        document.addEventListener('click', () => fileDropdown.classList.remove('open'));
-        fileDropdown.querySelector('.menu-dropdown-list')?.addEventListener('click', () => fileDropdown.classList.remove('open'));
+        document.addEventListener('click', () => setFileDropdownOpen(false));
+        fileDropdown.querySelector('.menu-dropdown-list')?.addEventListener('click', () => setFileDropdownOpen(false));
     }
 
     dom.menuFile.addEventListener('click', () => dom.midiFileInput.click());
@@ -4383,11 +5582,8 @@ function bindEvents() {
 
     // 右侧面板折叠/展开
     const inspector = document.querySelector('.inspector');
-    const sideIcons = document.querySelectorAll('.side-icon:not(#btnSettings)');
-    sideIcons.forEach(icon => {
-        icon.addEventListener('click', () => {
-            inspector.classList.toggle('collapsed');
-        });
+    dom.btnInspectorToggle?.addEventListener('click', () => {
+        setInspectorCollapsed(!inspector.classList.contains('collapsed'));
     });
     inspector.addEventListener('transitionend', () => {
         resizeCanvases();
@@ -4581,16 +5777,8 @@ function bindEvents() {
         });
     }
 
-    dom.btnSynthesize.addEventListener('click', startSynthesis);
-
     dom.btnDownload.addEventListener('click', () => {
-        const jobId = getActiveJobId();
-        if (jobId) {
-            const a = document.createElement('a');
-            a.href = API_BASE + '/api/jobs/' + jobId + '/download';
-            a.download = state.midiFileName.replace(/\.\w+$/, '') + '.wav';
-            a.click();
-        }
+        downloadCurrentRender('');
     });
 
     dom.batchLyricsClose.addEventListener('click', closeBatchLyrics);
@@ -4681,8 +5869,10 @@ function bindEvents() {
 
     // 窗口大小变化时重新调整 canvas 尺寸
     window.addEventListener('resize', () => {
+        syncMobileLayout();
         resizeCanvases();
         requestRedraw('all');
+        updateMobileShell();
     });
 }
 
@@ -4848,12 +6038,7 @@ function bindSettingsEvents() {
 
 // ===== SECTION: 导出干声 =====
 function exportDryVocal() {
-    const jobId = getActiveJobId();
-    if (!jobId) return;
-    const a = document.createElement('a');
-    a.href = API_BASE + '/api/jobs/' + jobId + '/download';
-    a.download = (state.midiFileName || 'vocal').replace(/\.\w+$/, '') + '_dry.wav';
-    a.click();
+    downloadCurrentRender('_dry');
 }
 
 // ===== SECTION: Seed-VC 音色转换 =====
@@ -4943,7 +6128,7 @@ function hfGetResult(eventId, onProgress) {
 }
 
 async function startVcConvert() {
-    const jobId = getActiveJobId();
+    const { jobId } = getCurrentRenderedJobContext();
     if (!jobId || !_vcRefFile) return;
 
     dom.btnVcConvert.disabled = true;
@@ -4951,6 +6136,7 @@ async function startVcConvert() {
     dom.vcResult.style.display = 'none';
     dom.vcProgressFill.style.width = '10%';
     dom.vcProgressText.textContent = '上传源音频...';
+    updateMobileShell();
 
     try {
         // 1. 下载渲染好的人声 WAV
@@ -4958,7 +6144,8 @@ async function startVcConvert() {
         if (!vocalResp.ok) throw new Error('获取人声失败');
         const vocalBlob = await vocalResp.blob();
         dom.vcProgressFill.style.width = '20%';
-        dom.vcProgressText.textContent = '上传到 Seed-VC...';
+        dom.vcProgressText.textContent = '上传到 SeedVC 声音克隆...';
+        updateMobileShell();
 
         // 2. 上传源音频和参考音频到 HF
         const [sourcePath, refPath] = await Promise.all([
@@ -4967,6 +6154,7 @@ async function startVcConvert() {
         ]);
         dom.vcProgressFill.style.width = '35%';
         dom.vcProgressText.textContent = '启动转换...';
+        updateMobileShell();
 
         // 3. 调用 predict
         const steps = parseInt(dom.vcStepsSlider.value) || 10;
@@ -4984,11 +6172,13 @@ async function startVcConvert() {
             pitchShift: pitchShift
         });
         dom.vcProgressFill.style.width = '45%';
+        updateMobileShell();
 
         // 4. 等待结果（SSE）
         const resultUrl = await hfGetResult(eventId, msg => {
             dom.vcProgressText.textContent = msg;
             dom.vcProgressFill.style.width = '60%';
+            updateMobileShell();
         });
 
         dom.vcProgressFill.style.width = '100%';
@@ -4998,13 +6188,16 @@ async function startVcConvert() {
         // 5. 显示播放器
         dom.vcAudioPlayer.src = resultUrl;
         dom.vcResult.style.display = 'block';
-        setTimeout(() => { dom.vcProgress.style.display = 'none'; }, 800);
+        updateMobileShell();
+        setTimeout(() => { dom.vcProgress.style.display = 'none'; updateMobileShell(); }, 800);
 
     } catch (err) {
         dom.vcProgressText.textContent = '转换失败: ' + err.message;
         dom.vcProgressFill.style.width = '0%';
+        updateMobileShell();
     } finally {
         dom.btnVcConvert.disabled = false;
+        updateMobileShell();
     }
 }
 
@@ -5020,23 +6213,30 @@ function bindVcEvents() {
         _vcRefFile = file;
         dom.vcRefName.textContent = file.name;
         e.target.value = '';
+        updateMobileShell();
     });
 
-    // 滑块实时更新
+    // VC slider sync
     dom.vcStepsSlider.addEventListener('input', () => {
         dom.vcStepsVal.textContent = dom.vcStepsSlider.value;
+        updateMobileShell();
     });
     dom.vcLengthSlider.addEventListener('input', () => {
-        dom.vcLengthVal.textContent = (parseInt(dom.vcLengthSlider.value) / 100).toFixed(2);
+        dom.vcLengthVal.textContent = (parseInt(dom.vcLengthSlider.value, 10) / 100).toFixed(2);
+        updateMobileShell();
     });
     dom.vcCfgSlider.addEventListener('input', () => {
-        dom.vcCfgVal.textContent = (parseInt(dom.vcCfgSlider.value) / 100).toFixed(2);
+        dom.vcCfgVal.textContent = (parseInt(dom.vcCfgSlider.value, 10) / 100).toFixed(2);
+        updateMobileShell();
     });
     dom.vcPitchSlider.addEventListener('input', () => {
         dom.vcPitchVal.textContent = dom.vcPitchSlider.value;
+        updateMobileShell();
     });
+    dom.vcAutoF0.addEventListener('change', updateMobileShell);
+    dom.vcF0Condition.addEventListener('change', updateMobileShell);
 
-    // 开始转换
+    // Start conversion
     dom.btnVcConvert.addEventListener('click', startVcConvert);
 
     // 下载转换结果
@@ -5046,5 +6246,6 @@ function bindVcEvents() {
         a.href = _vcResultUrl;
         a.download = (state.midiFileName || 'vocal').replace(/\.\w+$/, '') + '_vc.wav';
         a.click();
+        updateMobileShell();
     });
 }
