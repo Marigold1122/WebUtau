@@ -10,6 +10,7 @@ using OpenUtau.Core.SignalChain;
 using OpenUtau.Core.Ustx;
 using OpenUtau.Core.Util;
 using Serilog;
+using System.Runtime.CompilerServices;
 
 namespace DiffSingerApi.Services;
 
@@ -58,7 +59,11 @@ public class SynthesisService : IHostedService {
         return Task.CompletedTask;
     }
 
-    public string EnqueueJob(string midiPath, string singerId) {
+    public string EnqueueJob(
+        string midiPath,
+        string singerId,
+        string? defaultLanguageCode,
+        List<NoteLanguageOverrideRequest>? noteLanguageOverrides) {
         // 取消当前正在执行的 job（用户打开新文件，旧 job 不再需要）
         _activeJobCts?.Cancel();
 
@@ -66,6 +71,8 @@ public class SynthesisService : IHostedService {
             JobId = Guid.NewGuid().ToString("N")[..12],
             MidiPath = midiPath,
             SingerId = singerId,
+            DefaultLanguageCode = LanguageRoutingService.NormalizeLanguageCode(defaultLanguageCode) ?? DiffSingerLanguageCodes.Zh,
+            RequestedNoteLanguageOverrides = noteLanguageOverrides ?? new List<NoteLanguageOverrideRequest>(),
             Status = "queued"
         };
         _jobs[job.JobId] = job;
@@ -165,10 +172,21 @@ public class SynthesisService : IHostedService {
                     job.Status = "failed";
                     job.Error = "Cancelled by new job.";
                     Log.Information("Job {JobId} cancelled.", jobId);
+                } catch (SynthesisOperationException ex) {
+                    Log.Error(ex, "Synthesis job {JobId} failed with structured error.", jobId);
+                    job.Status = "failed";
+                    job.Error = ex.Message;
+                    job.ErrorContext = ex.ErrorContext;
+                    job.Progress = null;
                 } catch (Exception ex) {
                     Log.Error(ex, "Synthesis job {JobId} failed.", jobId);
                     job.Status = "failed";
                     job.Error = ex.Message;
+                    job.ErrorContext = new SynthesisErrorContext {
+                        Path = "worker-loop",
+                        JobId = job.JobId,
+                        Reason = ex.Message,
+                    };
                     job.Progress = null;
                 } finally {
                     if (_activeJobCts == jobCts)
@@ -204,6 +222,73 @@ public class SynthesisService : IHostedService {
     public void ReloadSingers() {
         Preferences.Default.AdditionalSingerPath = _voicebanksDir;
         SingerManager.Inst.Initialize();
+    }
+
+    private void ConfigureProjectPhonemizers(SynthesisJob job, UProject project) {
+        var noteLanguages = LanguageRoutingService.BuildSnapshot(job.NoteLanguageOverrides);
+        foreach (var track in project.tracks) {
+            var childPhonemizersResult = CreateChildPhonemizers(track.TrackName);
+            if (!childPhonemizersResult.Ok || childPhonemizersResult.Value == null) {
+                throw BuildOperationException(job.JobId, childPhonemizersResult.Error, "Failed to create child phonemizers.");
+            }
+            track.Phonemizer = new MultiLanguageDiffSingerPhonemizer(new MultiLanguageDiffSingerPhonemizerOptions {
+                TrackName = track.TrackName,
+                DefaultLanguageCode = job.DefaultLanguageCode,
+                SupportedLanguageCodes = DiffSingerLanguageCodes.All,
+                ChildPhonemizers = childPhonemizersResult.Value,
+                NoteLanguages = new Dictionary<NoteLanguageKey, string>(noteLanguages),
+            });
+        }
+    }
+
+    private ResolvePhonemizerFactoriesResult CreateChildPhonemizers(string? trackName) {
+        var mapping = new Dictionary<string, string> {
+            [DiffSingerLanguageCodes.Zh] = "OpenUtau.Core.DiffSinger.DiffSingerChinesePhonemizer",
+            [DiffSingerLanguageCodes.En] = "OpenUtau.Core.DiffSinger.DiffSingerEnglishPhonemizer",
+            [DiffSingerLanguageCodes.Ja] = "OpenUtau.Core.DiffSinger.DiffSingerJapanesePhonemizer",
+        };
+
+        var result = new Dictionary<string, Phonemizer>();
+        foreach (var (languageCode, typeName) in mapping) {
+            var factory = PhonemizerFactory.GetAll().FirstOrDefault(candidate => candidate.type.FullName == typeName);
+            if (factory == null) {
+                return new ResolvePhonemizerFactoriesResult {
+                    Ok = false,
+                    Error = new SynthesisErrorContext {
+                        Path = "prepare.create-child-phonemizers",
+                        TrackName = trackName,
+                        LanguageCode = languageCode,
+                        Reason = $"DiffSinger phonemizer for language {languageCode} is unavailable.",
+                    },
+                };
+            }
+            result[languageCode] = factory.Create();
+        }
+
+        return new ResolvePhonemizerFactoriesResult {
+            Ok = true,
+            Value = result,
+        };
+    }
+
+    private static SynthesisOperationException BuildOperationException(
+        string jobId,
+        SynthesisErrorContext? error,
+        string fallbackReason) {
+
+        var context = error ?? new SynthesisErrorContext {
+            Path = "synthesis-service",
+            Reason = fallbackReason,
+        };
+        context.JobId ??= jobId;
+        context.Reason = string.IsNullOrWhiteSpace(context.Reason) ? fallbackReason : context.Reason;
+        return new SynthesisOperationException(context);
+    }
+
+    private sealed class ResolvePhonemizerFactoriesResult {
+        public bool Ok { get; set; }
+        public Dictionary<string, Phonemizer>? Value { get; set; }
+        public SynthesisErrorContext? Error { get; set; }
     }
 
     /// <summary>
@@ -260,6 +345,21 @@ public class SynthesisService : IHostedService {
         // Load MIDI
         job.Progress = "Loading MIDI...";
         var project = MidiWriter.LoadProject(job.MidiPath);
+        var voiceParts = project.parts.OfType<UVoicePart>().ToList();
+
+        var bindingResult = LanguageRoutingService.BindNoteLanguageOverrides(new BindNoteLanguageOverridesInput {
+            Path = "prepare.bind-overrides",
+            TrackName = project.tracks.FirstOrDefault()?.TrackName,
+            DefaultLanguageCode = job.DefaultLanguageCode,
+            SupportedLanguageCodes = DiffSingerLanguageCodes.All,
+            VoiceParts = voiceParts,
+            Overrides = job.RequestedNoteLanguageOverrides,
+        });
+        if (!bindingResult.Ok || bindingResult.Value == null) {
+            throw BuildOperationException(job.JobId, bindingResult.Error, "Failed to bind note language overrides.");
+        }
+        job.DefaultLanguageCode = bindingResult.Value.DefaultLanguageCode;
+        job.NoteLanguageOverrides = bindingResult.Value.OverridesByNote;
 
         // 读取原始 MIDI PPQ（OpenUtau 内部统一用 480，需要记录原始值用于坐标换算）
         try {
@@ -270,21 +370,13 @@ public class SynthesisService : IHostedService {
         } catch { /* 读取失败则保持默认 480 */ }
         Log.Information("Job {JobId}: MIDI PPQ = {PPQ}, OpenUtau resolution = 480", job.JobId, job.MidiPPQ);
 
-        // Find phonemizer
-        var phonemizerType = PhonemizerFactory.GetAll()
-            .FirstOrDefault(f => f.type.FullName == "OpenUtau.Core.DiffSinger.DiffSingerChinesePhonemizer")
-            ?? PhonemizerFactory.GetAll()
-                .FirstOrDefault(f => f.type.FullName!.Contains("DiffSingerChinese"))
-            ?? PhonemizerFactory.GetAll()
-                .FirstOrDefault(f => f.type.FullName!.Contains("DiffSinger"));
-
         // Assign singer + phonemizer + renderer
         foreach (var track in project.tracks) {
             track.Singer = singer;
-            if (phonemizerType != null)
-                track.Phonemizer = phonemizerType.Create();
             track.RendererSettings.renderer = "DIFFSINGER";
         }
+
+        ConfigureProjectPhonemizers(job, project);
 
         DocManager.Inst.ExecuteCmd(new LoadProjectNotification(project));
 
@@ -292,12 +384,22 @@ public class SynthesisService : IHostedService {
         job.Progress = "Phonemizing...";
         project.ValidateFull();
 
-        var voiceParts = project.parts.OfType<UVoicePart>().ToList();
         for (int wait = 0; wait < 120; wait++) {
             Thread.Sleep(1000);
             if (voiceParts.All(p => p.PhonemesUpToDate)) break;
             if (wait == 119)
                 throw new TimeoutException("Phonemization timed out after 120s.");
+        }
+
+        var phonemizerError = LanguageRoutingService.FindPhonemizerError(
+            voiceParts,
+            job.DefaultLanguageCode,
+            job.NoteLanguageOverrides,
+            "prepare.phonemize",
+            job.JobId,
+            project.tracks.FirstOrDefault()?.TrackName);
+        if (phonemizerError != null) {
+            throw new SynthesisOperationException(phonemizerError);
         }
 
         project.Validate(new ValidateOptions { SkipPhonemizer = true });
@@ -734,6 +836,7 @@ public class SynthesisService : IHostedService {
 
         var project = job.Project;
         var voiceParts = job.VoiceParts;
+        var unmatchedLanguageEdits = new HashSet<NoteEdit>(edits.Where(edit => edit.Action == "language"));
 
         // 记住旧 phrase 的 hash 以便后面比较哪些受影响
         var oldPhraseHashes = new Dictionary<int, ulong>();
@@ -769,7 +872,12 @@ public class SynthesisService : IHostedService {
                         note.duration = dur480;
                         note.tone = edit.Tone;
                         note.lyric = edit.Lyric ?? "a";
-                        lock (part) { part.notes.Add(note); }
+                        lock (part) {
+                            part.notes.Add(note);
+                            if (!string.IsNullOrWhiteSpace(edit.LanguageOverride)) {
+                                job.NoteLanguageOverrides[note] = LanguageRoutingService.NormalizeLanguageCode(edit.LanguageOverride) ?? edit.LanguageOverride!;
+                            }
+                        }
                         Log.Information("[edit-notes] ADD: created note at relPos={Pos} dur={Dur} tone={Tone}", relativePos, dur480, edit.Tone);
                         break;
                     }
@@ -780,7 +888,10 @@ public class SynthesisService : IHostedService {
                                 && n.tone == edit.Tone);
                             Log.Information("[edit-notes] REMOVE: match={Found} (looking for relPos={Pos} tone={Tone})",
                                 match != null ? "YES" : "NO", relativePos, edit.Tone);
-                            if (match != null) part.notes.Remove(match);
+                            if (match != null) {
+                                part.notes.Remove(match);
+                                job.NoteLanguageOverrides.Remove(match);
+                            }
                         }
                         break;
                     }
@@ -825,12 +936,55 @@ public class SynthesisService : IHostedService {
                         }
                         break;
                     }
+                    case "language": {
+                        lock (part) {
+                            var match = part.notes.FirstOrDefault(n =>
+                                n.position == pos480 - part.position
+                                && n.tone == edit.Tone);
+                            if (match == null) {
+                                break;
+                            }
+
+                            if (string.IsNullOrWhiteSpace(edit.LanguageOverride)) {
+                                job.NoteLanguageOverrides.Remove(match);
+                            } else {
+                                var normalizedLanguage = LanguageRoutingService.NormalizeLanguageCode(edit.LanguageOverride);
+                                var resolvedLanguage = LanguageRoutingService.ResolveEffectiveLanguage(new ResolveEffectiveLanguageInput {
+                                    Path = "edit-notes.language",
+                                    TrackName = project.tracks.ElementAtOrDefault(part.trackNo)?.TrackName,
+                                    DefaultLanguageCode = job.DefaultLanguageCode,
+                                    LanguageOverride = normalizedLanguage,
+                                    NoteKey = NoteLanguageKey.FromNote(match).ToString(),
+                                    SupportedLanguageCodes = DiffSingerLanguageCodes.All,
+                                });
+                                if (!resolvedLanguage.Ok || string.IsNullOrWhiteSpace(resolvedLanguage.EffectiveLanguageCode)) {
+                                    throw BuildOperationException(job.JobId, resolvedLanguage.Error, "Invalid language override.");
+                                }
+                                job.NoteLanguageOverrides[match] = resolvedLanguage.EffectiveLanguageCode;
+                            }
+                            unmatchedLanguageEdits.Remove(edit);
+                        }
+                        break;
+                    }
                 }
             }
         }
 
+        if (unmatchedLanguageEdits.Count > 0) {
+            var edit = unmatchedLanguageEdits.First();
+            throw new SynthesisOperationException(new SynthesisErrorContext {
+                Path = "edit-notes.language",
+                JobId = job.JobId,
+                TrackName = project.tracks.FirstOrDefault()?.TrackName,
+                NoteKey = new NoteLanguageKey(edit.Position * 480 / job.MidiPPQ, edit.Duration * 480 / job.MidiPPQ, edit.Tone, edit.Lyric ?? string.Empty).ToString(),
+                LanguageCode = edit.LanguageOverride,
+                Reason = "Language edit target note was not found.",
+            });
+        }
+
         // 重新音素化 + 重建 renderPhrases
         Log.Information("Job {JobId}: ValidateFull after note edits...", job.JobId);
+        ConfigureProjectPhonemizers(job, project);
         project.ValidateFull();
 
         // 等待音素化完成
@@ -838,6 +992,18 @@ public class SynthesisService : IHostedService {
             if (voiceParts.All(p => p.PhonemesUpToDate)) break;
             Thread.Sleep(500);
         }
+
+        var noteEditPhonemizerError = LanguageRoutingService.FindPhonemizerError(
+            voiceParts,
+            job.DefaultLanguageCode,
+            job.NoteLanguageOverrides,
+            "edit-notes.phonemize",
+            job.JobId,
+            project.tracks.FirstOrDefault()?.TrackName);
+        if (noteEditPhonemizerError != null) {
+            throw new SynthesisOperationException(noteEditPhonemizerError);
+        }
+
         project.Validate(new ValidateOptions { SkipPhonemizer = true });
 
         // 重建 allPhrases 和 Phrases 列表

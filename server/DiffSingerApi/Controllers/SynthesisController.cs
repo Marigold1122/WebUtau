@@ -1,5 +1,7 @@
+using DiffSingerApi.Models;
 using DiffSingerApi.Services;
 using Microsoft.AspNetCore.Mvc;
+using System.Text.Json;
 
 namespace DiffSingerApi.Controllers;
 
@@ -14,14 +16,25 @@ public class SynthesisController : ControllerBase {
 
     [HttpPost("synthesize")]
     [RequestSizeLimit(50_000_000)] // 50MB max for MIDI
-    public IActionResult Synthesize([FromForm] IFormFile midi, [FromForm] string singerId) {
-        if (midi == null || midi.Length == 0)
+    public IActionResult Synthesize([FromForm] SynthesizeRequest req) {
+        if (req.Midi == null || req.Midi.Length == 0)
             return BadRequest(new { error = "No MIDI file provided." });
-        if (string.IsNullOrWhiteSpace(singerId))
+        if (string.IsNullOrWhiteSpace(req.SingerId))
             return BadRequest(new { error = "No singerId provided." });
 
-        var midiPath = _synthesis.SaveUploadedMidi(midi.OpenReadStream(), midi.FileName);
-        var jobId = _synthesis.EnqueueJob(midiPath, singerId);
+        var noteLanguageOverrides = ParseNoteLanguageOverrides(req.NoteLanguageOverrides);
+        if (noteLanguageOverrides == null) {
+            return BadRequest(new {
+                error = "Invalid noteLanguageOverrides JSON.",
+                errorContext = new {
+                    path = "api.synthesize.parse-note-language-overrides",
+                    reason = "Request noteLanguageOverrides is not valid JSON.",
+                },
+            });
+        }
+
+        var midiPath = _synthesis.SaveUploadedMidi(req.Midi.OpenReadStream(), req.Midi.FileName);
+        var jobId = _synthesis.EnqueueJob(midiPath, req.SingerId, req.DefaultLanguageCode, noteLanguageOverrides);
 
         return Ok(new { jobId });
     }
@@ -37,6 +50,7 @@ public class SynthesisController : ControllerBase {
             status = job.Status,
             progress = job.Progress,
             error = job.Error,
+            errorContext = job.ErrorContext,
             sampleRate = job.SampleRate,
             phrases = job.Phrases?.Select(p => new {
                 index = p.Index,
@@ -197,6 +211,11 @@ public class SynthesisController : ControllerBase {
                     status = p.Status,
                 }),
             });
+        } catch (SynthesisOperationException ex) {
+            return BadRequest(new {
+                error = ex.Message,
+                errorContext = ex.ErrorContext,
+            });
         } catch (Exception ex) {
             return StatusCode(500, new {
                 error = $"edit-notes internal error: {ex.Message}",
@@ -207,5 +226,33 @@ public class SynthesisController : ControllerBase {
 
     public class EditNotesRequest {
         public List<DiffSingerApi.Models.NoteEdit>? Edits { get; set; }
+    }
+
+    public class SynthesizeRequest {
+        [FromForm(Name = "midi")]
+        public IFormFile? Midi { get; set; }
+
+        [FromForm(Name = "singerId")]
+        public string SingerId { get; set; } = string.Empty;
+
+        [FromForm(Name = "defaultLanguageCode")]
+        public string DefaultLanguageCode { get; set; } = DiffSingerLanguageCodes.Zh;
+
+        [FromForm(Name = "noteLanguageOverrides")]
+        public string? NoteLanguageOverrides { get; set; }
+    }
+
+    private static List<NoteLanguageOverrideRequest>? ParseNoteLanguageOverrides(string? rawJson) {
+        if (string.IsNullOrWhiteSpace(rawJson)) {
+            return new List<NoteLanguageOverrideRequest>();
+        }
+
+        try {
+            return JsonSerializer.Deserialize<List<NoteLanguageOverrideRequest>>(rawJson, new JsonSerializerOptions {
+                PropertyNameCaseInsensitive = true,
+            });
+        } catch {
+            return null;
+        }
     }
 }

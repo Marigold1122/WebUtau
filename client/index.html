@@ -65,6 +65,14 @@
                 <div class="panel-section" id="vocalSection" style="display:none">
                     <h3>声库</h3>
                     <div class="voicebank-list" id="trackVoicebankList"></div>
+                    <div class="prop-row track-language-row">
+                        <label>默认语言</label>
+                        <select class="sv-input" id="trackDefaultLanguageSelect">
+                            <option value="ZH">ZH 中文</option>
+                            <option value="EN">EN 英语</option>
+                            <option value="JA">JA 日语</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="panel-section" id="instrumentSection" style="display:none">
                     <h3>乐器</h3>
@@ -259,6 +267,15 @@
                 <button class="modal-btn primary" id="batchLyricsApply">应用</button>
             </div>
         </div>
+    </div>
+
+    <div class="note-language-menu" id="noteLanguageMenu" style="display:none">
+        <div class="note-language-menu-title">音符语言</div>
+        <div class="note-language-menu-state" id="noteLanguageMenuState">当前：跟随默认</div>
+        <button class="note-language-menu-item" type="button" data-language-override="">恢复默认语言</button>
+        <button class="note-language-menu-item" type="button" data-language-override="ZH">ZH 中文</button>
+        <button class="note-language-menu-item" type="button" data-language-override="EN">EN 英语</button>
+        <button class="note-language-menu-item" type="button" data-language-override="JA">JA 日语</button>
     </div>
 
     <!-- MIDI 导入设置弹窗 -->

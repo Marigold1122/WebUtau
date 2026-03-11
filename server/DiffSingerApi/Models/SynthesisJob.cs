@@ -7,10 +7,12 @@ public class SynthesisJob {
     public string JobId { get; set; } = string.Empty;
     public string MidiPath { get; set; } = string.Empty;
     public string SingerId { get; set; } = string.Empty;
+    public string DefaultLanguageCode { get; set; } = DiffSingerLanguageCodes.Zh;
     public string Status { get; set; } = "queued"; // queued | preparing | rendering | completed | failed
     public string? Progress { get; set; }
     public string? OutputPath { get; set; }
     public string? Error { get; set; }
+    public SynthesisErrorContext? ErrorContext { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public List<PhraseJob>? Phrases { get; set; }
     public int SampleRate { get; set; } = 44100;
@@ -36,6 +38,10 @@ public class SynthesisJob {
     public List<RenderPhrase>? AllPhrases { get; set; }
     [System.Text.Json.Serialization.JsonIgnore]
     public IRenderer? Renderer { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public List<NoteLanguageOverrideRequest> RequestedNoteLanguageOverrides { get; set; } = new();
+    [System.Text.Json.Serialization.JsonIgnore]
+    public Dictionary<UNote, string> NoteLanguageOverrides { get; set; } = new();
 
     // === 渲染循环共享状态，供 edit-notes 将 affected phrases 退回渲染队列 ===
     /// <summary>
@@ -85,7 +91,7 @@ public class PitchPoint {
 /// 前端发来的单条音符编辑指令
 /// </summary>
 public class NoteEdit {
-    /// <summary>add / remove / move / resize / lyric</summary>
+    /// <summary>add / remove / move / resize / lyric / language</summary>
     public string Action { get; set; } = string.Empty;
     /// <summary>音符位置（前端 tick 坐标）</summary>
     public int Position { get; set; }
@@ -95,6 +101,8 @@ public class NoteEdit {
     public int Tone { get; set; }
     /// <summary>歌词</summary>
     public string? Lyric { get; set; }
+    /// <summary>language 专用：null 表示清除覆写并恢复默认</summary>
+    public string? LanguageOverride { get; set; }
     // move 专用：新位置和新音高
     public int? NewPosition { get; set; }
     public int? NewTone { get; set; }

@@ -705,6 +705,49 @@ select.sv-input { cursor: pointer; }
     display: flex; align-items: center; gap: 6px;
     margin-top: 8px; font-size: 11px; color: var(--text-muted); cursor: pointer;
 }
+.track-language-row {
+    margin-top: 10px;
+}
+.note-language-menu {
+    position: fixed;
+    z-index: 2000;
+    min-width: 180px;
+    padding: 8px;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius);
+    background: rgba(24, 24, 28, 0.98);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+.note-language-menu-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-main);
+    margin-bottom: 4px;
+}
+.note-language-menu-state {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+}
+.note-language-menu-item {
+    width: 100%;
+    display: block;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-main);
+    text-align: left;
+    padding: 7px 8px;
+    font-size: 12px;
+    cursor: pointer;
+}
+.note-language-menu-item:hover {
+    background: rgba(126, 184, 255, 0.18);
+}
+.note-language-menu-item.active {
+    background: rgba(126, 184, 255, 0.28);
+    color: #dcebff;
+}
 .modal-checkbox input { accent-color: var(--accent-color); }
 .modal-footer {
     display: flex; justify-content: flex-end; gap: 8px;

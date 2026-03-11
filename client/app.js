@@ -19,6 +19,12 @@ const UI_ZOOM = 1.25; // CSS body zoom — getBoundingClientRect 返回缩放后
 const API_BASE = window.location.origin;
 const TRACK_COLORS = ['#7eb8ff','#e06090','#f0a030','#6bcb77','#a78bfa','#e05555','#50c0c0','#f0c040'];
 const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const DEFAULT_LANGUAGE_CODE = 'ZH';
+const NOTE_LANGUAGE_OPTIONS = [
+    { code: 'ZH', label: '中文' },
+    { code: 'EN', label: '英语' },
+    { code: 'JA', label: '日语' },
+];
 
 // ===== 乐器采样配置 =====
 const INSTRUMENT_CONFIGS = {
@@ -235,6 +241,10 @@ const state = {
     _midiAccess: null,          // MIDIAccess 对象
     _activeMidiNotes: new Map(), // 正在按下的键: midiNote → { startTick }
 };
+const _noteLanguageMenuState = {
+    visible: false,
+    selectedLanguageOverride: null,
+};
 
 // ===== SECTION 2b: Undo/Redo =====
 const UNDO_MAX = 100;
@@ -312,19 +322,88 @@ function _syncNoteEdits(oldNotes, newNotes) {
     for (const [id, n] of newMap) {
         const old = oldMap.get(id);
         if (!old) {
-            pushNoteEdit({ action: 'add', position: n.tick, duration: n.durTick, tone: n.midi, lyric: n.lyric || 'a' });
+            pushNoteEdit({ action: 'add', position: n.tick, duration: n.durTick, tone: n.midi, lyric: n.lyric || 'a', languageOverride: resolveNoteLanguageOverride(n) });
         } else if (old.tick !== n.tick || old.midi !== n.midi) {
             pushNoteEdit({ action: 'move', position: old.tick, duration: old.durTick, tone: old.midi, newPosition: n.tick, newTone: n.midi });
         } else if (old.durTick !== n.durTick) {
             pushNoteEdit({ action: 'resize', position: n.tick, duration: n.durTick, tone: n.midi });
         } else if (old.lyric !== n.lyric) {
             pushNoteEdit({ action: 'lyric', position: n.tick, duration: n.durTick, tone: n.midi, lyric: n.lyric || 'a' });
+        } else if (resolveNoteLanguageOverride(old) !== resolveNoteLanguageOverride(n)) {
+            pushNoteEdit(buildNoteLanguageEdit(n, resolveNoteLanguageOverride(n)));
         }
     }
 }
 
 // ===== SECTION 3: 工具函数 =====
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function normalizeLanguageCode(languageCode) {
+    if (languageCode == null) return null;
+    const normalized = String(languageCode).trim().toUpperCase();
+    return NOTE_LANGUAGE_OPTIONS.some(option => option.code === normalized) ? normalized : null;
+}
+function resolveTrackDefaultLanguageCode(track) {
+    return normalizeLanguageCode(track && track.defaultLanguageCode) || DEFAULT_LANGUAGE_CODE;
+}
+function resolveNoteLanguageOverride(note) {
+    return normalizeLanguageCode(note && note.languageOverride);
+}
+function resolveEffectiveNoteLanguageCode(note, track) {
+    return resolveNoteLanguageOverride(note) || resolveTrackDefaultLanguageCode(track);
+}
+function buildUpdatedNotesForLanguageSelection({ notes, selectedIds, languageOverride }) {
+    const normalized = normalizeLanguageCode(languageOverride);
+    return notes.map(note => selectedIds.has(note.id)
+        ? { ...note, languageOverride: normalized }
+        : note);
+}
+function buildNoteLanguageMenuState({ selectedNotes }) {
+    if (!selectedNotes || selectedNotes.length === 0) {
+        return { summary: '当前：未选择音符', selectedLanguageOverride: null, isMixed: false };
+    }
+    const overrides = selectedNotes.map(resolveNoteLanguageOverride);
+    const first = overrides[0];
+    const same = overrides.every(value => value === first);
+    if (!same) {
+        return { summary: '当前：混合', selectedLanguageOverride: null, isMixed: true };
+    }
+    if (!first) {
+        return { summary: '当前：跟随默认', selectedLanguageOverride: null, isMixed: false };
+    }
+    const option = NOTE_LANGUAGE_OPTIONS.find(item => item.code === first);
+    return {
+        summary: `当前：${first} ${option ? option.label : first}`,
+        selectedLanguageOverride: first,
+        isMixed: false,
+    };
+}
+function buildTrackLanguagePayload({ track, notes, ppq }) {
+    const scale = MIDI_LIB_PPQ / ppq;
+    return {
+        defaultLanguageCode: resolveTrackDefaultLanguageCode(track),
+        noteLanguageOverrides: notes
+            .filter(note => note.trackId === track.id)
+            .map(note => ({ note, languageOverride: resolveNoteLanguageOverride(note) }))
+            .filter(entry => entry.languageOverride)
+            .map(entry => ({
+                position: Math.round(entry.note.tick * scale),
+                duration: Math.round(entry.note.durTick * scale),
+                tone: entry.note.midi,
+                lyric: entry.note.lyric || 'a',
+                languageOverride: entry.languageOverride,
+            })),
+    };
+}
+function buildNoteLanguageEdit(note, languageOverride) {
+    return {
+        action: 'language',
+        position: note.tick,
+        duration: note.durTick,
+        tone: note.midi,
+        lyric: note.lyric || 'a',
+        languageOverride: normalizeLanguageCode(languageOverride),
+    };
+}
 function isBlackKey(midi) { const n = midi % 12; return [1,3,6,8,10].includes(n); }
 function midiNoteName(midi) { return NOTE_NAMES[midi % 12] + Math.floor(midi / 12 - 1); }
 function formatTime(sec) {
@@ -562,8 +641,9 @@ function cacheDom() {
         'prepareModal','prepareText',
         'batchLyricsModal','batchLyricsInput','batchCharSplit',
         'batchLyricsClose','batchLyricsCancel','batchLyricsApply',
+        'noteLanguageMenu','noteLanguageMenuState',
         'trackInspector','trackInspectorName','trackInspectorClose',
-        'rendererOptions','vocalSection','trackVoicebankList',
+        'rendererOptions','vocalSection','trackVoicebankList','trackDefaultLanguageSelect',
         'instrumentSection','trackInstrumentSelect',
         'pianoRollTrackName','pianoRollClose','btnSoloPlay','btnTrackSynth',
         'trackRuler',
@@ -601,6 +681,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (state.playing) reschedulePlayback();
     });
     bus.on('selection:changed', () => {
+        hideNoteLanguageMenu();
         updateInspector();
         requestRedraw('notes');
     });
@@ -1248,11 +1329,12 @@ function createNote(tick, durTick, midi, trackId, lyric) {
         tick, durTick,
         velocity: 100,
         lyric: lyric || 'a',
+        languageOverride: null,
         color,
     };
     state.notes.push(n);
     if (getActiveJobId()) {
-        pushNoteEdit({ action: 'add', position: tick, duration: durTick, tone: midi, lyric: n.lyric });
+        pushNoteEdit({ action: 'add', position: tick, duration: durTick, tone: midi, lyric: n.lyric, languageOverride: n.languageOverride });
     }
     invalidateNotes();
     return n;
@@ -1272,6 +1354,17 @@ function clearEmptyTrackPitch(trackId) {
     track.synthJobId = null;
     track.synthState = 'idle';
     track.phraseBuffers = [];
+}
+function resetTrackSynthesisState(trackId) {
+    const track = state.tracks.find(t => t.id === trackId);
+    if (!track) return;
+    if (track._pollTimer) { clearInterval(track._pollTimer); track._pollTimer = null; }
+    track.synthJobId = null;
+    track.synthState = 'idle';
+    track.phraseBuffers = [];
+    track.pitchCurve = [];
+    track.pitchDeviation = { xs: [], ys: [] };
+    if (state.playing) reschedulePlayback();
 }
 
 function deleteNote(id) {
@@ -1822,6 +1915,64 @@ function applyBatchLyrics() {
     updateInspector();
 }
 
+function getSelectedNotesSorted() {
+    return state.notes
+        .filter(note => state.selectedIds.has(note.id))
+        .sort((a, b) => a.tick - b.tick || a.midi - b.midi);
+}
+function hideNoteLanguageMenu() {
+    if (!dom.noteLanguageMenu) return;
+    dom.noteLanguageMenu.style.display = 'none';
+    _noteLanguageMenuState.visible = false;
+    _noteLanguageMenuState.selectedLanguageOverride = null;
+}
+function showNoteLanguageMenu(clientX, clientY) {
+    const selectedNotes = getSelectedNotesSorted();
+    if (selectedNotes.length === 0) {
+        hideNoteLanguageMenu();
+        return;
+    }
+    const menuState = buildNoteLanguageMenuState({ selectedNotes });
+    _noteLanguageMenuState.visible = true;
+    _noteLanguageMenuState.selectedLanguageOverride = menuState.selectedLanguageOverride;
+    dom.noteLanguageMenuState.textContent = menuState.summary;
+    dom.noteLanguageMenu.querySelectorAll('[data-language-override]').forEach(button => {
+        const value = normalizeLanguageCode(button.dataset.languageOverride);
+        button.classList.toggle('active', !menuState.isMixed && (
+            (value == null && menuState.selectedLanguageOverride == null)
+            || (value != null && value === menuState.selectedLanguageOverride)
+        ));
+    });
+    dom.noteLanguageMenu.style.display = 'block';
+    const padding = 8;
+    const menuRect = dom.noteLanguageMenu.getBoundingClientRect();
+    const left = Math.min(clientX, window.innerWidth - menuRect.width - padding);
+    const top = Math.min(clientY, window.innerHeight - menuRect.height - padding);
+    dom.noteLanguageMenu.style.left = Math.max(padding, left) + 'px';
+    dom.noteLanguageMenu.style.top = Math.max(padding, top) + 'px';
+}
+function applyLanguageOverrideToSelection(languageOverride) {
+    const selectedNotes = getSelectedNotesSorted();
+    if (selectedNotes.length === 0) return;
+    snapshot();
+    state.notes = buildUpdatedNotesForLanguageSelection({
+        notes: state.notes,
+        selectedIds: state.selectedIds,
+        languageOverride,
+    });
+    const nextById = new Map(state.notes.map(note => [note.id, note]));
+    selectedNotes.forEach(previousNote => {
+        const nextNote = nextById.get(previousNote.id);
+        if (!nextNote) return;
+        if (resolveNoteLanguageOverride(previousNote) !== resolveNoteLanguageOverride(nextNote) && getActiveJobId()) {
+            pushNoteEdit(buildNoteLanguageEdit(nextNote, resolveNoteLanguageOverride(nextNote)));
+        }
+    });
+    hideNoteLanguageMenu();
+    updateInspector();
+    requestRedraw('notes');
+}
+
 // 生成模拟音高曲线：基于音符数据，每个音符内部以 10 tick 间隔采样
 // 加入轻微正弦 vibrato 模拟真实歌声效果
 function generateMockPitchCurve() {
@@ -1946,6 +2097,7 @@ function applyMidiImport() {
             channel: track.channel !== undefined ? track.channel : ti,
             renderer: 'none',       // 'none' | 'vocal' | 'instrument'
             voicebankId: null,
+            defaultLanguageCode: DEFAULT_LANGUAGE_CODE,
             instrumentId: null,
             synthJobId: null,
             synthState: 'idle',      // 'idle' | 'preparing' | 'rendering' | 'ready'
@@ -1975,7 +2127,7 @@ function applyMidiImport() {
                 id: ++noteIdCounter,
                 trackId, midi: n.midi, tick, durTick,
                 velocity: Math.round(n.velocity * 127),
-                lyric, color,
+                lyric, languageOverride: null, color,
             });
         });
     });
@@ -2069,7 +2221,7 @@ function applyNewProject() {
         muted: false, solo: false, volume: 1.0,
         _gainNode: null, channel: 0,
         renderer: 'vocal',
-        voicebankId: null, instrumentId: null,
+        voicebankId: null, defaultLanguageCode: DEFAULT_LANGUAGE_CODE, instrumentId: null,
         synthJobId: null, synthState: 'idle',
         phraseBuffers: [], pitchCurve: [],
         pitchDeviation: { xs: [], ys: [] },
@@ -2116,7 +2268,7 @@ function addTrack(name) {
         muted: false, solo: false, volume: 1.0,
         _gainNode: null, channel: idx,
         renderer: 'vocal',
-        voicebankId: null, instrumentId: null,
+        voicebankId: null, defaultLanguageCode: DEFAULT_LANGUAGE_CODE, instrumentId: null,
         synthJobId: null, synthState: 'idle',
         phraseBuffers: [], pitchCurve: [],
         pitchDeviation: { xs: [], ys: [] },
@@ -2272,6 +2424,11 @@ async function synthesizeTrack(trackId) {
 
     const midiFile = buildMidiForTrack(trackId);
     if (!midiFile) return;
+    const languagePayload = buildTrackLanguagePayload({
+        track,
+        notes: state.notes,
+        ppq: state.ppq,
+    });
 
     track.synthState = 'preparing';
     track.phraseBuffers = [];
@@ -2284,6 +2441,8 @@ async function synthesizeTrack(trackId) {
         const fd = new FormData();
         fd.append('midi', midiFile);
         fd.append('singerId', singerId);
+        fd.append('defaultLanguageCode', languagePayload.defaultLanguageCode);
+        fd.append('noteLanguageOverrides', JSON.stringify(languagePayload.noteLanguageOverrides));
         const res = await fetch(API_BASE + '/api/synthesize', { method: 'POST', body: fd });
         const data = await res.json();
         track.synthJobId = data.jobId;
@@ -3204,6 +3363,7 @@ function updateTrackInspector() {
     // 填充声库列表
     if (track.renderer === 'vocal') {
         populateTrackVoicebankList(track);
+        dom.trackDefaultLanguageSelect.value = resolveTrackDefaultLanguageCode(track);
     }
 
     // 乐器选择
@@ -3260,6 +3420,14 @@ function bindTrackInspectorEvents() {
         // 预加载新采样器 & 如果正在播放则立即切换
         getInstrumentSampler(track.instrumentId);
         if (state.playing) reschedulePlayback();
+    });
+
+    dom.trackDefaultLanguageSelect.addEventListener('change', () => {
+        const track = state.tracks.find(t => t.id === state.configTrackId);
+        if (!track) return;
+        mutateTrack(track.id, { defaultLanguageCode: normalizeLanguageCode(dom.trackDefaultLanguageSelect.value) || DEFAULT_LANGUAGE_CODE });
+        resetTrackSynthesisState(track.id);
+        updateTrackInspector();
     });
 }
 
@@ -3573,9 +3741,17 @@ async function autoSynthesize() {
     showPrepareModal();
 
     try {
+        const activeVocalTrack = (state.activeTrackId && state.tracks.find(t => t.id === state.activeTrackId && t.renderer === 'vocal'))
+            || state.tracks.find(t => t.renderer === 'vocal')
+            || null;
+        const languagePayload = activeVocalTrack
+            ? buildTrackLanguagePayload({ track: activeVocalTrack, notes: state.notes, ppq: state.ppq })
+            : { defaultLanguageCode: DEFAULT_LANGUAGE_CODE, noteLanguageOverrides: [] };
         const fd = new FormData();
         fd.append('midi', midiToSend);
         fd.append('singerId', singerId);
+        fd.append('defaultLanguageCode', languagePayload.defaultLanguageCode);
+        fd.append('noteLanguageOverrides', JSON.stringify(languagePayload.noteLanguageOverrides));
         const res = await fetch(API_BASE + '/api/synthesize', { method: 'POST', body: fd });
         const data = await res.json();
         state.synthJobId = data.jobId;
@@ -4243,10 +4419,10 @@ function bindEvents() {
                 tools.pitchpen.onMouseDown(e, x, y);
                 return;
             }
-            e.preventDefault();
-            const { x, y } = canvasCoords(e);
-            const hit = hitTest(x, y);
-            if (hit) { snapshot(); deleteNote(hit.note.id); }
+            if (state.tool !== 'pointer') {
+                e.preventDefault();
+                hideNoteLanguageMenu();
+            }
             return;
         }
         const { x, y } = canvasCoords(e);
@@ -4280,7 +4456,23 @@ function bindEvents() {
         }
     });
 
-    dom.gridScrollContainer.addEventListener('contextmenu', e => e.preventDefault());
+    dom.gridScrollContainer.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        if (state.tool !== 'pointer') {
+            hideNoteLanguageMenu();
+            return;
+        }
+        const { x, y } = canvasCoords(e);
+        const hit = hitTest(x, y);
+        if (!hit) {
+            hideNoteLanguageMenu();
+            return;
+        }
+        if (!state.selectedIds.has(hit.note.id)) {
+            selectOnly(hit.note.id);
+        }
+        setTimeout(() => showNoteLanguageMenu(e.clientX, e.clientY), 0);
+    });
 
     dom.gridScrollContainer.addEventListener('wheel', e => {
         if (e.ctrlKey || e.metaKey) {
@@ -4405,6 +4597,20 @@ function bindEvents() {
     dom.batchLyricsCancel.addEventListener('click', closeBatchLyrics);
     dom.batchLyricsApply.addEventListener('click', applyBatchLyrics);
     dom.batchLyricsModal.addEventListener('click', e => { if (e.target === dom.batchLyricsModal) closeBatchLyrics(); });
+    if (dom.noteLanguageMenu) {
+        dom.noteLanguageMenu.addEventListener('click', e => {
+            const button = e.target.closest('[data-language-override]');
+            if (!button) return;
+            applyLanguageOverrideToSelection(button.dataset.languageOverride);
+        });
+    }
+    document.addEventListener('mousedown', e => {
+        if (!dom.noteLanguageMenu || dom.noteLanguageMenu.style.display === 'none') return;
+        if (!e.target.closest('#noteLanguageMenu')) {
+            hideNoteLanguageMenu();
+        }
+    });
+    document.addEventListener('scroll', () => hideNoteLanguageMenu(), true);
 
     // MIDI 导入设置弹窗
     dom.midiImportClose.addEventListener('click', cancelMidiImport);
