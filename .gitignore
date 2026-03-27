@@ -1,26 +1,38 @@
-# .NET build artifacts
-bin/
-obj/
-TestBuild/
+# Dependencies
+node_modules/
 
-# Server runtime data
-server/DiffSingerApi/uploads/
-server/DiffSingerApi/output/
-server/DiffSingerApi/voicebanks/
+# Build output
+dist/
 
-# Large dependencies (download separately)
-DiffSinger/
-OpenUtau/
+# Backend runtime (distributed via Release)
+server/
 
-# IDE
-.vs/
-.vscode/
-*.user
+# AI models & large runtime files
+external/
+scripts/seedvc_service/
 
-# OS
-Thumbs.db
-Desktop.ini
-.DS_Store
+# Logs
+*.log
+*.err.log
 
-# Claude
+# Temp files
+tmp-*.mid
+
+# Dev tools
+.playwright-mcp/
 .claude/
+.codex-build/
+.tools/
+
+# Research & dev docs
+research/
+handoff/
+backups/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+*.swp

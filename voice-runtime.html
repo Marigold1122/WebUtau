@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Melody Voice Runtime</title>
+    <link rel="icon" href="data:," />
+    <!-- 引入 Atomic Pro Desk 专业排版字体 -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;700&family=Oswald:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/voice-runtime.css" />
+  </head>
+  <body>
+    <div id="app">
+      <div id="toolbar">
+        <button id="btn-play">播放</button>
+        <button id="btn-import">导入 MIDI</button>
+        <input type="file" id="midi-file-input" accept=".mid,.midi" hidden />
+      </div>
+      <div id="piano-roll-container">
+        <div id="playhead"></div>
+      </div>
+      <div id="status-bar">
+        <span id="status-text"></span>
+      </div>
+    </div>
+    <script type="module" src="/src/voice-runtime/main.js"></script>
+  </body>
+</html>

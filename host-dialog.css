@@ -1,0 +1,84 @@
+/* Atomic Pro Desk / Vintage Hardware Dialogs */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 1200; display: none; align-items: center; justify-content: center;
+  background: rgba(43, 40, 37, 0.6); backdrop-filter: blur(4px);
+}
+.modal-overlay.is-open { display: flex; }
+
+.modal-dialog {
+  width: min(420px, calc(100vw - 32px)); padding: 20px 20px 16px;
+  border: 1px solid #8F8A80; border-radius: 4px; background: #ECE8DE;
+  box-shadow: 0 20px 48px rgba(0,0,0,0.2), inset 0 1px 0 #FFF;
+}
+.modal-dialog--compact { width: min(340px, calc(100vw - 32px)); }
+
+.modal-title {
+  margin-bottom: 8px; color: #2B2825; font-family: 'Oswald', sans-serif; font-size: 16px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px;
+}
+
+.modal-hint { margin-bottom: 16px; color: #666158; font-size: 11px; line-height: 1.5; }
+
+.modal-field { display: flex; flex-direction: column; gap: 8px; }
+.modal-field + .modal-field { margin-top: 14px; }
+
+.modal-label { color: #666158; font-family: 'Oswald', sans-serif; font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase;}
+
+.modal-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #CFC8BB;
+  border-radius: 2px;
+  background: #F8F5EE;
+  box-shadow: inset 0 1px 1px rgba(255,255,255,0.8);
+}
+
+.modal-summary-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modal-summary-label {
+  color: #666158;
+  font-family: 'Oswald', sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.modal-summary-value {
+  color: #2B2825;
+  font-size: 12px;
+  text-align: right;
+}
+
+.modal-select {
+  width: 100%; min-height: 32px; padding: 0 10px; border: 1px solid #C2BCAE; border-radius: 2px;
+  background: #F8F5EE; color: #2B2825; font: inherit; outline: none; box-shadow: inset 0 1px 2px rgba(0,0,0,0.03);
+}
+.modal-select:focus { border-color: #3B8B88; }
+
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+
+.modal-btn {
+  min-width: 84px; height: 32px; border: 1px solid #C2BCAE; border-radius: 2px; font: inherit; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.1s;
+}
+.modal-btn.secondary {
+  background: linear-gradient(180deg, #FFFFFF 0%, #F0EDE5 100%); color: #2B2825; box-shadow: 0 1px 1px rgba(0,0,0,0.05), inset 0 1px 0 #FFF;
+}
+.modal-btn.secondary:hover { background: #E1DDD4; border-color: #8F8A80; }
+
+.modal-btn.primary {
+  background: #3B8B88; color: #FFF; border: 1px solid #276B69; box-shadow: inset 0 1px 0 rgba(255,255,255,0.2), 0 1px 2px rgba(59,139,136,0.2);
+}
+.modal-btn.primary:hover:not(:disabled) { background: #327A77; }
+.modal-btn:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none;}
+
+.modal-progress { margin-top: 16px; }
+.modal-progress-bar { height: 6px; overflow: hidden; border-radius: 3px; background: #CCC5B7; box-shadow: inset 0 1px 2px rgba(0,0,0,0.1);}
+.modal-progress-fill { width: 18%; height: 100%; border-radius: 3px; background: #3B8B88; transition: width 0.2s ease; }
+
+body.modal-open .app-container, body.modal-open .menubar, body.modal-open #status-bar { user-select: none; }
