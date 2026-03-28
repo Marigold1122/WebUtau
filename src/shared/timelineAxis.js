@@ -68,6 +68,134 @@ function normalizeSubdivisionsPerBeat(value) {
   return Number.isFinite(value) && value > 1 ? Math.max(1, Math.round(value)) : 1
 }
 
+function buildTimeSignatureSegments(timeSignaturePoints, ppq) {
+  const segments = []
+  let startBarNumber = 1
+
+  timeSignaturePoints.forEach((point, index) => {
+    const [beatsPerBar, beatUnit] = point.timeSignature
+    const beatTicks = Math.max(1, ppq * (4 / beatUnit))
+    const nextStartTick = timeSignaturePoints[index + 1]?.ticks ?? Infinity
+    segments.push({
+      startTick: point.ticks,
+      endTick: nextStartTick,
+      beatsPerBar,
+      beatUnit,
+      beatTicks,
+      startBarNumber,
+    })
+
+    if (!Number.isFinite(nextStartTick)) return
+    const segmentDurationTicks = Math.max(0, nextStartTick - point.ticks)
+    if (segmentDurationTicks <= EPSILON) return
+
+    const completedBeats = Math.floor((segmentDurationTicks + EPSILON) / beatTicks)
+    const completedBars = Math.floor(completedBeats / beatsPerBar)
+    const beatNumberAtChange = (completedBeats % beatsPerBar) + 1
+    startBarNumber += completedBars
+    if (beatNumberAtChange !== 1) {
+      startBarNumber += 1
+    }
+  })
+
+  return segments
+}
+
+function findTimeSignatureSegmentIndexByTick(signatureSegments, tick) {
+  let index = 0
+  while (
+    index + 1 < signatureSegments.length
+    && signatureSegments[index].endTick <= tick + EPSILON
+  ) {
+    index += 1
+  }
+  return index
+}
+
+function buildRulerMarksInRange({
+  totalTicks,
+  signatureSegments,
+  startTick = 0,
+  endTick = totalTicks,
+  tickToTime,
+  tickToX,
+  subdivisionsPerBeat = 1,
+}) {
+  const safeStartTick = clampNonNegative(startTick)
+  const safeEndTick = Number.isFinite(totalTicks)
+    ? Math.min(clampNonNegative(endTick, safeStartTick), totalTicks)
+    : clampNonNegative(endTick, safeStartTick)
+  if (safeEndTick + EPSILON < safeStartTick || signatureSegments.length === 0) return []
+
+  const marks = []
+  const safeSubdivisionsPerBeat = normalizeSubdivisionsPerBeat(subdivisionsPerBeat)
+  let segmentIndex = findTimeSignatureSegmentIndexByTick(signatureSegments, safeStartTick)
+
+  while (segmentIndex < signatureSegments.length) {
+    const segment = signatureSegments[segmentIndex]
+    if (segment.startTick > safeEndTick + EPSILON) break
+
+    const beatTicks = segment.beatTicks
+    const rangeStartOffset = Math.max(0, safeStartTick - segment.startTick)
+    let beatIndex = Math.max(0, Math.floor((rangeStartOffset + EPSILON) / beatTicks))
+
+    while (true) {
+      const tick = segment.startTick + beatIndex * beatTicks
+      if (tick > safeEndTick + EPSILON) break
+      if (Number.isFinite(segment.endTick) && tick >= segment.endTick - EPSILON) break
+
+      const barNumber = segment.startBarNumber + Math.floor(beatIndex / segment.beatsPerBar)
+      const beatNumber = (beatIndex % segment.beatsPerBar) + 1
+
+      if (tick >= safeStartTick - EPSILON) {
+        const kind = beatNumber === 1 ? 'bar' : 'beat'
+        marks.push({
+          tick,
+          time: tickToTime(tick),
+          x: tickToX(tick),
+          beatNumber,
+          barNumber,
+          isBar: beatNumber === 1,
+          isBeat: beatNumber !== 1,
+          isSubdivision: false,
+          subdivisionIndex: 0,
+          kind,
+        })
+      }
+
+      if (safeSubdivisionsPerBeat > 1) {
+        const subdivisionTicks = beatTicks / safeSubdivisionsPerBeat
+        const beatEndTick = Number.isFinite(segment.endTick)
+          ? Math.min(tick + beatTicks, segment.endTick)
+          : tick + beatTicks
+        for (let subdivisionIndex = 1; subdivisionIndex < safeSubdivisionsPerBeat; subdivisionIndex += 1) {
+          const subdivisionTick = tick + subdivisionTicks * subdivisionIndex
+          if (subdivisionTick >= beatEndTick - EPSILON) break
+          if (subdivisionTick < safeStartTick - EPSILON || subdivisionTick > safeEndTick + EPSILON) continue
+          marks.push({
+            tick: subdivisionTick,
+            time: tickToTime(subdivisionTick),
+            x: tickToX(subdivisionTick),
+            beatNumber,
+            barNumber,
+            isBar: false,
+            isBeat: false,
+            isSubdivision: true,
+            subdivisionIndex,
+            kind: 'sub',
+          })
+        }
+      }
+
+      beatIndex += 1
+    }
+
+    segmentIndex += 1
+  }
+
+  return marks
+}
+
 function finalizeTempoPoints(tempoData, ppq) {
   const inputPoints = Array.isArray(tempoData?.tempos) ? tempoData.tempos : []
   const points = [{ bpm: 120, time: 0, ticks: 0 }, ...inputPoints]
@@ -166,90 +294,6 @@ function finalizeTimeSignaturePoints(tempoData, tempoPoints, ppq) {
   return finalized
 }
 
-function buildRulerMarks({
-  totalTicks,
-  ppq,
-  timeSignaturePoints,
-  tickToTime,
-  tickToX,
-  subdivisionsPerBeat = 1,
-}) {
-  const marks = []
-  let tick = 0
-  let signatureIndex = 0
-  let barNumber = 1
-  let beatNumber = 1
-  const safeSubdivisionsPerBeat = normalizeSubdivisionsPerBeat(subdivisionsPerBeat)
-
-  while (tick <= totalTicks + EPSILON) {
-    while (
-      signatureIndex + 1 < timeSignaturePoints.length
-      && timeSignaturePoints[signatureIndex + 1].ticks <= tick + EPSILON
-    ) {
-      signatureIndex += 1
-      if (tick > EPSILON && beatNumber !== 1) barNumber += 1
-      beatNumber = 1
-    }
-
-    const point = timeSignaturePoints[signatureIndex]
-    const kind = beatNumber === 1 ? 'bar' : 'beat'
-    marks.push({
-      tick,
-      time: tickToTime(tick),
-      x: tickToX(tick),
-      beatNumber,
-      barNumber,
-      isBar: beatNumber === 1,
-      isBeat: beatNumber !== 1,
-      isSubdivision: false,
-      subdivisionIndex: 0,
-      kind,
-    })
-
-    const [beatsPerBar, beatUnit] = point.timeSignature
-    const beatTicks = Math.max(1, ppq * (4 / beatUnit))
-    const nextSignatureTick = timeSignaturePoints[signatureIndex + 1]?.ticks ?? Infinity
-    const nextBeatTick = tick + beatTicks
-    const segmentEndTick = Math.min(nextBeatTick, nextSignatureTick)
-
-    if (safeSubdivisionsPerBeat > 1) {
-      const subdivisionTicks = beatTicks / safeSubdivisionsPerBeat
-      for (let subdivisionIndex = 1; subdivisionIndex < safeSubdivisionsPerBeat; subdivisionIndex += 1) {
-        const subdivisionTick = tick + subdivisionTicks * subdivisionIndex
-        if (subdivisionTick >= segmentEndTick - EPSILON) break
-        if (subdivisionTick > totalTicks + EPSILON) break
-        marks.push({
-          tick: subdivisionTick,
-          time: tickToTime(subdivisionTick),
-          x: tickToX(subdivisionTick),
-          beatNumber,
-          barNumber,
-          isBar: false,
-          isBeat: false,
-          isSubdivision: true,
-          subdivisionIndex,
-          kind: 'sub',
-        })
-      }
-    }
-
-    if (nextSignatureTick > tick + EPSILON && nextSignatureTick < nextBeatTick - EPSILON) {
-      tick = nextSignatureTick
-      continue
-    }
-
-    tick = nextBeatTick
-    if (beatNumber >= beatsPerBar) {
-      barNumber += 1
-      beatNumber = 1
-    } else {
-      beatNumber += 1
-    }
-  }
-
-  return marks
-}
-
 export function createTimelineAxis({
   tempoData = null,
   ppq = DEFAULT_PPQ,
@@ -261,6 +305,7 @@ export function createTimelineAxis({
   const safeTotalTicks = clampNonNegative(totalTicks)
   const tempoPoints = finalizeTempoPoints(tempoData, safePpq)
   const timeSignaturePoints = finalizeTimeSignaturePoints(tempoData, tempoPoints, safePpq)
+  const signatureSegments = buildTimeSignatureSegments(timeSignaturePoints, safePpq)
 
   const tickToX = (tick) => (clampNonNegative(tick) / safePpq) * safeBeatWidth
   const xToTick = (x) => (clampNonNegative(x) / safeBeatWidth) * safePpq
@@ -279,19 +324,36 @@ export function createTimelineAxis({
     duration: tickToTime(safeTotalTicks),
     tempoPoints,
     timeSignaturePoints,
+    signatureSegments,
     tickToX,
     xToTick,
     tickToTime,
     timeToTick,
     timeToX,
     xToTime,
+    getRulerMarksInRange(options = {}) {
+      const safeStartTick = clampNonNegative(options?.startTick)
+      const safeEndTick = Number.isFinite(options?.endTick)
+        ? Math.max(safeStartTick, options.endTick)
+        : safeTotalTicks
+      return buildRulerMarksInRange({
+        totalTicks: Math.max(safeTotalTicks, safeEndTick),
+        signatureSegments,
+        startTick: safeStartTick,
+        endTick: safeEndTick,
+        tickToTime,
+        tickToX,
+        subdivisionsPerBeat: options?.subdivisionsPerBeat,
+      })
+    },
     getRulerMarks(options = {}) {
       const safeSubdivisionsPerBeat = normalizeSubdivisionsPerBeat(options?.subdivisionsPerBeat)
       if (!rulerMarksCache.has(safeSubdivisionsPerBeat)) {
-        rulerMarksCache.set(safeSubdivisionsPerBeat, buildRulerMarks({
+        rulerMarksCache.set(safeSubdivisionsPerBeat, buildRulerMarksInRange({
           totalTicks: safeTotalTicks,
-          ppq: safePpq,
-          timeSignaturePoints,
+          signatureSegments,
+          startTick: 0,
+          endTick: safeTotalTicks,
           tickToTime,
           tickToX,
           subdivisionsPerBeat: safeSubdivisionsPerBeat,

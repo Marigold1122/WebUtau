@@ -49,8 +49,11 @@ export function createHostBridgeHandlers({
   onPlaybackShortcut,
   onHostShortcut,
   onVoiceConversionInvalidated,
+  syncLiveProjectMeta,
   render,
 }) {
+  void runtimeTransportSync
+
   return {
     onRuntimeReady() {
       view.setStatus('运行时已连接')
@@ -83,7 +86,7 @@ export function createHostBridgeHandlers({
       if (!payload?.trackId || !payload?.jobId) return
       if (!taskCoordinator.attachJobId(payload.trackId, payload.jobId)) return
       vocalManifestController?.markJobSubmitted(payload.trackId, payload.jobId)
-      invalidateVoiceConversion(onVoiceConversionInvalidated, payload.trackId, '当前轨已重新提交渲染，需要重新转换')
+      invalidateVoiceConversion(onVoiceConversionInvalidated, payload.trackId, '当前轨道已重新提交渲染，需要重新转换')
       render('bridge-job-submitted')
     },
     onPredictionReady(snapshot) {
@@ -101,22 +104,16 @@ export function createHostBridgeHandlers({
     onRenderManifestSync(payload) {
       if (!payload?.trackId || !matchesTrackJob(store, payload.trackId, payload.jobId)) return
       vocalManifestController?.syncRenderManifest(payload)
-      render('bridge-render-manifest-sync')
     },
     onPhraseReady(payload) {
       if (!payload?.trackId || !matchesTrackJob(store, payload.trackId, payload.jobId)) return
       Promise.resolve(vocalManifestController?.handlePhraseReady(payload))
         .then((updated) => {
           if (!updated) return
-          // 检查状态机：如果正在等待这个 phrase，恢复播放
           const resumeDecision = playbackMode.handlePhraseReady(payload.phraseIndex, payload.jobId)
           if (resumeDecision.action === 'resume') {
             return Promise.resolve(onResumeBufferedPlayback?.())
-              .then(() => {
-                render('bridge-phrase-ready')
-              })
           }
-          render('bridge-phrase-ready')
         })
         .catch((error) => {
           console.error('Host vocal asset sync failed:', error)
@@ -128,10 +125,10 @@ export function createHostBridgeHandlers({
       store.updateTrackRenderState(payload.trackId, payload)
       if (getActiveGateTrackId() === payload.trackId && !isTrackPrepReady(track)) {
         updatePredictionProgress(store, view, payload.trackId, payload)
-        render('bridge-prediction-progress')
+        syncLiveProjectMeta?.()
         return
       }
-      render('bridge-render-progress')
+      syncLiveProjectMeta?.()
       view.setStatus(buildRenderProgressText(track?.name, payload))
     },
     onRenderComplete(snapshot) {

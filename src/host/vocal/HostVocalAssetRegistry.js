@@ -1,4 +1,4 @@
-import { RENDER_API_BASE_URL } from '../../api/RenderApi.js'
+import { buildRenderApiUrl } from '../../config/serviceEndpoints.js'
 import { getToneRawContext } from '../audio/instruments/toneRuntime.js'
 
 function buildAssetKey(ref = {}) {
@@ -11,7 +11,7 @@ function buildAssetKey(ref = {}) {
 }
 
 async function fetchPhraseBuffer(jobId, phraseIndex) {
-  const response = await fetch(`${RENDER_API_BASE_URL}/api/jobs/${jobId}/phrases/${phraseIndex}`)
+  const response = await fetch(buildRenderApiUrl(`/api/jobs/${jobId}/phrases/${phraseIndex}`))
   if (!response.ok) {
     throw new Error(`phrase download failed: ${response.status}`)
   }

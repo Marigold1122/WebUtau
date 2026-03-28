@@ -24,7 +24,7 @@ function getPitchBounds(notes) {
   }
 }
 
-function getNoteX(note, ppq, beatWidth, axis) {
+function getNoteAbsoluteX(note, ppq, beatWidth, axis) {
   if (Number.isFinite(note?.tick)) {
     return Math.max(0, (note.tick / ppq) * beatWidth)
   }
@@ -34,25 +34,25 @@ function getNoteX(note, ppq, beatWidth, axis) {
   return 0
 }
 
-function getNoteWidth(note, x, ppq, beatWidth, axis) {
+function getNoteAbsoluteEndX(note, ppq, beatWidth, axis) {
   if (Number.isFinite(note?.tick) && Number.isFinite(note?.durationTicks)) {
-    return Math.max(2, ((note.tick + note.durationTicks) / ppq) * beatWidth - x)
+    return Math.max(0, ((note.tick + note.durationTicks) / ppq) * beatWidth)
   }
   if (axis && Number.isFinite(note?.time) && Number.isFinite(note?.duration)) {
-    return Math.max(2, axis.timeToX(note.time + note.duration) - x)
+    return Math.max(0, axis.timeToX(note.time + note.duration))
   }
-  return 2
+  return 0
 }
 
-function renderAudioWaveform(context, audioClip, drawHeight, color, axis) {
+function renderAudioWaveform(context, audioClip, drawHeight, color, axis, xOrigin = 0) {
   const peaks = Array.isArray(audioClip?.waveformPeaks) ? audioClip.waveformPeaks : []
   const duration = Number.isFinite(audioClip?.duration) ? audioClip.duration : 0
   if (peaks.length < 2 || duration <= 0) return false
 
   const startTime = Number.isFinite(audioClip?.startTime) ? Math.max(0, audioClip.startTime) : 0
   const endTime = startTime + duration
-  const clipStartX = axis ? Math.max(0, axis.timeToX(startTime)) : 0
-  const clipEndX = axis ? Math.max(clipStartX + 2, axis.timeToX(endTime)) : context.canvas.width
+  const clipStartX = axis ? Math.max(0, axis.timeToX(startTime) - xOrigin) : 0
+  const clipEndX = axis ? Math.max(clipStartX + 2, axis.timeToX(endTime) - xOrigin) : context.canvas.width
   const clipWidth = Math.max(2, clipEndX - clipStartX)
   const centerY = drawHeight / 2
   const halfHeight = Math.max((drawHeight - 10) / 2, 2)
@@ -101,12 +101,24 @@ function renderAudioWaveform(context, audioClip, drawHeight, color, axis) {
   return true
 }
 
-export function renderTrackPreviewCanvas(canvas, notes, width, ppq, beatWidth, color, height, axis = null, audioClip = null) {
+export function renderTrackPreviewCanvas(
+  canvas,
+  notes,
+  width,
+  ppq,
+  beatWidth,
+  color,
+  height,
+  axis = null,
+  audioClip = null,
+  options = {},
+) {
   const drawWidth = Math.max(1, Math.floor(width))
   const drawHeight = Math.max(1, Math.floor(height))
   const canvasWidth = Math.min(drawWidth, MAX_CANVAS_WIDTH)
   const context = canvas.getContext('2d')
   const fill = getTrackColor(color)
+  const xOrigin = Number.isFinite(options?.xOrigin) ? Math.max(0, options.xOrigin) : 0
   const { minMidi, maxMidi } = getPitchBounds(notes)
   const midiRange = Math.max(maxMidi - minMidi, 1)
 
@@ -121,7 +133,7 @@ export function renderTrackPreviewCanvas(canvas, notes, width, ppq, beatWidth, c
     context.scale(canvasWidth / drawWidth, 1)
   }
 
-  if (renderAudioWaveform(context, audioClip, drawHeight, fill, axis)) {
+  if (renderAudioWaveform(context, audioClip, drawHeight, fill, axis, xOrigin)) {
     context.restore()
     return
   }
@@ -134,8 +146,10 @@ export function renderTrackPreviewCanvas(canvas, notes, width, ppq, beatWidth, c
   context.globalAlpha = 0.82
 
   for (const note of notes || []) {
-    const x = getNoteX(note, ppq, beatWidth, axis)
-    const noteWidth = getNoteWidth(note, x, ppq, beatWidth, axis)
+    const absoluteStartX = getNoteAbsoluteX(note, ppq, beatWidth, axis)
+    const absoluteEndX = getNoteAbsoluteEndX(note, ppq, beatWidth, axis)
+    const x = Math.max(0, absoluteStartX - xOrigin)
+    const noteWidth = Math.max(2, absoluteEndX - absoluteStartX)
     const y = padding + (1 - (note.midi - minMidi) / midiRange) * innerHeight
     context.fillRect(x, y - noteHeight / 2, noteWidth, noteHeight)
   }

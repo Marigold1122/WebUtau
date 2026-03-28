@@ -9,7 +9,6 @@ export const TRACK_ROW_HEIGHT = 64
 const CLIP_TOP = 5
 const CLIP_HEIGHT = 52
 const CLIP_HEADER_HEIGHT = 16
-const MIDI_PREVIEW_TOP = CLIP_TOP + CLIP_HEADER_HEIGHT + 1
 const MIDI_PREVIEW_HEIGHT = CLIP_HEIGHT - CLIP_HEADER_HEIGHT - 1
 
 function clamp(value, min, max) {
@@ -259,9 +258,11 @@ function createTrackVolumeControl(track, trackColor, handlers) {
   return control
 }
 
-function createTrackPreviewGrid(timelineMetrics) {
+export function buildTrackPreviewGridOverlay({ timelineMetrics, contentHeight }) {
   const grid = document.createElement('div')
-  grid.className = 'track-preview-grid'
+  grid.className = 'track-preview-grid-overlay'
+  grid.style.height = `${Math.max(0, Math.round(contentHeight || 0))}px`
+  grid.style.width = `${timelineMetrics?.timelineWidth || 0}px`
   const marks = timelineMetrics?.axis?.getRulerMarks?.({
     subdivisionsPerBeat: timelineMetrics?.snapDivision || 4,
   }) || []
@@ -353,23 +354,24 @@ function createAudioBars(track, clipWidth, trackColor) {
   return wave
 }
 
-function createMidiPreviewCanvas(track, timelineMetrics, trackColor) {
+function createMidiPreviewCanvas(track, clipBounds, clipWidth, timelineMetrics, trackColor) {
   const notes = Array.isArray(track.previewNotes) ? track.previewNotes : []
   if (notes.length === 0) return null
   const canvas = document.createElement('canvas')
   canvas.className = 'track-midi-preview-canvas'
-  canvas.style.top = `${MIDI_PREVIEW_TOP}px`
-  canvas.style.height = `${MIDI_PREVIEW_HEIGHT}px`
   renderTrackPreviewCanvas(
     canvas,
     notes,
-    timelineMetrics.timelineWidth,
+    clipWidth,
     timelineMetrics.ppq,
     timelineMetrics.beatWidth,
     trackColor,
     MIDI_PREVIEW_HEIGHT,
     timelineMetrics.axis,
     null,
+    {
+      xOrigin: Number.isFinite(clipBounds?.startX) ? clipBounds.startX : 0,
+    },
   )
   return canvas
 }
@@ -450,7 +452,6 @@ function createTrackPreview({
   preview.classList.toggle('selected', track.id === selectedTrackId)
   preview.classList.toggle('open', track.id === editorTrackId)
   applyTrackStateClasses(preview, track, viewState)
-  preview.appendChild(createTrackPreviewGrid(timelineMetrics))
 
   if (clipBounds && clipBounds.duration > 0) {
     const startX = Math.max(0, Number.isFinite(clipBounds.startX)
@@ -477,14 +478,13 @@ function createTrackPreview({
     const body = isAudioTrack(track)
       ? createAudioBars(track, clipWidth, trackColor)
       : Object.assign(document.createElement('div'), { className: 'clip-wave clip-wave--midi' })
+    if (!isAudioTrack(track)) {
+      const midiCanvas = createMidiPreviewCanvas(track, clipBounds, clipWidth, timelineMetrics, trackColor)
+      if (midiCanvas) body.appendChild(midiCanvas)
+    }
     clip.append(header, body)
     bindClipInteractions(clip, track, clipBounds, timelineMetrics, handlers)
     preview.appendChild(clip)
-
-    if (!isAudioTrack(track)) {
-      const midiCanvas = createMidiPreviewCanvas(track, timelineMetrics, trackColor)
-      if (midiCanvas) preview.appendChild(midiCanvas)
-    }
   }
 
   return preview

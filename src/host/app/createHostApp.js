@@ -245,6 +245,7 @@ export function createHostApp() {
     onPlaybackShortcut: handlePlay,
     onHostShortcut: ({ intent }) => shortcutRouter.handleIntent(intent),
     onVoiceConversionInvalidated: invalidateVoiceConversion,
+    syncLiveProjectMeta: () => view.syncProjectMeta(store.getProject(), sessionStore.getSnapshot()),
     render,
   }))
   predictionGateController.setBridge(bridge)

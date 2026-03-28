@@ -73,7 +73,7 @@ class PianoRollInputController {
       const pos = this._canvasPos(e)
       if (pos) {
         noteSelection.updateMarquee(pos.x, pos.y)
-        pianoRollNotes.draw()
+        pianoRollNotes.requestDraw()
       }
     }
 
@@ -88,17 +88,17 @@ class PianoRollInputController {
   _onMouseUp(e) {
     if (this._state === STATE.BLANK_PENDING) {
       noteSelection.clear()
-      pianoRollNotes.draw()
+      pianoRollNotes.requestDraw()
       this._state = STATE.READY
     } else if (this._state === STATE.NOTE_PENDING) {
       if (!this._hasDragged && this._downNote) {
         noteSelection.replaceWithNote(this._downNote.note, this._downNote.phrase)
-        pianoRollNotes.draw()
+        pianoRollNotes.requestDraw()
       }
       this._state = STATE.READY
     } else if (this._state === STATE.MARQUEE) {
       noteSelection.commitMarquee(phraseStore.getPhrases(), viewport)
-      pianoRollNotes.draw()
+      pianoRollNotes.requestDraw()
       this._state = STATE.READY
     }
     this._downPos = null
@@ -138,7 +138,7 @@ class PianoRollInputController {
 
     if (hit && !noteSelection.isSelected(hit.note)) {
       noteSelection.replaceWithNote(hit.note, hit.phrase)
-      pianoRollNotes.draw()
+      pianoRollNotes.requestDraw()
     }
 
     if (noteSelection.count() === 0) return

@@ -501,7 +501,7 @@ export class ProjectTransportCoordinator {
 
   _logTrace(message, extra = null) {
     const snapshot = this.transportStore.getSnapshot()
-    this.logger?.info?.(`[TransportTrace] ${message}`, {
+    this.logger?.debug?.('transport', `[TransportTrace] ${message}`, {
       driver: snapshot.driver,
       playing: snapshot.playing,
       currentTime: snapshot.currentTime,

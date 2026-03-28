@@ -4,12 +4,17 @@ node_modules/
 # Build output
 dist/
 
-# Backend runtime (distributed via Release)
+# Backend runtime (kept out of the repo and distributed separately)
 server/
 
-# AI models & large runtime files
+# External model/runtime trees
 external/
-scripts/seedvc_service/
+$dest/
+
+# SeedVC local service source is tracked, but local runtime data is not
+scripts/seedvc_service/__pycache__/
+scripts/seedvc_service/checkpoints/
+scripts/seedvc_service/runtime/
 
 # Logs
 *.log
@@ -24,7 +29,7 @@ tmp-*.mid
 .codex-build/
 .tools/
 
-# Research & dev docs
+# Research & handoff notes
 research/
 handoff/
 backups/

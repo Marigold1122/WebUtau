@@ -1,4 +1,5 @@
 import { EVENTS, JOB_STATUS } from '../config/constants.js'
+import { buildRenderApiUrl } from '../config/serviceEndpoints.js'
 
 function findMissingKeys(source, keys) {
   return keys.filter((key) => !source[key])
@@ -118,10 +119,10 @@ export default function registerVerify10_1() {
         name: 'RenderApi.submitJob 连接测试（需要后端运行）',
         fn: async () => {
           try {
-            const resp = await fetch('http://localhost:5000/api/voicebanks')
+            const resp = await fetch(buildRenderApiUrl('/api/voicebanks'))
             return resp.ok ? true : '后端返回 ' + resp.status + '（但至少连通了）'
           } catch (error) {
-            return '跳过：无法连接后端 http://localhost:5000'
+            return '跳过：无法连接后端渲染服务'
           }
         },
       },

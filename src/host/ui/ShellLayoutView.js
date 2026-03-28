@@ -16,6 +16,7 @@ import { getTrackTimelineMetrics } from './trackTimelineMetrics.js'
 import {
   createRulerMetaMarker,
   buildTrackShellRowView,
+  buildTrackPreviewGridOverlay,
   createRulerLine,
   createRulerMark,
   TRACK_ROW_HEIGHT,
@@ -29,6 +30,7 @@ import {
 import { WorkspaceSplitController } from './WorkspaceSplitController.js'
 
 const TRACK_HEADER_FALLBACK_WIDTH = 240
+const DEFAULT_SNAP_DIVISION = 4
 const SNAP_LABELS = {
   4: '1/16',
 }
@@ -114,10 +116,7 @@ export class ShellLayoutView {
     this._syncFileMenuState(project)
     this._hideFileMenu()
     this._hideTrackContextMenu()
-    const tracks = project?.tracks || []
-    const selectedTrack = tracks.find((track) => track.id === project?.selectedTrackId) || null
-    const editorTrack = tracks.find((track) => track.id === project?.editorTrackId) || null
-    const renderBadgeTrack = editorTrack || tracks.find((track) => track?.jobRef?.status === 'active') || null
+    const { tracks, selectedTrack, editorTrack, renderBadgeTrack } = this._resolveProjectViewTracks(project)
     const timelineMetrics = getTrackTimelineMetrics(project)
     const timelineViewMetrics = tracks.length > 0 ? timelineMetrics : { ...timelineMetrics, axis: null }
 
@@ -130,6 +129,11 @@ export class ShellLayoutView {
     this._setEditorVisible(Boolean(editorTrack))
     this._syncEditorSurface(project, editorTrack)
     this.setMidiRecordingEnabled(Boolean(editorTrack) && !isVoiceRuntimeSource(editorTrack.playbackState?.assignedSourceId))
+  }
+
+  syncProjectMeta(project, viewState = {}) {
+    const { selectedTrack, editorTrack, renderBadgeTrack } = this._resolveProjectViewTracks(project)
+    this._renderProjectMeta(project, selectedTrack, editorTrack, renderBadgeTrack, viewState)
   }
 
   setStatus(text) {
@@ -148,9 +152,9 @@ export class ShellLayoutView {
     this.timelinePlayheadView.setTime(this.timelinePlayheadTime)
     this.instrumentEditorView.setPlaybackTime(this.timelinePlayheadTime)
     const now = performance.now()
-    if (this.logger?.info && now - this.lastPlayheadTraceAtMs >= 200) {
+    if (this.logger?.debug && now - this.lastPlayheadTraceAtMs >= 200) {
       this.lastPlayheadTraceAtMs = now
-      this.logger.info('ShellLayout 播放头时间下发', {
+      this.logger.debug('playhead', 'ShellLayout 播放头时间下发', {
         time: this.timelinePlayheadTime,
       })
     }
@@ -269,8 +273,21 @@ export class ShellLayoutView {
     const bpm = project?.tempoData?.tempos?.[0]?.bpm || 120
     this.refs.bpmDisplay.textContent = String(Math.round(bpm))
     if (this.refs.gridSnapDisplay) {
-      const division = getTrackTimelineMetrics(project).snapDivision || 4
+      const division = DEFAULT_SNAP_DIVISION
       this.refs.gridSnapDisplay.textContent = `SNAP: ${SNAP_LABELS[division] || '1/16'}`
+    }
+  }
+
+  _resolveProjectViewTracks(project) {
+    const tracks = project?.tracks || []
+    const selectedTrack = tracks.find((track) => track.id === project?.selectedTrackId) || null
+    const editorTrack = tracks.find((track) => track.id === project?.editorTrackId) || null
+    const renderBadgeTrack = editorTrack || tracks.find((track) => track?.jobRef?.status === 'active') || null
+    return {
+      tracks,
+      selectedTrack,
+      editorTrack,
+      renderBadgeTrack,
     }
   }
 
@@ -286,8 +303,9 @@ export class ShellLayoutView {
       this.refs.emptyHint.textContent = '暂无轨道\n右键左侧空白区可新建轨道，右键轨道头可删除轨道'
     }
 
+    const fragment = document.createDocumentFragment()
     tracks.forEach((track, index) => {
-      this.refs.trackTimelineContent.appendChild(buildTrackShellRowView({
+      fragment.appendChild(buildTrackShellRowView({
         track,
         index,
         timelineMetrics,
@@ -297,6 +315,12 @@ export class ShellLayoutView {
         handlers: this.handlers,
       }))
     })
+    const sharedGrid = buildTrackPreviewGridOverlay({
+      timelineMetrics,
+      contentHeight,
+    })
+    if (sharedGrid) fragment.appendChild(sharedGrid)
+    this.refs.trackTimelineContent.appendChild(fragment)
   }
 
   _renderRuler(timelineMetrics, tempoData = null) {

@@ -1,4 +1,4 @@
-export const RENDER_API_BASE_URL = 'http://localhost:5000'
+import { RENDER_API_BASE_URL, buildRenderApiUrl } from '../config/serviceEndpoints.js'
 
 let _audioCtx = null
 
@@ -14,41 +14,41 @@ const renderApi = {
     formData.append('singerId', singerId)
     formData.append('defaultLanguageCode', language)
 
-    const response = await fetch(`${RENDER_API_BASE_URL}/api/synthesize`, {
+    const response = await fetch(buildRenderApiUrl('/api/synthesize'), {
       method: 'POST',
       body: formData,
     })
     return response.json()
   },
   async getJobStatus(jobId) {
-    const response = await fetch(`${RENDER_API_BASE_URL}/api/jobs/${jobId}`)
+    const response = await fetch(buildRenderApiUrl(`/api/jobs/${jobId}`))
     return response.json()
   },
   async downloadPhrase(jobId, phraseIndex) {
-    const response = await fetch(`${RENDER_API_BASE_URL}/api/jobs/${jobId}/phrases/${phraseIndex}`)
+    const response = await fetch(buildRenderApiUrl(`/api/jobs/${jobId}/phrases/${phraseIndex}`))
     const arrayBuffer = await response.arrayBuffer()
     const audioContext = _getAudioContext()
     return audioContext.decodeAudioData(arrayBuffer)
   },
   async downloadJob(jobId) {
-    const response = await fetch(`${RENDER_API_BASE_URL}/api/jobs/${jobId}/download`)
+    const response = await fetch(buildRenderApiUrl(`/api/jobs/${jobId}/download`))
     if (!response.ok) throw new Error(`downloadJob failed: ${response.status}`)
     return response.blob()
   },
   async setPriority(jobId, phraseIndex) {
-    await fetch(`${RENDER_API_BASE_URL}/api/jobs/${jobId}/priority`, {
+    await fetch(buildRenderApiUrl(`/api/jobs/${jobId}/priority`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phraseIndex }),
     })
   },
   async getPitch(jobId) {
-    const response = await fetch(`${RENDER_API_BASE_URL}/api/jobs/${jobId}/pitch`)
+    const response = await fetch(buildRenderApiUrl(`/api/jobs/${jobId}/pitch`))
     if (!response.ok) throw new Error(`getPitch failed: ${response.status}`)
     return response.json()
   },
   async deleteJob(jobId) {
-    const response = await fetch(`${RENDER_API_BASE_URL}/api/jobs/${jobId}`, {
+    const response = await fetch(buildRenderApiUrl(`/api/jobs/${jobId}`), {
       method: 'DELETE',
     })
     if (!response.ok && response.status !== 404) {
@@ -56,7 +56,7 @@ const renderApi = {
     }
   },
   async editNotes(jobId, edits) {
-    const response = await fetch(`${RENDER_API_BASE_URL}/api/jobs/${jobId}/edit-notes`, {
+    const response = await fetch(buildRenderApiUrl(`/api/jobs/${jobId}/edit-notes`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ edits }),

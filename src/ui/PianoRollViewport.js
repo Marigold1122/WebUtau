@@ -1,4 +1,5 @@
 import { PIANO_ROLL } from '../config/constants.js'
+import { createTimelineAxis } from '../shared/timelineAxis.js'
 import { createTempoDocument } from '../shared/tempoDocument.js'
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
@@ -10,6 +11,8 @@ class PianoRollViewport {
     this.canvasWidth = 0
     this.canvasHeight = 0
     this.tempoData = null
+    this.axis = null
+    this.beatVersion = 0
     this.pixelsPerSecond = PIANO_ROLL.PIXELS_PER_SECOND
   }
 
@@ -70,40 +73,30 @@ class PianoRollViewport {
 
   setTempoData(tempoData) {
     this.tempoData = createTempoDocument(tempoData)
+    this.axis = createTimelineAxis({
+      tempoData: this.tempoData,
+      ppq: 480,
+      totalTicks: 0,
+    })
+    this.beatVersion += 1
   }
 
   getBeatTimesInRange(startTime, endTime) {
     if (endTime < startTime) return []
-    if (!this.tempoData) this.setTempoData(null)
-    const beats = []
-    const tempos = this.tempoData.tempos
-    const timeSignatures = this.tempoData.timeSignatures
-    const epsilon = 0.000001
-    let time = 0
-    let tempoIndex = 0
-    let signatureIndex = 0
-    let barNumber = 1
-    let beatNumber = 1
-    while (time <= endTime + epsilon) {
-      while (tempoIndex + 1 < tempos.length && tempos[tempoIndex + 1].time <= time + epsilon) tempoIndex += 1
-      while (signatureIndex + 1 < timeSignatures.length && timeSignatures[signatureIndex + 1].time <= time + epsilon) {
-        signatureIndex += 1
-        if (time > epsilon && beatNumber !== 1) barNumber += 1
-        beatNumber = 1
-      }
-      if (time >= startTime - epsilon) beats.push({ time, isBeat: true, isBar: beatNumber === 1, barNumber, beatNumber })
-      const [beatsPerBar, beatUnit] = timeSignatures[signatureIndex].timeSignature
-      const beatInterval = (60 / tempos[tempoIndex].bpm) * (4 / beatUnit)
-      const nextTempoTime = tempos[tempoIndex + 1]?.time ?? Infinity
-      const nextSignatureTime = timeSignatures[signatureIndex + 1]?.time ?? Infinity
-      const nextChangeTime = Math.min(nextTempoTime, nextSignatureTime)
-      time = nextChangeTime > time + epsilon && nextChangeTime < time + beatInterval ? nextChangeTime : time + beatInterval
-      if (beatNumber >= beatsPerBar) {
-        barNumber += 1
-        beatNumber = 1
-      } else beatNumber += 1
-    }
-    return beats.filter((beat) => beat.time <= endTime + epsilon)
+    if (!this.axis) this.setTempoData(null)
+    const startTick = this.axis.timeToTick(startTime)
+    const endTick = this.axis.timeToTick(endTime)
+    return this.axis.getRulerMarksInRange({
+      startTick,
+      endTick,
+      subdivisionsPerBeat: 1,
+    }).map((mark) => ({
+      time: mark.time,
+      isBeat: true,
+      isBar: mark.isBar,
+      barNumber: mark.barNumber,
+      beatNumber: mark.beatNumber,
+    }))
   }
 
   ensureTimeVisible(seconds) {

@@ -9,7 +9,7 @@ function ensureElement(parent, className) {
 
 function setTransformX(element, x) {
   if (!element) return
-  element.style.transform = `translateX(${Math.round(x)}px)`
+  element.style.transform = `translateX(${x}px)`
 }
 
 export class TrackTimelinePlayheadView {
@@ -19,7 +19,7 @@ export class TrackTimelinePlayheadView {
     this.time = 0
     this.rulerHead = null
     this.timelineLine = null
-    this.lastRoundedX = null
+    this.lastRenderedX = null
     this.lastTraceAtMs = 0
   }
 
@@ -32,7 +32,7 @@ export class TrackTimelinePlayheadView {
 
   setAxis(axis) {
     this.axis = axis || null
-    this.lastRoundedX = null
+    this.lastRenderedX = null
     this._syncVisibility()
     this._syncPosition()
   }
@@ -50,15 +50,15 @@ export class TrackTimelinePlayheadView {
 
   _syncPosition() {
     if (!this.axis) return
-    const x = Math.round(this.axis.timeToX(this.time))
-    if (this.lastRoundedX === x) return
-    this.lastRoundedX = x
+    const x = this.axis.timeToX(this.time)
+    if (this.lastRenderedX != null && Math.abs(this.lastRenderedX - x) < 0.01) return
+    this.lastRenderedX = x
     setTransformX(this.rulerHead, x)
     setTransformX(this.timelineLine, x)
     const now = performance.now()
-    if (this.logger?.info && now - this.lastTraceAtMs >= 200) {
+    if (this.logger?.debug && now - this.lastTraceAtMs >= 200) {
       this.lastTraceAtMs = now
-      this.logger.info('轨道播放头位置同步', {
+      this.logger.debug('playhead', '轨道播放头位置同步', {
         time: this.time,
         x,
       })

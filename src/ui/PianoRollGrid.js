@@ -9,6 +9,8 @@ class PianoRollGrid {
     this.keyboardCtx = null
     this.timeRulerCanvas = null
     this.timeRulerCtx = null
+    this.visibleBeatCacheKey = ''
+    this.visibleBeatCache = []
   }
 
   init(gridCanvas, keyboardCanvas, timeRulerCanvas) {
@@ -22,13 +24,14 @@ class PianoRollGrid {
 
   draw() {
     if (!this.ctx || !this.keyboardCtx || !this.timeRulerCtx) return
+    const beats = this._getVisibleBeats()
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
     this.keyboardCtx.clearRect(0, 0, this.keyboardCanvas.width, this.keyboardCanvas.height)
     this.timeRulerCtx.clearRect(0, 0, this.timeRulerCanvas.width, this.timeRulerCanvas.height)
     this._drawKeyRows()
-    this._drawBeatLines()
+    this._drawBeatLines(beats)
     this._drawKeyboard()
-    this._drawTimeRuler()
+    this._drawTimeRuler(beats)
   }
 
   _drawKeyRows() {
@@ -48,12 +51,8 @@ class PianoRollGrid {
     }
   }
 
-  _drawBeatLines() {
-    const visible = viewport.getVisibleTimeRange()
-    const beats = viewport.getBeatTimesInRange(visible.start, visible.end)
-    const minGap = PIANO_ROLL.GRID_MIN_GAP_PX
-    const filtered = this._filterByMinGap(beats, minGap)
-    for (const beat of filtered) {
+  _drawBeatLines(beats = []) {
+    for (const beat of beats) {
       const x = viewport.timeToX(beat.time)
       this.ctx.strokeStyle = beat.isBar ? PIANO_ROLL.BAR_LINE_COLOR : PIANO_ROLL.GRID_LINE_COLOR
       this.ctx.lineWidth = beat.isBar ? PIANO_ROLL.BAR_LINE_WIDTH : 1
@@ -65,11 +64,7 @@ class PianoRollGrid {
     this.ctx.lineWidth = 1
   }
 
-  _drawTimeRuler() {
-    const visible = viewport.getVisibleTimeRange()
-    const beats = viewport.getBeatTimesInRange(visible.start, visible.end)
-    const minGap = PIANO_ROLL.GRID_MIN_GAP_PX
-    const filtered = this._filterByMinGap(beats, minGap)
+  _drawTimeRuler(beats = []) {
     this.timeRulerCtx.fillStyle = PIANO_ROLL.TIME_RULER_BG
     this.timeRulerCtx.fillRect(0, 0, this.timeRulerCanvas.width, this.timeRulerCanvas.height)
     this.timeRulerCtx.strokeStyle = PIANO_ROLL.TIME_RULER_TICK_COLOR
@@ -78,7 +73,7 @@ class PianoRollGrid {
     this.timeRulerCtx.textAlign = 'left'
     this.timeRulerCtx.textBaseline = 'top'
     let lastLabelRight = -Infinity
-    for (const beat of filtered) {
+    for (const beat of beats) {
       const x = viewport.timeToX(beat.time)
       const top = beat.isBar ? 0 : this.timeRulerCanvas.height * 0.5
       this.timeRulerCtx.lineWidth = beat.isBar ? PIANO_ROLL.BAR_LINE_WIDTH : 1
@@ -130,6 +125,25 @@ class PianoRollGrid {
       }
     }
     return merged
+  }
+
+  _getVisibleBeats() {
+    const visible = viewport.getVisibleTimeRange()
+    const cacheKey = [
+      viewport.beatVersion,
+      viewport.pixelsPerSecond.toFixed(4),
+      visible.start.toFixed(4),
+      visible.end.toFixed(4),
+    ].join(':')
+    if (cacheKey === this.visibleBeatCacheKey) return this.visibleBeatCache
+
+    const filtered = this._filterByMinGap(
+      viewport.getBeatTimesInRange(visible.start, visible.end),
+      PIANO_ROLL.GRID_MIN_GAP_PX,
+    )
+    this.visibleBeatCacheKey = cacheKey
+    this.visibleBeatCache = filtered
+    return filtered
   }
 
   _drawKeyboard() {

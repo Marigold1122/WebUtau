@@ -2,6 +2,7 @@ import midiImporter from '../../modules/MidiImporter.js'
 import midiEncoder from '../../modules/MidiEncoder.js'
 import trackSelector from '../../ui/TrackSelector.js'
 import { DEFAULT_LANGUAGE_CODE } from '../../config/languageOptions.js'
+import { buildRenderApiUrl } from '../../config/serviceEndpoints.js'
 import { cloneSnapshot } from './runtimeSnapshot.js'
 
 function assertVoicebankResponse(response) {
@@ -10,7 +11,7 @@ function assertVoicebankResponse(response) {
 }
 
 async function fetchVoicebanks() {
-  return fetch('http://localhost:5000/api/voicebanks').then(assertVoicebankResponse)
+  return fetch(buildRenderApiUrl('/api/voicebanks')).then(assertVoicebankResponse)
 }
 
 export async function resolveSingerId() {

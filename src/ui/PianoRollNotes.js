@@ -10,6 +10,7 @@ class PianoRollNotes {
     this.canvas = null
     this.ctx = null
     this.phrases = []
+    this.drawFrame = 0
   }
 
   init(noteCanvas) {
@@ -20,10 +21,14 @@ class PianoRollNotes {
 
   setPhrases(phrases) {
     this.phrases = Array.isArray(phrases) ? phrases : []
-    this.draw()
+    this.requestDraw()
   }
 
   draw() {
+    if (this.drawFrame) {
+      cancelAnimationFrame(this.drawFrame)
+      this.drawFrame = 0
+    }
     if (!this.ctx) return
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
     const timeRange = viewport.getVisibleTimeRange()
@@ -35,6 +40,7 @@ class PianoRollNotes {
       const fillColor = this._getPhraseColor(phrase)
       const strokeColor = this._darkenColor(fillColor)
       for (const note of phrase.notes) {
+        if (note.time + note.duration < timeRange.start || note.time > timeRange.end) continue
         if (note.midi < low || note.midi > high) continue
         const x = viewport.timeToX(note.time)
         const y = viewport.pitchToY(note.midi) + PIANO_ROLL.NOTE_VERTICAL_OFFSET
@@ -76,6 +82,8 @@ class PianoRollNotes {
     const timeRange = viewport.getVisibleTimeRange()
     const curve = pitchData.pitchCurve
     const tickToSec = 60 / (480 * bpm)
+    const visibleStartTick = timeRange.start / tickToSec
+    const visibleEndTick = timeRange.end / tickToSec
 
     // 构建 PITD 偏差查找（从 pitchDeviation 的 xs/ys 稀疏点插值）
     const dev = pitchData.pitchDeviation
@@ -90,10 +98,10 @@ class PianoRollNotes {
     for (const phrase of this.phrases) {
       if (phrase.endTime < timeRange.start || phrase.startTime > timeRange.end) continue
 
-      const pStartTick = phrase.startTime / tickToSec
-      const pEndTick = phrase.endTime / tickToSec
+      const pStartTick = Math.max(phrase.startTime / tickToSec, visibleStartTick)
+      const pEndTick = Math.min(phrase.endTime / tickToSec, visibleEndTick)
       let lo = this._bisect(curve, pStartTick)
-      let hi = this._bisect(curve, pEndTick)
+      let hi = this._bisect(curve, pEndTick + 0.000001)
       if (hi <= lo) continue
 
       this.ctx.beginPath()
@@ -117,6 +125,14 @@ class PianoRollNotes {
     }
 
     this.ctx.restore()
+  }
+
+  requestDraw() {
+    if (this.drawFrame) return
+    this.drawFrame = requestAnimationFrame(() => {
+      this.drawFrame = 0
+      this.draw()
+    })
   }
 
   // 在 PITD 稀疏点之间线性插值，返回 cents 偏差
@@ -169,11 +185,11 @@ class PianoRollNotes {
   }
 
   _listenEvents() {
-    for (const eventName of [EVENTS.RENDER_COMPLETE, EVENTS.RENDER_PROGRESS, EVENTS.CACHE_INVALIDATED, EVENTS.CACHE_UPDATED, EVENTS.RENDER_PRIORITIZE, EVENTS.PITCH_LOADED]) {
-      eventBus.on(eventName, () => this.draw())
+    for (const eventName of [EVENTS.RENDER_COMPLETE, EVENTS.CACHE_INVALIDATED, EVENTS.CACHE_UPDATED, EVENTS.RENDER_PRIORITIZE, EVENTS.PITCH_LOADED]) {
+      eventBus.on(eventName, () => this.requestDraw())
     }
     eventBus.on(EVENTS.CACHE_MISS, () => {
-      requestAnimationFrame(() => this.draw())
+      this.requestDraw()
     })
   }
 

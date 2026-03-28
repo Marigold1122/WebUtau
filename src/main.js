@@ -16,6 +16,7 @@ import pianoRoll from './ui/PianoRoll.js'
 import trackSelector from './ui/TrackSelector.js'
 import prepareOverlay from './ui/PrepareOverlay.js'
 import { DEFAULT_LANGUAGE_CODE } from './config/languageOptions.js'
+import { buildRenderApiUrl } from './config/serviceEndpoints.js'
 import { EVENTS, JOB_STATUS, PHRASE_STATUS, PLAYHEAD_STATE, RENDER_PRIORITY } from './config/constants.js'
 
 function verifyModules() {
@@ -74,7 +75,7 @@ function init() {
   const fileInput = document.getElementById('midi-file-input')
 
   const fetchVoicebanks = async () => {
-    const response = await fetch('http://localhost:5000/api/voicebanks')
+    const response = await fetch(buildRenderApiUrl('/api/voicebanks'))
     if (!response.ok) throw new Error('获取声库失败: HTTP ' + response.status)
     return response.json()
   }
@@ -177,7 +178,7 @@ function init() {
 
     const requireBackend = async () => {
       const available = await checkBackendAvailability()
-      return available ? true : '跳过：后端未启动（本项依赖 http://localhost:5000）'
+      return available ? true : '跳过：后端渲染服务未启动'
     }
 
     const checks = [
@@ -221,7 +222,7 @@ function init() {
         name: '后端连通性测试',
         fn: async () => {
           const available = await checkBackendAvailability()
-          return available ? true : '跳过：无法连接 http://localhost:5000（你当前未启动后端）'
+          return available ? true : '跳过：无法连接后端渲染服务（你当前未启动后端）'
         },
       },
       {
@@ -440,7 +441,7 @@ function init() {
 
     const requireBackend = async () => {
       const available = await checkBackendAvailability()
-      return available ? true : '跳过：后端未启动（http://localhost:5000）'
+      return available ? true : '跳过：后端渲染服务未启动'
     }
 
     const checks = [
@@ -472,7 +473,7 @@ function init() {
         name: '后端连通性',
         fn: async () => {
           const available = await checkBackendAvailability()
-          return available ? true : '跳过：后端未启动（http://localhost:5000）'
+          return available ? true : '跳过：后端渲染服务未启动'
         },
       },
       {

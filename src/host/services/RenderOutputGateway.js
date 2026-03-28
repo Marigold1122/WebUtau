@@ -1,11 +1,11 @@
 import renderApi from '../../api/RenderApi.js'
-import { RENDER_API_BASE_URL } from '../../api/RenderApi.js'
+import { buildRenderApiUrl } from '../../config/serviceEndpoints.js'
 import { getToneRawContext } from '../audio/instruments/toneRuntime.js'
 
 export class RenderOutputGateway {
   resolveJobDownloadUrl(jobId) {
     if (!jobId) throw new Error('缺少完整轨 jobId')
-    return `${RENDER_API_BASE_URL}/api/jobs/${jobId}/download`
+    return buildRenderApiUrl(`/api/jobs/${jobId}/download`)
   }
 
   async downloadJobBlob(jobId) {

@@ -9,6 +9,8 @@ const DEFAULT_TIME_SIGNATURE = [4, 4]
 const MIN_VIEW_BARS = 64
 const SNAP_DIVISION = 4
 const VIEWPORT_TAIL_BARS = 8
+const VIEWPORT_HORIZONTAL_CHUNK_BEATS = 12
+const VIEWPORT_VERTICAL_CHUNK_ROWS = 8
 
 function clampNonNegative(value, fallback = 0) {
   return Number.isFinite(value) ? Math.max(0, value) : fallback
@@ -156,6 +158,21 @@ export class InstrumentEditorView {
     this.root = root
     this.handlers = handlers
     this.noteSeed = 0
+    this.noteDurationCeiling = 1
+    this.axisRevision = 0
+    this.notesRevision = 0
+    this.playheadRenderedX = null
+    this.viewportRenderFrame = 0
+    this.viewportRenderForce = false
+    this.viewportRenderState = {
+      rulerKey: '',
+      gridKey: '',
+      notesKey: '',
+    }
+    this.visibleMarksCache = {
+      key: '',
+      marks: [],
+    }
     this.state = {
       trackId: null,
       trackName: '',
@@ -182,6 +199,8 @@ export class InstrumentEditorView {
     this._handlePointerUp = this._handlePointerUp.bind(this)
     this._handleViewportMouseMove = this._handleViewportMouseMove.bind(this)
     this._handleViewportMouseLeave = this._handleViewportMouseLeave.bind(this)
+    this._handleGridScroll = this._handleGridScroll.bind(this)
+    this._handleRulerClick = this._handleRulerClick.bind(this)
   }
 
   setHandlers(handlers = {}) {
@@ -246,6 +265,7 @@ export class InstrumentEditorView {
       this.state.loadedSignature = nextSignature
       this.state.sourcePreviewNotesRef = previewNotes
       this.state.dirty = false
+      this._touchNotes()
     }
     if (isTrackChanged) {
       this.state.drawDraft = null
@@ -287,9 +307,15 @@ export class InstrumentEditorView {
   }
 
   clear() {
+    if (this.viewportRenderFrame) {
+      cancelAnimationFrame(this.viewportRenderFrame)
+      this.viewportRenderFrame = 0
+      this.viewportRenderForce = false
+    }
     this.state.trackId = null
     this.state.trackName = ''
     this.state.axis = null
+    this.playheadRenderedX = null
     this.state.notes = []
     this.state.baseDurationTicks = 0
     this.state.loadedSignature = ''
@@ -302,6 +328,8 @@ export class InstrumentEditorView {
     this.state.erasing = false
     this.state.trackColor = getTrackColorById(null, [])
     this.state.trackBorderColor = darkenHexColor(this.state.trackColor)
+    this._invalidateAxisRenderState()
+    this._touchNotes()
     this._applyTrackColor()
     this._renderTrackState()
     this._hideGhostNote()
@@ -340,6 +368,7 @@ export class InstrumentEditorView {
   appendRecordedNote(note) {
     if (!this.state.trackId) return false
     this.state.notes = sortNotes([...this.state.notes, createDraftNote(note, this._nextNoteId())])
+    this._touchNotes()
     this.state.dirty = true
     this._renderMutableState({
       axisChanged: this._ensureAxisForDraftNotes(),
@@ -485,6 +514,7 @@ export class InstrumentEditorView {
 
     const rulerContent = document.createElement('div')
     rulerContent.className = 'instrument-editor-ruler-content'
+    rulerContent.addEventListener('click', this._handleRulerClick)
     rulerViewport.appendChild(rulerContent)
 
     const keyboardViewport = document.createElement('div')
@@ -496,7 +526,7 @@ export class InstrumentEditorView {
 
     const gridViewport = document.createElement('div')
     gridViewport.className = 'instrument-editor-grid-viewport'
-    gridViewport.addEventListener('scroll', () => this._syncScroll())
+    gridViewport.addEventListener('scroll', this._handleGridScroll)
     gridViewport.addEventListener('mousedown', (event) => this._handlePointerDown(event))
     gridViewport.addEventListener('mousemove', this._handleViewportMouseMove)
     gridViewport.addEventListener('mouseleave', this._handleViewportMouseLeave)
@@ -576,9 +606,9 @@ export class InstrumentEditorView {
 
   _renderTrackState() {
     this._renderControls()
-    this._renderRuler()
-    this._renderGrid()
-    this._renderNotes()
+    this._renderRuler(true)
+    this._renderGrid(true)
+    this._renderNotes(true)
     this._renderPlayhead()
     this._renderHoverGuide()
   }
@@ -586,11 +616,11 @@ export class InstrumentEditorView {
   _renderMutableState({ axisChanged = false, notesChanged = false } = {}) {
     this._renderControls()
     if (axisChanged) {
-      this._renderRuler()
-      this._renderGrid()
+      this._renderRuler(true)
+      this._renderGrid(true)
     }
     if (axisChanged || notesChanged) {
-      this._renderNotes()
+      this._renderNotes(true)
     }
     this._renderPlayhead()
     this._renderGhostNote()
@@ -614,16 +644,23 @@ export class InstrumentEditorView {
     this._setMetaText(this.state.recording ? '录制中' : (this.state.dirty ? '未保存更改' : '已保存'))
   }
 
-  _renderRuler() {
+  _renderRuler(force = false) {
     const axis = this.state.axis
     if (!this.refs.rulerContent) return
-    this.refs.rulerContent.replaceChildren()
-    if (!axis) return
+    this.refs.rulerContent.style.width = `${axis?.timelineWidth || 0}px`
+    if (!axis) {
+      this.viewportRenderState.rulerKey = ''
+      this.refs.rulerContent.replaceChildren()
+      return
+    }
 
-    this.refs.rulerContent.style.width = `${axis.timelineWidth}px`
-    const marks = axis.getRulerMarks({ subdivisionsPerBeat: 4 })
+    const renderWindow = this._getViewportRenderWindow()
+    const renderKey = `${this.axisRevision}:${renderWindow.horizontalKey}`
+    if (!force && this.viewportRenderState.rulerKey === renderKey) return
+
+    this.viewportRenderState.rulerKey = renderKey
     const fragment = document.createDocumentFragment()
-    marks.forEach((mark) => {
+    this._getVisibleRulerMarks(renderWindow).forEach((mark) => {
       const line = document.createElement('span')
       line.className = `instrument-editor-ruler-line is-${mark.kind}`
       line.style.left = `${Math.round(mark.x)}px`
@@ -637,43 +674,36 @@ export class InstrumentEditorView {
       fragment.appendChild(label)
     })
 
-    axis.timeSignaturePoints.forEach((point, index) => {
-      if (index === 0 && point.ticks === 0) return
-      const label = document.createElement('span')
-      label.className = 'instrument-editor-ruler-meta-marker is-signature'
-      label.style.left = `${Math.round(axis.tickToX(point.ticks)) + 6}px`
-      label.textContent = Array.isArray(point.timeSignature) ? point.timeSignature.join('/') : '4/4'
-      fragment.appendChild(label)
-    })
-
-    axis.tempoPoints.forEach((point, index) => {
-      if (index === 0 && point.ticks === 0) return
-      const label = document.createElement('span')
-      label.className = 'instrument-editor-ruler-meta-marker is-tempo'
-      label.style.left = `${Math.round(axis.tickToX(point.ticks)) + 6}px`
-      label.textContent = `${Math.round(point.bpm)} BPM`
-      fragment.appendChild(label)
-    })
-
-    ;(this.state.tempoData?.keySignatures || []).forEach((point, index) => {
-      if (index === 0 && (point.ticks || 0) === 0) return
-      const label = document.createElement('span')
-      label.className = 'instrument-editor-ruler-meta-marker is-key'
-      label.style.left = `${Math.round(axis.tickToX(point.ticks || 0)) + 6}px`
-      label.textContent = `${point.key}${point.scale === 'minor' ? 'm' : ''}`
-      fragment.appendChild(label)
-    })
-
-    this.refs.rulerContent.appendChild(fragment)
-
-    this.refs.rulerContent.onclick = (event) => {
-      const viewportRect = this.refs.gridViewport.getBoundingClientRect()
-      const x = event.clientX - viewportRect.left + this.refs.gridViewport.scrollLeft
-      this.handlers.onInstrumentEditorSeek?.(axis.xToTime(x))
+    const metaMinX = renderWindow.startX - 96
+    const metaMaxX = renderWindow.endX + 220
+    const appendMetaMarkers = (points, className, formatter) => {
+      points.forEach((point, index) => {
+        const pointTick = Number.isFinite(point?.ticks) ? point.ticks : 0
+        if (index === 0 && pointTick === 0) return
+        const x = Math.round(axis.tickToX(pointTick))
+        if (x < metaMinX || x > metaMaxX) return
+        const label = document.createElement('span')
+        label.className = className
+        label.style.left = `${x + 6}px`
+        label.textContent = formatter(point)
+        fragment.appendChild(label)
+      })
     }
+
+    appendMetaMarkers(axis.timeSignaturePoints, 'instrument-editor-ruler-meta-marker is-signature', (point) => {
+      return Array.isArray(point.timeSignature) ? point.timeSignature.join('/') : '4/4'
+    })
+    appendMetaMarkers(axis.tempoPoints, 'instrument-editor-ruler-meta-marker is-tempo', (point) => {
+      return `${Math.round(point.bpm)} BPM`
+    })
+    appendMetaMarkers(this.state.tempoData?.keySignatures || [], 'instrument-editor-ruler-meta-marker is-key', (point) => {
+      return `${point.key}${point.scale === 'minor' ? 'm' : ''}`
+    })
+
+    this.refs.rulerContent.replaceChildren(fragment)
   }
 
-  _renderGrid() {
+  _renderGrid(force = false) {
     const axis = this.state.axis
     if (!this.refs.gridContent || !this.refs.gridMarks) return
     const pitchRows = PIANO_ROLL.PITCH_MAX - PIANO_ROLL.PITCH_MIN + 1
@@ -689,26 +719,43 @@ export class InstrumentEditorView {
     this.refs.gridContent.style.setProperty('--instrument-beat-width', `${beatWidth}px`)
     this.refs.gridContent.style.setProperty('--instrument-bar-width', `${barWidth}px`)
 
-    this.refs.gridMarks.replaceChildren()
-    if (!axis) return
+    if (!axis) {
+      this.viewportRenderState.gridKey = ''
+      this.refs.gridMarks.replaceChildren()
+      return
+    }
 
+    const renderWindow = this._getViewportRenderWindow()
+    const renderKey = `${this.axisRevision}:${renderWindow.horizontalKey}`
+    if (!force && this.viewportRenderState.gridKey === renderKey) return
+
+    this.viewportRenderState.gridKey = renderKey
     const fragment = document.createDocumentFragment()
-    axis.getRulerMarks({ subdivisionsPerBeat: 4 }).forEach((mark) => {
+    this._getVisibleRulerMarks(renderWindow).forEach((mark) => {
       const line = document.createElement('span')
       line.className = `instrument-editor-grid-line is-${mark.kind}`
       line.style.left = `${Math.round(mark.x)}px`
       fragment.appendChild(line)
     })
-    this.refs.gridMarks.appendChild(fragment)
+    this.refs.gridMarks.replaceChildren(fragment)
   }
 
-  _renderNotes() {
+  _renderNotes(force = false) {
     if (!this.refs.notesLayer) return
-    this.refs.notesLayer.replaceChildren()
-    if (!this.state.axis) return
+    if (!this.state.axis) {
+      this.viewportRenderState.notesKey = ''
+      this.refs.notesLayer.replaceChildren()
+      return
+    }
+
+    const renderWindow = this._getViewportRenderWindow()
+    const renderKey = `${this.axisRevision}:${this.notesRevision}:${renderWindow.horizontalKey}:${renderWindow.verticalKey}`
+    if (!force && this.viewportRenderState.notesKey === renderKey) return
+
+    this.viewportRenderState.notesKey = renderKey
     const fragment = document.createDocumentFragment()
 
-    this.state.notes.forEach((note) => {
+    this._getVisibleNotes(renderWindow).forEach((note) => {
       const noteElement = document.createElement('button')
       noteElement.type = 'button'
       noteElement.className = 'instrument-editor-note'
@@ -722,12 +769,15 @@ export class InstrumentEditorView {
       noteElement.textContent = width > 18 ? formatMidiLabel(note.midi) : ''
       fragment.appendChild(noteElement)
     })
-    this.refs.notesLayer.appendChild(fragment)
+    this.refs.notesLayer.replaceChildren(fragment)
   }
 
   _renderPlayhead() {
     if (!this.refs.playhead || !this.state.axis) return
-    this.refs.playhead.style.left = `${Math.round(this.state.axis.timeToX(this.state.currentTime))}px`
+    const x = this.state.axis.timeToX(this.state.currentTime)
+    if (this.playheadRenderedX != null && Math.abs(this.playheadRenderedX - x) < 0.01) return
+    this.playheadRenderedX = x
+    this.refs.playhead.style.transform = `translateX(${x}px)`
   }
 
   _scrollToTrackNotes() {
@@ -750,6 +800,20 @@ export class InstrumentEditorView {
     if (!this.refs.gridViewport || !this.refs.keyboardContent || !this.refs.rulerContent) return
     this.refs.keyboardContent.style.transform = `translateY(${-this.refs.gridViewport.scrollTop}px)`
     this.refs.rulerContent.style.transform = `translateX(${-this.refs.gridViewport.scrollLeft}px)`
+  }
+
+  _handleGridScroll() {
+    this._syncScroll()
+    this._scheduleViewportRender()
+  }
+
+  _handleRulerClick(event) {
+    const axis = this.state.axis
+    const viewport = this.refs.gridViewport
+    if (!axis || !viewport) return
+    const viewportRect = viewport.getBoundingClientRect()
+    const x = event.clientX - viewportRect.left + viewport.scrollLeft
+    this.handlers.onInstrumentEditorSeek?.(axis.xToTime(x))
   }
 
   _handlePointerDown(event) {
@@ -921,6 +985,7 @@ export class InstrumentEditorView {
     const noteIndex = this._findNoteIndexAt(pos)
     if (noteIndex < 0) return
     this.state.notes.splice(noteIndex, 1)
+    this._touchNotes()
     this.state.dirty = true
     this._renderMutableState({ notesChanged: true })
   }
@@ -946,6 +1011,7 @@ export class InstrumentEditorView {
     })
     if (duplicate) return
     this.state.notes = sortNotes([...this.state.notes, draftNote])
+    this._touchNotes()
     this.state.dirty = true
     this._renderMutableState({
       axisChanged: this._ensureAxisForDraftNotes(),
@@ -999,6 +1065,7 @@ export class InstrumentEditorView {
         ? Math.max(0, Math.round(totalTicks))
         : computeTotalTicks({ durationTicks: this.state.baseDurationTicks }, this.state.notes, this.state.ppq, 0, this.state.tempoData),
     })
+    this._invalidateAxisRenderState()
   }
 
   _ensureAxisForDraftNotes() {
@@ -1030,6 +1097,132 @@ export class InstrumentEditorView {
     this._rebuildAxis(nextTotalTicks)
     this._renderMutableState({ axisChanged: true, notesChanged: false })
     return true
+  }
+
+  _scheduleViewportRender(force = false) {
+    this.viewportRenderForce = this.viewportRenderForce || force
+    if (this.viewportRenderFrame) return
+    this.viewportRenderFrame = requestAnimationFrame(() => {
+      this.viewportRenderFrame = 0
+      const shouldForce = this.viewportRenderForce
+      this.viewportRenderForce = false
+      this._renderRuler(shouldForce)
+      this._renderGrid(shouldForce)
+      this._renderNotes(shouldForce)
+    })
+  }
+
+  _getViewportRenderWindow() {
+    const axis = this.state.axis
+    if (!axis) return null
+
+    const viewport = this.refs.gridViewport
+    if (!viewport) {
+      return {
+        startX: 0,
+        endX: axis.timelineWidth,
+        startTick: 0,
+        endTick: axis.totalTicks,
+        highMidi: PIANO_ROLL.PITCH_MAX,
+        lowMidi: PIANO_ROLL.PITCH_MIN,
+        horizontalKey: 'full',
+        verticalKey: 'full',
+      }
+    }
+
+    const viewportWidth = viewport.clientWidth || viewport.getBoundingClientRect?.().width || 0
+    const viewportHeight = viewport.clientHeight || viewport.getBoundingClientRect?.().height || 0
+    const horizontalChunkPx = Math.max(DEFAULT_BEAT_WIDTH * VIEWPORT_HORIZONTAL_CHUNK_BEATS, viewportWidth || 0)
+    const verticalChunkPx = Math.max(PIANO_ROLL.KEY_HEIGHT * VIEWPORT_VERTICAL_CHUNK_ROWS, viewportHeight || 0)
+    const startChunk = Math.max(0, Math.floor(viewport.scrollLeft / horizontalChunkPx) - 1)
+    const endChunk = Math.floor((viewport.scrollLeft + viewportWidth) / horizontalChunkPx) + 1
+    const topChunk = Math.max(0, Math.floor(viewport.scrollTop / verticalChunkPx) - 1)
+    const bottomChunk = Math.floor((viewport.scrollTop + viewportHeight) / verticalChunkPx) + 1
+    const pitchRows = PIANO_ROLL.PITCH_MAX - PIANO_ROLL.PITCH_MIN + 1
+    const totalHeight = pitchRows * PIANO_ROLL.KEY_HEIGHT
+    const startX = startChunk * horizontalChunkPx
+    const endX = Math.max(startX, Math.min(axis.timelineWidth, (endChunk + 1) * horizontalChunkPx))
+    const startY = topChunk * verticalChunkPx
+    const endY = Math.max(startY, Math.min(totalHeight, (bottomChunk + 1) * verticalChunkPx))
+    const midiStart = this._yToMidi(startY)
+    const midiEnd = this._yToMidi(endY)
+
+    return {
+      startX,
+      endX,
+      startTick: axis.xToTick(startX),
+      endTick: axis.xToTick(endX),
+      highMidi: Math.max(midiStart, midiEnd),
+      lowMidi: Math.min(midiStart, midiEnd),
+      horizontalKey: `${startChunk}:${endChunk}`,
+      verticalKey: `${topChunk}:${bottomChunk}`,
+    }
+  }
+
+  _getVisibleRulerMarks(renderWindow) {
+    const cacheKey = `${this.axisRevision}:${renderWindow.horizontalKey}`
+    if (this.visibleMarksCache.key !== cacheKey) {
+      this.visibleMarksCache = {
+        key: cacheKey,
+        marks: this.state.axis?.getRulerMarksInRange({
+          startTick: renderWindow.startTick,
+          endTick: renderWindow.endTick,
+          subdivisionsPerBeat: SNAP_DIVISION,
+        }) || [],
+      }
+    }
+    return this.visibleMarksCache.marks
+  }
+
+  _getVisibleNotes(renderWindow) {
+    const notes = []
+    const startIndex = this._findNoteInsertionIndexByTick(
+      Math.max(0, renderWindow.startTick - this.noteDurationCeiling),
+    )
+
+    for (let index = startIndex; index < this.state.notes.length; index += 1) {
+      const note = this.state.notes[index]
+      if (note.tick > renderWindow.endTick) break
+      const noteEndTick = note.tick + note.durationTicks
+      if (noteEndTick < renderWindow.startTick) continue
+      if (note.midi < renderWindow.lowMidi || note.midi > renderWindow.highMidi) continue
+      notes.push(note)
+    }
+
+    return notes
+  }
+
+  _findNoteInsertionIndexByTick(targetTick) {
+    let low = 0
+    let high = this.state.notes.length
+    while (low < high) {
+      const mid = Math.floor((low + high) / 2)
+      if (this.state.notes[mid].tick < targetTick) {
+        low = mid + 1
+      } else {
+        high = mid
+      }
+    }
+    return low
+  }
+
+  _touchNotes() {
+    this.noteDurationCeiling = this.state.notes.reduce((maxDuration, note) => {
+      return Math.max(maxDuration, Math.max(1, Math.round(clampNonNegative(note?.durationTicks, 1))))
+    }, 1)
+    this.notesRevision += 1
+    this.viewportRenderState.notesKey = ''
+  }
+
+  _invalidateAxisRenderState() {
+    this.axisRevision += 1
+    this.visibleMarksCache = {
+      key: '',
+      marks: [],
+    }
+    this.viewportRenderState.rulerKey = ''
+    this.viewportRenderState.gridKey = ''
+    this.viewportRenderState.notesKey = ''
   }
 
   _nextNoteId() {

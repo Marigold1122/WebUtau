@@ -1,4 +1,4 @@
-const DEFAULT_SEEDVC_BASE_URL = 'http://localhost:5001'
+import { SEEDVC_API_BASE_URL, buildSeedVcApiUrl } from '../../config/serviceEndpoints.js'
 
 function appendParam(formData, key, value) {
   if (typeof value === 'boolean') {
@@ -9,7 +9,7 @@ function appendParam(formData, key, value) {
 }
 
 export class SeedVcGateway {
-  constructor(baseUrl = DEFAULT_SEEDVC_BASE_URL) {
+  constructor(baseUrl = SEEDVC_API_BASE_URL) {
     this.baseUrl = baseUrl.replace(/\/+$/, '')
   }
 
@@ -35,7 +35,11 @@ export class SeedVcGateway {
     appendParam(formData, 'autoF0Adjust', params.autoF0Adjust ?? false)
     appendParam(formData, 'pitchShift', params.pitchShift ?? 0)
 
-    const response = await fetch(`${this.baseUrl}/api/voice-conversion`, {
+    const requestUrl = this.baseUrl === SEEDVC_API_BASE_URL
+      ? buildSeedVcApiUrl('/api/voice-conversion')
+      : `${this.baseUrl}/api/voice-conversion`
+
+    const response = await fetch(requestUrl, {
       method: 'POST',
       body: formData,
       signal,
