@@ -103,13 +103,18 @@ export function createHostBridgeHandlers({
     },
     onRenderManifestSync(payload) {
       if (!payload?.trackId || !matchesTrackJob(store, payload.trackId, payload.jobId)) return
-      vocalManifestController?.syncRenderManifest(payload)
+      const manifest = vocalManifestController?.syncRenderManifest(payload)
+      if (payload?.source === 'runtime-cache' && transportCoordinator?.isProjectPlaybackActive?.()) {
+        Promise.resolve(transportCoordinator.refreshProjectPlayback('runtime-cache-sync')).catch((error) => {
+          console.error('Host playback refresh after runtime cache invalidation failed:', error)
+        })
+      }
+      return manifest
     },
     onPhraseReady(payload) {
       if (!payload?.trackId || !matchesTrackJob(store, payload.trackId, payload.jobId)) return
       Promise.resolve(vocalManifestController?.handlePhraseReady(payload))
-        .then((updated) => {
-          if (!updated) return
+        .then(() => {
           const resumeDecision = playbackMode.handlePhraseReady(payload.phraseIndex, payload.jobId)
           if (resumeDecision.action === 'resume') {
             return Promise.resolve(onResumeBufferedPlayback?.())

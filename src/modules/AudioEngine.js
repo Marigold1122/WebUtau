@@ -21,6 +21,10 @@ class AudioEngine {
     this._scheduledSources = new Map()
     this._schedulerTimer = null
     this._uiRafId = null
+
+    eventBus.on(EVENTS.CACHE_UPDATED, ({ phraseIndex } = {}) => {
+      this._handlePhraseCacheReady(phraseIndex)
+    })
   }
 
   async _ensureContext() {
@@ -217,6 +221,15 @@ class AudioEngine {
     this._playStartContextTime = this.audioContext.currentTime
     this._playStartSongTime = this._seekPosition
     playheadController.setState(PLAYHEAD_STATE.PLAYING)
+  }
+
+  _handlePhraseCacheReady(phraseIndex) {
+    if (!this._playing || !this._buffering) return
+    if (!Number.isInteger(phraseIndex)) return
+    if (phraseIndex !== this._bufferingPhraseIndex) return
+    console.log(`${M} 等待句缓存已就绪 | 第${phraseIndex}句 → 立即尝试恢复播放`)
+    this._stopScheduler()
+    this._schedulerTick()
   }
 
   // --- 单句调度 ---

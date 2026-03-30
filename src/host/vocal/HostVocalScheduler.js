@@ -43,6 +43,7 @@ function buildPhraseEntries(tracks, audibleTrackIds, excludedTrackIds = new Set(
         revision: manifest?.revision || 0,
         phraseIndex: phraseState.phraseIndex,
         inputHash: phraseState.inputHash || null,
+        status: phraseState.status || 'pending',
         jobId: manifest?.jobId || track?.jobRef?.jobId || null,
         startMs: phraseState.startMs,
         durationMs: phraseState.durationMs,
@@ -103,6 +104,11 @@ export class HostVocalScheduler {
       if (entry.endSec <= songTimeSec) return
       if (entry.startSec > windowEnd) return
       if (this.activeSources.has(entry.key)) return
+
+      if (entry.status !== 'available') {
+        this._requestPhrase(entry)
+        return
+      }
 
       const asset = this.assetRegistry.getAsset(entry)
       if (!asset?.buffer) {

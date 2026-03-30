@@ -23,6 +23,8 @@ class LyricEditor {
 
     if (phraseIndex != null) {
       renderCache.clearIndices([phraseIndex])
+      audioEngine.cancelPhrases([phraseIndex])
+      eventBus.emit(EVENTS.CACHE_INVALIDATED, { phraseIndex })
       renderJobManager.incrementGeneration()
 
       // 乐观更新歌词：同步修改本地 note.lyric，让 UI 立刻显示
@@ -59,6 +61,10 @@ class LyricEditor {
     })
 
     renderCache.clearIndices(affectedPhrases)
+    audioEngine.cancelPhrases(affectedPhrases)
+    affectedPhrases.forEach((phraseIndex) => {
+      eventBus.emit(EVENTS.CACHE_INVALIDATED, { phraseIndex })
+    })
     renderJobManager.incrementGeneration()
 
     // 乐观更新歌词：同步修改本地 note.lyric，让 UI 立刻显示新歌词

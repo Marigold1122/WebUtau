@@ -2,6 +2,7 @@ import eventBus from '../../core/EventBus.js'
 import phraseStore from '../../core/PhraseStore.js'
 import playheadController from '../../modules/PlayheadController.js'
 import { EVENTS } from '../../config/constants.js'
+import phraseRenderStateStore from './phraseRenderStateStore.js'
 import { buildRuntimeSnapshot } from './runtimeSnapshot.js'
 
 export function createRuntimeEventBindings({
@@ -13,6 +14,57 @@ export function createRuntimeEventBindings({
   buildSeekPayload,
   emitPlaybackState,
 }) {
+  let pendingManifestSyncFrame = 0
+  let pendingManifestSyncReason = null
+
+  function buildLivePhraseStates() {
+    return (phraseStore.getPhrases() || []).map((phrase, index) => {
+      const phraseIndex = Number.isInteger(phrase?.index) ? phrase.index : index
+      const timeInfo = phraseRenderStateStore.getTimeInfo(phraseIndex)
+      const startMs = Number.isFinite(timeInfo?.startMs)
+        ? timeInfo.startMs
+        : (Number.isFinite(phrase?.startTime) ? phrase.startTime * 1000 : null)
+      const durationMs = Number.isFinite(timeInfo?.durationMs)
+        ? timeInfo.durationMs
+        : (
+            Number.isFinite(phrase?.startTime) && Number.isFinite(phrase?.endTime)
+              ? Math.max(50, (phrase.endTime - phrase.startTime) * 1000)
+              : null
+          )
+      return {
+        phraseIndex,
+        inputHash: phrase?.inputHash || null,
+        startMs,
+        durationMs,
+        status: phraseRenderStateStore.getStatus(phraseIndex),
+      }
+    })
+  }
+
+  function flushLiveRenderManifestSync() {
+    pendingManifestSyncFrame = 0
+    const reason = pendingManifestSyncReason || 'runtime-cache'
+    pendingManifestSyncReason = null
+    const trackId = state.trackId
+    if (!trackId) return
+    callbacks.onRenderManifestSync?.({
+      trackId,
+      jobId: phraseStore.getJobId(),
+      status: 'rendering',
+      hasPredictedPitch: Boolean(phraseStore.getPitchData()),
+      phraseStates: buildLivePhraseStates(),
+      source: reason,
+    })
+  }
+
+  function scheduleLiveRenderManifestSync(reason = 'runtime-cache') {
+    pendingManifestSyncReason = reason
+    if (pendingManifestSyncFrame) return
+    pendingManifestSyncFrame = requestAnimationFrame(() => {
+      flushLiveRenderManifestSync()
+    })
+  }
+
   function handlePhraseRebuilt({ phrases }) {
     setStatus(`后端分句完成：${phrases.length} 个语句，渲染中...`)
   }
@@ -91,6 +143,11 @@ export function createRuntimeEventBindings({
     })
   }
 
+  function handleCacheInvalidated() {
+    if (!state.trackId) return
+    scheduleLiveRenderManifestSync('runtime-cache')
+  }
+
   function handlePhraseReady(payload = {}) {
     if (state.trackId == null || !Number.isInteger(payload.phraseIndex)) return
     const phrase = phraseStore.getPhrase(payload.phraseIndex)
@@ -122,6 +179,7 @@ export function createRuntimeEventBindings({
     eventBus.on(EVENTS.PITCH_LOADED, handlePitchLoaded)
     eventBus.on(EVENTS.JOB_PROGRESS, handleJobProgress)
     eventBus.on(EVENTS.JOB_FAILED, handleJobFailed)
+    eventBus.on(EVENTS.CACHE_INVALIDATED, handleCacheInvalidated)
     eventBus.on(EVENTS.RENDER_COMPLETE, handlePhraseReady)
   }
 }
