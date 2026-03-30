@@ -80,18 +80,8 @@ public class SynthesisService : IHostedService {
 
     public bool DeleteJob(string jobId) {
         if (!_jobs.TryRemove(jobId, out var job)) return false;
-        // 清理完整输出
-        if (job.OutputPath != null && File.Exists(job.OutputPath))
-            File.Delete(job.OutputPath);
-        // 清理各短语输出
-        if (job.Phrases != null) {
-            foreach (var p in job.Phrases) {
-                if (p.OutputPath != null && File.Exists(p.OutputPath))
-                    File.Delete(p.OutputPath);
-            }
-        }
-        if (File.Exists(job.MidiPath))
-            File.Delete(job.MidiPath);
+        CleanupJobOutputArtifacts(jobId, includeMergedOutput: true);
+        TryDeleteFile(job.MidiPath, "uploaded midi cleanup", jobId);
         return true;
     }
 
@@ -436,6 +426,62 @@ public class SynthesisService : IHostedService {
         }
         File.Copy(oldPath, newPath, overwrite: true);
         return newPath;
+    }
+
+    private static HashSet<string> CollectReferencedPhraseOutputPaths(SynthesisJob job) {
+        var keepPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (job.Phrases == null) {
+            return keepPaths;
+        }
+        foreach (var phrase in job.Phrases) {
+            if (string.IsNullOrWhiteSpace(phrase.OutputPath)) {
+                continue;
+            }
+            keepPaths.Add(Path.GetFullPath(phrase.OutputPath));
+        }
+        return keepPaths;
+    }
+
+    private void CleanupJobOutputArtifacts(string jobId, IEnumerable<string>? keepPaths = null, bool includeMergedOutput = false) {
+        if (!Directory.Exists(_outputDir)) {
+            return;
+        }
+
+        var keepSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (keepPaths != null) {
+            foreach (var keepPath in keepPaths) {
+                if (string.IsNullOrWhiteSpace(keepPath)) {
+                    continue;
+                }
+                keepSet.Add(Path.GetFullPath(keepPath));
+            }
+        }
+
+        foreach (var phrasePath in Directory.EnumerateFiles(_outputDir, $"{jobId}_p*.wav")) {
+            var fullPath = Path.GetFullPath(phrasePath);
+            if (keepSet.Contains(fullPath)) {
+                continue;
+            }
+            TryDeleteFile(fullPath, "phrase output cleanup", jobId);
+        }
+
+        if (includeMergedOutput) {
+            var mergedPath = Path.GetFullPath(Path.Combine(_outputDir, $"{jobId}.wav"));
+            if (!keepSet.Contains(mergedPath)) {
+                TryDeleteFile(mergedPath, "merged output cleanup", jobId);
+            }
+        }
+    }
+
+    private static void TryDeleteFile(string? path, string reason, string jobId) {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) {
+            return;
+        }
+        try {
+            File.Delete(path);
+        } catch (Exception ex) {
+            Log.Warning(ex, "Job {JobId}: failed during {Reason} for {Path}", jobId, reason, path);
+        }
     }
 
     /// <summary>
@@ -1116,6 +1162,7 @@ public class SynthesisService : IHostedService {
                 ? renderAffectedIndices.Min()
                 : -1;
         }
+        CleanupJobOutputArtifacts(job.JobId, CollectReferencedPhraseOutputPaths(job));
 
         var affectedIndices = renderAffectedIndices.OrderBy(index => index).ToList();
         var pitchPredictionIndices = editAffectedIndices.OrderBy(index => index).ToList();
