@@ -4,8 +4,30 @@ node_modules/
 # Build output
 dist/
 
-# Backend runtime (kept out of the repo and distributed separately)
-server/
+# Backend runtime at repo root stays out of git, but backend source is tracked.
+server/*
+!server/DiffSingerApi/
+!server/DiffSingerApi/**
+server/DiffSingerApi/bin/
+server/DiffSingerApi/obj/
+server/DiffSingerApi/output/
+server/DiffSingerApi/uploads/
+server/DiffSingerApi/voicebanks/
+server/DiffSingerApi/tempdiffsingertest/
+server/DiffSingerApi/TestBuild/
+
+# Vendored OpenUtau source subset required by the backend source.
+OpenUtau/*
+!OpenUtau/OpenUtau.Core/
+!OpenUtau/OpenUtau.Core/**
+!OpenUtau/OpenUtau.Plugin.Builtin/
+!OpenUtau/OpenUtau.Plugin.Builtin/**
+OpenUtau/OpenUtau.Core/bin/
+OpenUtau/OpenUtau.Core/obj/
+OpenUtau/OpenUtau.Core/tempdiffsingertest/
+OpenUtau/OpenUtau.Plugin.Builtin/bin/
+OpenUtau/OpenUtau.Plugin.Builtin/obj/
+OpenUtau/OpenUtau.Plugin.Builtin/tempdiffsingertest/
 
 # External model/runtime trees
 external/
