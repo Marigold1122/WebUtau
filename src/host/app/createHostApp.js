@@ -26,6 +26,8 @@ import { TrackMonitorController } from '../monitor/TrackMonitorController.js'
 import { isAudioTrack } from '../project/trackContentType.js'
 import { ProjectDocumentStore } from '../project/ProjectDocumentStore.js'
 import { isVoiceRuntimeSource } from '../project/trackSourceAssignment.js'
+import { isTrackPrepReady } from '../project/trackPrepState.js'
+import { buildPendingVoiceNoteEditState, hasPendingVoiceNoteEdits } from '../project/pendingVoiceNoteEdit.js'
 import { HostSessionStore } from '../session/HostSessionStore.js'
 import { ImportProjectService } from '../services/ImportProjectService.js'
 import { RenderOutputGateway } from '../services/RenderOutputGateway.js'
@@ -55,7 +57,25 @@ function clampMidiVelocity(velocity) {
 }
 
 function isInstrumentEditorTrack(track) {
-  return Boolean(track) && !isAudioTrack(track) && !isVoiceRuntimeSource(track.playbackState?.assignedSourceId)
+  return Boolean(track) && !isAudioTrack(track)
+}
+
+function getNoteEditorMonitorSourceId(track) {
+  if (!track || isAudioTrack(track)) return null
+  return isVoiceRuntimeSource(track.playbackState?.assignedSourceId)
+    ? 'piano'
+    : getHostPlaybackSourceId(track.playbackState?.assignedSourceId)
+}
+
+function isPreparedVoiceTrack(track) {
+  return Boolean(
+    track
+    && !isAudioTrack(track)
+    && isVoiceRuntimeSource(track.playbackState?.assignedSourceId)
+    && isTrackPrepReady(track)
+    && track.voiceSnapshot
+    && track.jobRef?.jobId,
+  )
 }
 
 function buildRecordedMidiNote(project, midi, velocity, startTime, endTime) {
@@ -405,7 +425,7 @@ export function createHostApp() {
 
   async function prepareInstrumentMonitor(track) {
     if (!isInstrumentEditorTrack(track)) return null
-    const sourceId = getHostPlaybackSourceId(track.playbackState?.assignedSourceId)
+    const sourceId = getNoteEditorMonitorSourceId(track)
     if (!sourceId) return null
     try {
       await instrumentScheduler.samplerPool.prepareSources([sourceId])
@@ -429,7 +449,7 @@ export function createHostApp() {
 
   async function previewMidiNoteOn(track, midi, velocity) {
     if (!isInstrumentEditorTrack(track)) return false
-    const sourceId = getHostPlaybackSourceId(track.playbackState?.assignedSourceId)
+    const sourceId = getNoteEditorMonitorSourceId(track)
     if (!sourceId) return false
 
     const requestId = ++midiInputState.previewRequestSerial
@@ -443,7 +463,7 @@ export function createHostApp() {
     const preparedSourceId = await prepareInstrumentMonitor(track)
     const pendingRequest = midiInputState.previewRequests.get(midi)
     const currentEditorTrack = store.getEditorTrack()
-    const currentSourceId = getHostPlaybackSourceId(currentEditorTrack?.playbackState?.assignedSourceId)
+    const currentSourceId = getNoteEditorMonitorSourceId(currentEditorTrack)
     if (!pendingRequest || pendingRequest.requestId !== requestId) return false
     if (!currentEditorTrack || currentEditorTrack.id !== track.id || currentSourceId !== sourceId) return false
     if (preparedSourceId !== sourceId) return false
@@ -503,6 +523,67 @@ export function createHostApp() {
     return true
   }
 
+  async function persistPreparedVoiceTrackNoteDraft(track, editorNotes, { silent = false, reason = 'voice-note-draft-save' } = {}) {
+    const basePreviewNotes = track?.pendingVoiceEditState?.basePreviewNotes
+      || track?.previewNotes
+      || track?.voiceSnapshot?.previewNotes
+      || []
+    const basePhrases = track?.voiceSnapshot?.phrases || track?.sourcePhrases || []
+    const basePhraseStates = track?.vocalManifest?.phraseStates
+      || track?.voiceSnapshot?.renderManifest?.phraseStates
+      || []
+    const pendingState = buildPendingVoiceNoteEditState({
+      basePreviewNotes,
+      nextPreviewNotes: editorNotes || [],
+      basePhrases,
+      basePhraseStates,
+      ppq: store.getProject()?.ppq,
+    })
+
+    store.replaceTrackPreviewNotes(track.id, pendingState.previewNotes, {
+      rebuildSourcePhrases: false,
+      clearVoiceSnapshot: false,
+      clearPendingVoiceEditState: false,
+    })
+    store.updateTrack(track.id, {
+      pendingVoiceEditState: pendingState.needsVoiceRerender ? structuredClone(pendingState) : null,
+    })
+    view.markInstrumentEditorSaved()
+    invalidateVoiceConversion(track.id, '音符已改动，现有转换结果需要重新生成')
+    logger.info('Prepared voice track note draft persisted', {
+      trackId: track.id,
+      editCount: pendingState.edits.length,
+      dirtyPhraseCount: pendingState.dirtyPhraseIndices.length,
+      reason,
+    })
+
+    if (transportCoordinator.isProjectPlaybackActive()) {
+      await refreshProjectPlaybackWithModeSync(reason)
+    } else {
+      render(reason)
+    }
+    if (!silent) {
+      view.setStatus(
+        pendingState.needsVoiceRerender
+          ? `${track.name} 的音符已修改，受影响片段先按钢琴预览；切到歌词或音高以重新生成人声`
+          : `已保存 ${track.name} 的音符调整`,
+      )
+    }
+    return true
+  }
+
+  function applyRuntimeNoteEditSnapshot(trackId, snapshot, affectedIndices = []) {
+    if (!trackId || !snapshot) return false
+    store.replaceVoiceSnapshot(trackId, snapshot)
+    store.updateTrack(trackId, {
+      pendingVoiceEditState: null,
+    })
+    vocalManifestController.applyNoteEditSnapshot(trackId, snapshot, affectedIndices)
+    invalidateVoiceConversion(trackId, '人声音符已更新，需要重新转换')
+    render('voice-note-edits-applied')
+    return true
+  }
+
   async function persistInstrumentEditorDraft({ trackId = null, silent = false, reason = 'instrument-editor-save' } = {}) {
     const track = getOpenInstrumentEditorTrack(trackId)
     if (!track) return false
@@ -515,8 +596,17 @@ export function createHostApp() {
     }
     const editorState = view.getInstrumentEditorState?.()
     if (!editorState || editorState.trackId !== track.id || !editorState.dirty) return false
+    if (isPreparedVoiceTrack(track)) {
+      return persistPreparedVoiceTrackNoteDraft(track, editorState.notes || [], { silent, reason })
+    }
+
     store.replaceTrackNotes(track.id, editorState.notes || [])
-    onTrackContentEdited(track.id, '乐器卷帘已更新，需要重新转换')
+    onTrackContentEdited(
+      track.id,
+      isVoiceRuntimeSource(track.playbackState?.assignedSourceId)
+        ? '音符已更新，需要重新进行人声准备'
+        : '乐器卷帘已更新，需要重新转换',
+    )
     view.markInstrumentEditorSaved()
     logger.info('Instrument editor draft persisted', {
       trackId: track.id,
@@ -698,7 +788,7 @@ export function createHostApp() {
   async function startInstrumentMidiRecording() {
     const editorTrack = store.getEditorTrack()
     if (!isInstrumentEditorTrack(editorTrack)) {
-      view.setStatus('请先打开一个非人声轨的乐器卷帘')
+      view.setStatus('请先打开一个可编辑音符的卷帘')
       return false
     }
     if (!midiInputState.boundInput) {
@@ -856,7 +946,7 @@ export function createHostApp() {
     const editorTrack = store.getEditorTrack()
     const wasEditorTrack = editorTrack?.id === trackId
     if (wasEditorTrack) {
-      if (isVoiceRuntimeSource(editorTrack.playbackState?.assignedSourceId)) {
+      if (sessionStore.getEditorMode() !== 'note' && isVoiceRuntimeSource(editorTrack.playbackState?.assignedSourceId)) {
         await persistVoiceEditorSnapshot(trackId)
       } else {
         await stopInstrumentMidiRecording({
@@ -896,6 +986,103 @@ export function createHostApp() {
     trackShellSessionController.toggleSourcePicker(trackId)
     render('source-picker-toggled')
   }
+
+  async function handleEditorModeSelected(mode) {
+    const track = store.getEditorTrack()
+    if (!track || isAudioTrack(track)) return false
+    const nextMode = mode === 'pitch' || mode === 'lyric' ? mode : 'note'
+
+    if (nextMode === 'note') {
+      if (sessionStore.getEditorMode() !== 'note') {
+        await persistEditorSnapshot()
+      }
+      sessionStore.setEditorMode('note')
+      render('editor-mode-note')
+      view.setStatus(`已切到 ${track.name} 的音符模式`)
+      return true
+    }
+
+    if (!isVoiceRuntimeSource(track.playbackState?.assignedSourceId)) {
+      view.setStatus('该轨道尚未设为人声，无法进入歌词或音高模式')
+      return false
+    }
+
+    await persistEditorSnapshot()
+    const refreshedTrack = store.getTrack(track.id)
+    if (!refreshedTrack) return false
+
+    if (hasPendingVoiceNoteEdits(refreshedTrack) && isPreparedVoiceTrack(refreshedTrack)) {
+      view.showTrackSynthesisOverlay(
+        refreshedTrack.name,
+        '正在同步音符改动...',
+        { title: `${refreshedTrack.name} 正在重新预测音高`, initialPercent: 12 },
+      )
+      try {
+        await ensureRuntimeAvailableForTrack(refreshedTrack.id)
+        view.updateTrackSynthesisOverlay('正在载入人声运行时...', 0.2)
+        await loadTrackIntoVoiceEditor(refreshedTrack.id, { editorMode: nextMode })
+        view.updateTrackSynthesisOverlay('正在重新预测受影响语句的音高...', 0.42)
+        const result = await bridge.applyNoteEdits(refreshedTrack.pendingVoiceEditState.edits)
+        const affectedIndices = Array.isArray(result?.affectedIndices) ? result.affectedIndices : []
+        if (result?.snapshot) {
+          applyRuntimeNoteEditSnapshot(refreshedTrack.id, result.snapshot, affectedIndices)
+        }
+        view.updateTrackSynthesisOverlay('音高已更新，正在切换编辑视图...', 0.96)
+        await bridge.setEditorMode(nextMode)
+        view.setStatus(`已切到 ${refreshedTrack.name} 的${nextMode === 'pitch' ? '音高' : '歌词'}模式，受影响语句音频继续后台重渲`)
+        return true
+      } catch (error) {
+        const details = extractErrorDetails(error, '音符改动提交失败')
+        view.setStatus(`切换失败: ${refreshedTrack.name} | ${details.summary}`)
+        logger.warn('Prepared voice track note edit apply failed', {
+          trackId: refreshedTrack.id,
+          ...details,
+        })
+        return false
+      } finally {
+        view.hideTrackSynthesisOverlay()
+      }
+    }
+
+    if (predictionGateController.requires(refreshedTrack)) {
+      const opened = await predictionGateController.run(refreshedTrack.id, 'open')
+      if (opened) {
+        sessionStore.setEditorMode(nextMode)
+        render(`editor-mode-${nextMode}-after-prediction`)
+        await bridge.setEditorMode(nextMode)
+      }
+      return opened
+    }
+
+    await ensureRuntimeAvailableForTrack(refreshedTrack.id)
+    await loadTrackIntoVoiceEditor(refreshedTrack.id, { editorMode: nextMode })
+    view.setStatus(`已切到 ${refreshedTrack.name} 的${nextMode === 'pitch' ? '音高' : '歌词'}模式`)
+    return true
+  }
+
+  async function handleRenderTrackAsVoice(trackId = null) {
+    const targetTrack = (trackId ? store.getTrack(trackId) : store.getEditorTrack()) || store.getSelectedTrack()
+    if (!targetTrack || isAudioTrack(targetTrack)) return false
+    if (!isVoiceRuntimeSource(targetTrack.playbackState?.assignedSourceId)) {
+      await sourceAssignmentHandler?.(targetTrack.id, 'vocal', {
+        suppressVoiceLanguageReminder: true,
+      })
+    }
+
+    const updatedTrack = store.getTrack(targetTrack.id)
+    if (!updatedTrack || isAudioTrack(updatedTrack)) return false
+
+    const opened = await predictionGateController.run(updatedTrack.id, 'open')
+    if (!opened) return false
+
+    sessionStore.setEditorMode('lyric')
+    render('render-track-as-voice-opened')
+    await bridge.setEditorMode('lyric')
+    view.notifyRuntimeLayoutChanged()
+    view.setStatus(`已将 ${updatedTrack.name} 设为人声并打开歌词模式`)
+    return true
+  }
+
   async function openTrackById(trackId) {
     const track = trackShellSessionController.selectTrack(trackId, { closeReason: 'track-open' })
     if (!track) return
@@ -908,27 +1095,16 @@ export function createHostApp() {
       view.setStatus(`${track.name} 是音频轨，当前不支持卷帘编辑`)
       return
     }
-    if (!isVoiceRuntimeSource(track.playbackState?.assignedSourceId)) {
-      await loadTrackIntoInstrumentEditor(track.id)
-      view.setStatus(`已打开 ${track.name} 的乐器卷帘`)
-      return
-    }
-    await ensureRuntimeAvailableForTrack(track.id)
-    if (taskCoordinator.isRuntimeAttachedTo(track.id)) {
-      await loadTrackIntoVoiceEditor(track.id)
-      view.setStatus(`已恢复 ${track.name} 的人声工作区`)
-      return
-    }
-    if (predictionGateController.requires(track)) return predictionGateController.run(track.id, 'open')
-    await loadTrackIntoVoiceEditor(track.id)
-    view.setStatus(`已打开 ${track.name}`)
+    await loadTrackIntoInstrumentEditor(track.id)
+    view.setStatus(`已打开 ${track.name} 的通用卷帘`)
   }
 
   async function closeEditor() {
     const track = store.getEditorTrack()
     if (!track) return
     logger.info('Close editor requested', buildPlaybackDiagnosticPayload({ trackId: track.id }))
-    const isVoiceEditor = isVoiceRuntimeSource(track.playbackState?.assignedSourceId)
+    const isVoiceEditor = sessionStore.getEditorMode() !== 'note' && isVoiceRuntimeSource(track.playbackState?.assignedSourceId)
+    const hasAttachedRuntime = taskCoordinator.isRuntimeAttachedTo(track.id)
     let shouldResetRuntime = false
     if (isVoiceEditor) {
       await persistVoiceEditorSnapshot(track.id)
@@ -948,8 +1124,17 @@ export function createHostApp() {
         silent: true,
         reason: 'instrument-editor-close',
       })
+      if (hasAttachedRuntime && isVoiceRuntimeSource(track.playbackState?.assignedSourceId)) {
+        await persistVoiceEditorSnapshot(track.id)
+        shouldResetRuntime = editorSessionController.shouldResetRuntimeOnClose(track.id)
+        if (shouldResetRuntime) {
+          bridge.resetRuntime()
+          taskCoordinator.clearRuntimeTrack(track.id)
+        }
+      }
     }
     clearEditorTrackState(track.id)
+    sessionStore.setEditorMode('note')
     trackShellSessionController.closeSourcePicker(null, 'close-editor')
     if (focusSoloController.clearOnEditorClose(track.id) && transportCoordinator.isProjectPlaybackActive()) {
       await refreshProjectPlaybackWithModeSync('editor-close-focus-solo')
@@ -973,13 +1158,20 @@ export function createHostApp() {
 
   async function handlePlay() {
     const track = store.getEditorTrack()
+    if (track && sessionStore.getEditorMode() === 'note') {
+      await persistInstrumentEditorDraft({
+        trackId: track.id,
+        silent: true,
+        reason: 'playback-note-editor-autosave',
+      })
+    }
     logger.info('Play button pressed', buildPlaybackDiagnosticPayload({
       branch: !track
         ? 'project-preview'
-        : (isVoiceRuntimeSource(track.playbackState?.assignedSourceId) ? 'voice-editor' : 'instrument-editor'),
+        : (sessionStore.getEditorMode() === 'note' ? 'note-editor' : 'voice-editor'),
       requestedTrackId: track?.id || null,
     }))
-    if (!track || !isVoiceRuntimeSource(track.playbackState?.assignedSourceId)) {
+    if (!track || sessionStore.getEditorMode() === 'note' || !isVoiceRuntimeSource(track.playbackState?.assignedSourceId)) {
       return toggleProjectPlaybackWithModeSync()
     }
     await ensureRuntimeAvailableForTrack(track.id)
@@ -1045,22 +1237,35 @@ export function createHostApp() {
     }
   }
 
-  async function loadTrackIntoVoiceEditor(trackId) {
+  async function loadTrackIntoVoiceEditor(trackId, { editorMode = null } = {}) {
     const track = store.getTrack(trackId)
     if (!track) return
     const alreadyAttached = taskCoordinator.isRuntimeAttachedTo(track.id)
+    const preservePendingNoteDraft = hasPendingVoiceNoteEdits(track)
     await persistEditorSnapshot()
+    const resolvedMode = editorMode === 'pitch' || editorMode === 'lyric'
+      ? editorMode
+      : (sessionStore.getEditorMode() === 'pitch' || sessionStore.getEditorMode() === 'lyric'
+          ? sessionStore.getEditorMode()
+          : 'lyric')
+    sessionStore.setEditorMode(resolvedMode)
     setEditorTrackState(track.id)
     if (transportCoordinator.isProjectPlaybackActive()) await refreshProjectPlaybackWithModeSync('editor-open-focus-solo')
     trackShellSessionController.closeSourcePicker(null, 'editor-open')
     render('editor-open-requested')
     await new Promise((resolve) => requestAnimationFrame(resolve))
     view.notifyRuntimeLayoutChanged()
-    if (alreadyAttached) return runtimeTransportSync.syncState(transportCoordinator.getSnapshot())
+    if (alreadyAttached) {
+      await bridge.setEditorMode(resolvedMode)
+      return runtimeTransportSync.syncState(transportCoordinator.getSnapshot())
+    }
     const snapshot = importService.buildVoiceSnapshot(track, store.getProject()?.tempoData)
     await bridge.loadTrack(snapshot)
     taskCoordinator.setRuntimeTrack(track.id)
-    store.replaceVoiceSnapshot(track.id, snapshot)
+    if (!preservePendingNoteDraft) {
+      store.replaceVoiceSnapshot(track.id, snapshot)
+    }
+    await bridge.setEditorMode(resolvedMode)
     runtimeTransportSync.syncState(transportCoordinator.getSnapshot())
     render('runtime-track-loaded')
     view.notifyRuntimeLayoutChanged()
@@ -1070,6 +1275,7 @@ export function createHostApp() {
     const track = store.getTrack(trackId)
     if (!track) return
     await persistEditorSnapshot()
+    sessionStore.setEditorMode('note')
     setEditorTrackState(track.id)
     trackShellSessionController.closeSourcePicker(null, 'instrument-editor-open')
     render('instrument-editor-opened')
@@ -1082,7 +1288,7 @@ export function createHostApp() {
   async function persistEditorSnapshot() {
     const track = store.getEditorTrack()
     if (!track) return
-    if (isVoiceRuntimeSource(track.playbackState?.assignedSourceId)) {
+    if (sessionStore.getEditorMode() !== 'note' && isVoiceRuntimeSource(track.playbackState?.assignedSourceId)) {
       return persistVoiceEditorSnapshot(track.id)
     }
     return persistInstrumentEditorDraft({
@@ -1144,10 +1350,28 @@ export function createHostApp() {
     onTrackOpened: openTrackById,
     onTrackClipMoved: handleTrackClipMoved,
     onTrackSourcePickerToggled: handleTrackSourcePickerToggled,
-    onTrackSourceAssigned: (trackId, sourceId) => sourceAssignmentHandler?.(trackId, sourceId),
+    onTrackSourceAssigned: async (trackId, sourceId) => {
+      await sourceAssignmentHandler?.(trackId, sourceId)
+      const updatedTrack = store.getTrack(trackId)
+      if (
+        updatedTrack
+        && store.getEditorTrack()?.id === trackId
+        && !isVoiceRuntimeSource(updatedTrack.playbackState?.assignedSourceId)
+        && sessionStore.getEditorMode() !== 'note'
+      ) {
+        sessionStore.setEditorMode('note')
+        render('source-assigned-editor-mode-reset')
+      }
+      if (updatedTrack && !isVoiceRuntimeSource(updatedTrack.playbackState?.assignedSourceId) && taskCoordinator.isRuntimeAttachedTo(trackId)) {
+        bridge.resetRuntime()
+        taskCoordinator.clearRuntimeTrack(trackId)
+      }
+    },
     onTrackSoloToggled: (trackId) => trackMonitorController.toggleTrackSolo(trackId),
     onTrackMuteToggled: (trackId) => trackMonitorController.toggleTrackMute(trackId),
     onTrackVolumeChanged: (trackId, volume, options) => trackMonitorController.setTrackVolume(trackId, volume, options),
+    onEditorModeSelected: handleEditorModeSelected,
+    onRenderTrackAsVoice: handleRenderTrackAsVoice,
     onDismissTransientUi: () => trackShellSessionController.closeSourcePicker(null, 'outside-click') && render('source-picker-dismissed'),
     onOpenSelectedTrack: async () => store.getSelectedTrack()?.id && openTrackById(store.getSelectedTrack().id),
     onCloseEditor: closeEditor,

@@ -1022,6 +1022,17 @@ body {
   overflow: hidden;
 }
 
+.clip-dirty-range {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(214, 146, 32, 0.26) 0%, rgba(201, 111, 28, 0.4) 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 224, 166, 0.55);
+  pointer-events: none;
+  z-index: 3;
+}
+
 .track-midi-preview-canvas {
   position: absolute;
   left: 0;
@@ -1170,8 +1181,16 @@ body {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
+  gap: 10px;
   justify-content: flex-end;
   align-items: center;
+}
+
+.editor-mode-controls {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 
 .editor-close {
@@ -1190,6 +1209,25 @@ body {
   background: transparent;
   box-shadow: none;
   backdrop-filter: none;
+}
+
+.editor-runtime-tools .piano-roll-editor-toolbar > .piano-roll-editor-mode-group {
+  display: none;
+}
+
+.editor-runtime-tools .host-editor-mode-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 6px;
+  margin-right: 2px;
+  border-right: 1px solid rgba(163, 160, 151, 0.55);
+}
+
+.editor-runtime-tools .host-editor-action-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .editor-runtime-tools .piano-roll-editor-mode-group {

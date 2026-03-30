@@ -1,5 +1,7 @@
 import eventBus from './EventBus.js'
 import { EVENTS } from '../config/constants.js'
+import { createTimelineAxis } from '../shared/timelineAxis.js'
+import { createTempoDocument } from '../shared/tempoDocument.js'
 
 class PhraseStore {
   constructor() {
@@ -7,6 +9,7 @@ class PhraseStore {
     this._midiFile = null
     this._jobId = null
     this._bpm = 120
+    this._tempoData = null
     this._pitchData = null  // { pitchCurve, pitchDeviation, midiPpq, pitchStepTick }
   }
 
@@ -117,6 +120,14 @@ class PhraseStore {
 
   getBpm() {
     return this._bpm
+  }
+
+  setTempoData(tempoData) {
+    this._tempoData = createTempoDocument(tempoData)
+  }
+
+  getTempoData() {
+    return createTempoDocument(this._tempoData)
   }
 
   setPitchData(pitchData) {
@@ -235,44 +246,61 @@ class PhraseStore {
 
   rebuildFromEdit(backendPhrases) {
     if (!Array.isArray(backendPhrases) || backendPhrases.length === 0) return false
-    const bpm = this._bpm
-
-    // 步骤1: 收集所有前端 notes
-    const allNotes = this._phrases.flatMap((p) => p.notes || [])
-    console.log(`[数据中心] 编辑重建开始 | ${backendPhrases.length}个后端phrase, ${allNotes.length}个前端notes, bpm=${bpm}`)
-
-    // 步骤2: 构建后端 lyric 查找表 — 用 (position, tone) 二元组
-    const lyricLookup = new Map()
-    for (const bp of backendPhrases) {
-      for (const bn of (bp.notes || [])) {
-        lyricLookup.set(`${bn.position}-${bn.tone}`, bn.lyric)
+    const sorted = backendPhrases.slice().sort((a, b) => a.index - b.index)
+    const axis = createTimelineAxis({
+      tempoData: this._tempoData,
+      ppq: 480,
+      totalTicks: sorted.reduce((maxTick, phrase) => {
+        return Math.max(
+          maxTick,
+          ...(Array.isArray(phrase?.notes)
+            ? phrase.notes.map((note) => Math.max(0, Math.round((note?.position || 0) + (note?.duration || 0))))
+            : [0]),
+        )
+      }, 0),
+    })
+    const previousVelocityByKey = new Map()
+    for (const phrase of this._phrases) {
+      for (const note of phrase?.notes || []) {
+        const startTick = Math.max(0, Math.round(axis.timeToTick(note?.time || 0)))
+        const endTick = Math.max(startTick, Math.round(axis.timeToTick((note?.time || 0) + (note?.duration || 0))))
+        const durationTick = Math.max(1, endTick - startTick)
+        previousVelocityByKey.set(
+          `${startTick}:${durationTick}:${Math.round(note?.midi || 60)}`,
+          Number.isFinite(note?.velocity) ? note.velocity : 0.8,
+        )
       }
     }
 
-    // 步骤3: 按时间窗口分配 + 回收孤儿
-    const sorted = backendPhrases.slice().sort((a, b) => a.index - b.index)
-    const phraseNotes = this._distributeNotes(allNotes, sorted)
+    console.log(`[数据中心] 编辑重建开始 | ${backendPhrases.length}个后端phrase`)
 
-    // 步骤4: 覆盖 lyric + 构建 phrases
-    let totalLyricUpdated = 0
-    const rebuilt = sorted.map((bp, i) => {
+    const rebuilt = sorted.map((bp) => {
       const startSec = bp.startMs / 1000
       const endSec = (bp.startMs + bp.durationMs) / 1000
-      const notes = phraseNotes[i]
-
-      for (const n of notes) {
-        const pos480 = Math.round((n.time * 480 * bpm) / 60)
-        const key = `${pos480}-${n.midi}`
-        const newLyric = lyricLookup.get(key)
-        if (newLyric !== undefined) {
-          n.lyric = newLyric
-          totalLyricUpdated++
-        }
-      }
-
+      const notes = (Array.isArray(bp?.notes) ? bp.notes : [])
+        .map((note) => {
+          const startTick = Math.max(0, Math.round(note?.position || 0))
+          const durationTick = Math.max(1, Math.round(note?.duration || 1))
+          const startTime = axis.tickToTime(startTick)
+          const endTime = axis.tickToTime(startTick + durationTick)
+          const midi = Number.isFinite(note?.tone) ? Math.round(note.tone) : 60
+          const velocity = previousVelocityByKey.get(`${startTick}:${durationTick}:${midi}`) ?? 0.8
+          return {
+            time: startTime,
+            duration: Math.max(0.05, endTime - startTime),
+            midi,
+            velocity,
+            lyric: note?.lyric || 'a',
+          }
+        })
+        .sort((left, right) => {
+          if (left.time !== right.time) return left.time - right.time
+          if (left.midi !== right.midi) return left.midi - right.midi
+          return left.duration - right.duration
+        })
       const text = this._buildTextFromNotes(notes)
       const baseInputHash = this._computeHashFromNotes(notes, text)
-      console.log(`[数据中心] 编辑重建 → phrase ${bp.index}: ${notes.length}个notes, lyric更新=${totalLyricUpdated}, text="${text}", hash=${baseInputHash}`)
+      console.log(`[数据中心] 编辑重建 → phrase ${bp.index}: ${notes.length}个notes, text="${text}", hash=${baseInputHash}`)
       return {
         index: bp.index,
         startTime: startSec,
@@ -286,7 +314,7 @@ class PhraseStore {
 
     this._phrases = rebuilt
     eventBus.emit(EVENTS.PHRASES_EDITED, { phrases: rebuilt })
-    console.log(`[数据中心] 编辑重建完成 | ${rebuilt.length}句, lyric总更新=${totalLyricUpdated}`)
+    console.log(`[数据中心] 编辑重建完成 | ${rebuilt.length}句`)
     return true
   }
 

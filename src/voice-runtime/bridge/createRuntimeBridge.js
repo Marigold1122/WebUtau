@@ -24,6 +24,10 @@ function buildBridgeHandlers(app) {
     [VOICE_BRIDGE_COMMANDS.REQUEST_SNAPSHOT](_payload, requestId) {
       postToHost(VOICE_BRIDGE_EVENTS.SNAPSHOT_RESPONSE, { snapshot: app.requestSnapshot() }, requestId)
     },
+    async [VOICE_BRIDGE_COMMANDS.APPLY_NOTE_EDITS](payload, requestId) {
+      const result = await app.applyNoteEdits?.(payload.edits || [])
+      postToHost(VOICE_BRIDGE_EVENTS.NOTE_EDITS_RESPONSE, result || {}, requestId)
+    },
     [VOICE_BRIDGE_COMMANDS.RESET_RUNTIME]() {
       app.reset()
     },
@@ -49,6 +53,9 @@ function buildBridgeHandlers(app) {
     },
     [VOICE_BRIDGE_COMMANDS.HOST_PLAYBACK_TICK](payload) {
       app.syncHostPlaybackTick?.(payload)
+    },
+    [VOICE_BRIDGE_COMMANDS.SET_EDITOR_MODE](payload) {
+      app.setEditorMode?.(payload.mode)
     },
   }
 }

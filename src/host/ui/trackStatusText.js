@@ -10,6 +10,10 @@ function isVocalTrack(track) {
   return isVoiceRuntimeSource(track?.playbackState?.assignedSourceId)
 }
 
+function hasPendingVoiceNoteEdits(track) {
+  return Boolean(track?.pendingVoiceEditState?.needsVoiceRerender && track?.pendingVoiceEditState?.edits?.length)
+}
+
 function getMonitorStatusSuffix(track) {
   const labels = []
   if (track?.playbackState?.solo) labels.push('独奏')
@@ -32,6 +36,10 @@ export function getTrackStatusText(track) {
       ? `声源：${getEffectiveSourceLabel(track.playbackState.assignedSourceId)}`
       : '默认钢琴'
     return `${baseText}${getMonitorStatusSuffix(track)}`
+  }
+
+  if (hasPendingVoiceNoteEdits(track)) {
+    return `音符已改动 · 待切到歌词/音高重渲${getMonitorStatusSuffix(track)}`
   }
 
   if (isVocalTrack(track) && !normalizeOptionalLanguageCode(track?.languageCode)) {
@@ -65,6 +73,10 @@ export function getTrackInspectorStatusText(track) {
     return `${baseText}${getMonitorStatusSuffix(track)}`
   }
 
+  if (hasPendingVoiceNoteEdits(track)) {
+    return `待重新渲染人声 · 当前改动段落先按钢琴预览${getMonitorStatusSuffix(track)}`
+  }
+
   if (isVocalTrack(track) && !normalizeOptionalLanguageCode(track?.languageCode)) {
     return '待选语言'
   }
@@ -86,6 +98,7 @@ export function getTrackInspectorStatusText(track) {
 export function getTrackRenderClass(track) {
   if (isAudioTrack(track)) return 'ready'
   if (!isVocalTrack(track)) return 'idle'
+  if (hasPendingVoiceNoteEdits(track)) return 'dirty'
 
   if (isVocalTrack(track)) {
     if (track?.prepState?.status === 'failed') return 'dirty'

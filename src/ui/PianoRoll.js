@@ -229,6 +229,18 @@ class PianoRoll {
       : '双击音符编辑歌词'
   }
 
+  setEditorMode(mode) {
+    const nextMode = mode === PITCH_EDITOR_MODE.PITCH ? PITCH_EDITOR_MODE.PITCH : PITCH_EDITOR_MODE.LYRIC
+    if (nextMode === PITCH_EDITOR_MODE.PITCH) {
+      if (!pitchEditor.setMode(PITCH_EDITOR_MODE.PITCH)) return false
+    } else {
+      pitchEditor.setMode(PITCH_EDITOR_MODE.LYRIC)
+    }
+    this._updateEditorToolbar()
+    notes.requestDraw()
+    return true
+  }
+
   _resize() {
     if (!this.container) return
     const canvasWidth = Math.max(0, this.container.clientWidth - PIANO_ROLL.KEYBOARD_WIDTH)

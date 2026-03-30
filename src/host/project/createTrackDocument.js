@@ -45,6 +45,7 @@ export function createTrackDocument(trackSummary, sourcePhrases = [], languageCo
     sourcePhrases: phrases,
     audioClip,
     voiceSnapshot: null,
+    pendingVoiceEditState: null,
     vocalManifest: createVocalRenderManifest({ phrases, revision: 0 }),
     voiceConversionState: createTrackVoiceConversionState(),
     playbackState,

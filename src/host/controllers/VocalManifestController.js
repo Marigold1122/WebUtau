@@ -105,6 +105,49 @@ export class VocalManifestController {
     return manifest
   }
 
+  applyNoteEditSnapshot(trackId, snapshot = null, affectedIndices = []) {
+    const track = this.store.getTrack(trackId)
+    if (!track || !snapshot) return null
+    const phrases = resolveTrackPhrases(track, snapshot)
+    const affectedSet = new Set(
+      (Array.isArray(affectedIndices) ? affectedIndices : []).filter((index) => Number.isInteger(index)),
+    )
+    let manifest = syncManifestWithPhrases(track.vocalManifest, phrases, track.revision || 0)
+    manifest = attachManifestJob(manifest, snapshot?.jobId || track.jobRef?.jobId || null)
+    manifest = {
+      ...manifest,
+      status: affectedSet.size > 0 ? 'rendering' : manifest.status,
+      hasPredictedPitch: Boolean(snapshot?.pitchData) || Boolean(manifest.hasPredictedPitch),
+      error: null,
+      phraseStates: (manifest.phraseStates || []).map((phraseState) => {
+        const phrase = (phrases || []).find((item, index) => {
+          const phraseIndex = Number.isInteger(item?.index) ? item.index : index
+          return phraseIndex === phraseState.phraseIndex
+        })
+        const startMs = Number.isFinite(phrase?.startTime) ? phrase.startTime * 1000 : phraseState.startMs
+        const durationMs = Number.isFinite(phrase?.startTime) && Number.isFinite(phrase?.endTime)
+          ? Math.max(50, (phrase.endTime - phrase.startTime) * 1000)
+          : phraseState.durationMs
+        if (!affectedSet.has(phraseState.phraseIndex)) {
+          return {
+            ...phraseState,
+            startMs,
+            durationMs,
+          }
+        }
+        return {
+          ...phraseState,
+          startMs,
+          durationMs,
+          status: 'pending',
+        }
+      }),
+    }
+    this.store.replaceTrackVocalManifest(trackId, manifest)
+    this._logManifest('HostVocalManifest note edit applied', trackId, manifest)
+    return manifest
+  }
+
   syncRenderManifest(payload = {}) {
     const track = this.store.getTrack(payload.trackId)
     if (!track) return null

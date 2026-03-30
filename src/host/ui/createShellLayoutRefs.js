@@ -32,6 +32,7 @@ export function createShellLayoutRefs() {
     editorPanel: document.getElementById('editor-panel'),
     panelResizer: document.getElementById('panel-resizer'),
     editorTrackName: document.getElementById('active-track-name'),
+    editorRuntimeTools: document.getElementById('editor-runtime-tools'),
     emptyHint: document.getElementById('track-empty-hint'),
     trackViewport: document.getElementById('track-viewport'),
     trackTimelineContent: document.getElementById('track-timeline-content'),

@@ -376,6 +376,30 @@ function createMidiPreviewCanvas(track, clipBounds, clipWidth, timelineMetrics, 
   return canvas
 }
 
+function createPendingVoiceDirtyOverlays(track, clipBounds, clipWidth, timelineMetrics) {
+  const dirtyRanges = Array.isArray(track?.pendingVoiceEditState?.dirtyRanges)
+    ? track.pendingVoiceEditState.dirtyRanges
+    : []
+  const axis = timelineMetrics?.axis
+  if (!axis || !clipBounds || dirtyRanges.length === 0) return []
+
+  return dirtyRanges
+    .map((range) => {
+      const startX = Math.max(0, axis.timeToX(range.startTime) - clipBounds.startX)
+      const endX = Math.max(startX + 10, axis.timeToX(range.endTime) - clipBounds.startX)
+      const width = Math.max(12, Math.min(clipWidth - startX, endX - startX))
+      if (!Number.isFinite(startX) || !Number.isFinite(width) || width <= 0 || startX >= clipWidth) {
+        return null
+      }
+      const overlay = document.createElement('span')
+      overlay.className = 'clip-dirty-range'
+      overlay.style.left = `${Math.max(0, Math.round(startX))}px`
+      overlay.style.width = `${Math.round(width)}px`
+      return overlay
+    })
+    .filter(Boolean)
+}
+
 function bindClipInteractions(clip, track, clipBounds, timelineMetrics, handlers) {
   const axis = timelineMetrics.axis
   if (!axis) return
@@ -481,6 +505,8 @@ function createTrackPreview({
     if (!isAudioTrack(track)) {
       const midiCanvas = createMidiPreviewCanvas(track, clipBounds, clipWidth, timelineMetrics, trackColor)
       if (midiCanvas) body.appendChild(midiCanvas)
+      createPendingVoiceDirtyOverlays(track, clipBounds, clipWidth, timelineMetrics)
+        .forEach((overlay) => body.appendChild(overlay))
     }
     clip.append(header, body)
     bindClipInteractions(clip, track, clipBounds, timelineMetrics, handlers)

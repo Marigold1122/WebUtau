@@ -5,6 +5,7 @@ import playheadController from '../../modules/PlayheadController.js'
 import renderCache from '../../modules/RenderCache.js'
 import midiEncoder from '../../modules/MidiEncoder.js'
 import renderJobManager from '../../modules/RenderJobManager.js'
+import noteEditManager from '../../modules/NoteEditManager.js'
 import transportControl from '../../modules/TransportControl.js'
 import pianoRoll from '../../ui/PianoRoll.js'
 import trackSelector from '../../ui/TrackSelector.js'
@@ -38,6 +39,7 @@ function resetRuntimeState() {
   renderJobManager.reset()
   renderCache.clear()
   phraseStore.setJobId(null)
+  phraseStore.setTempoData(null)
   phraseStore.setPitchData(null)
   phraseStore.setPhrases([])
   transportControl.resetForNewTrack([])
@@ -57,6 +59,7 @@ function loadSnapshotIntoRuntime(snapshot) {
 
   phraseStore.setBpm(bpm)
   phraseStore.setJobId(snapshot.jobId || null)
+  phraseStore.setTempoData(tempoData)
   phraseStore.setMidiFile(encodedMidi)
   phraseStore.setPhrases(phrases)
   phraseStore.setPitchData(cloneSnapshot(snapshot.pitchData))
@@ -79,6 +82,7 @@ export function createVoiceRuntimeApp(callbacks = {}) {
     languageCode: DEFAULT_LANGUAGE_CODE,
     tempoData: null,
   }
+  let suppressDirtyNotifications = 0
   const playbackMirror = new EmbeddedPlaybackMirror()
   const bindRuntimeEvents = createRuntimeEventBindings({
     callbacks,
@@ -127,6 +131,7 @@ export function createVoiceRuntimeApp(callbacks = {}) {
   }
 
   function notifyDirty() {
+    if (suppressDirtyNotifications > 0) return
     if (typeof callbacks.onEditorDirty !== 'function' || state.trackId == null) return
     callbacks.onEditorDirty(buildRuntimeSnapshot(state, phraseStore))
   }
@@ -166,6 +171,26 @@ export function createVoiceRuntimeApp(callbacks = {}) {
     await renderJobManager.submitMidi(encodedMidi, singerId, languageCode)
   }
 
+  async function applyNoteEdits(edits = []) {
+    if (!Array.isArray(edits) || edits.length === 0) {
+      return {
+        affectedIndices: [],
+        snapshot: buildRuntimeSnapshot(state, phraseStore),
+      }
+    }
+    setStatus(`正在提交 ${state.trackName} 的音符改动...`)
+    suppressDirtyNotifications += 1
+    try {
+      const result = await noteEditManager.applyEdits(edits)
+      return {
+        ...result,
+        snapshot: buildRuntimeSnapshot(state, phraseStore),
+      }
+    } finally {
+      suppressDirtyNotifications = Math.max(0, suppressDirtyNotifications - 1)
+    }
+  }
+
   async function importMidiFromFile(file) {
     const snapshot = await selectRuntimeSnapshotFromImport(file)
     if (!snapshot) {
@@ -201,6 +226,10 @@ export function createVoiceRuntimeApp(callbacks = {}) {
     }
     transportControl.togglePlayback('宿主')
     emitPlaybackState()
+  }
+
+  function setEditorMode(mode) {
+    pianoRoll.setEditorMode?.(mode)
   }
 
   function resetRuntime() {
@@ -286,7 +315,9 @@ export function createVoiceRuntimeApp(callbacks = {}) {
     requestSnapshot,
     reset: resetRuntime,
     startSynthesis,
+    applyNoteEdits,
     seekTo,
+    setEditorMode,
     syncHostPlaybackState,
     syncHostPlaybackTick,
     togglePlayback,

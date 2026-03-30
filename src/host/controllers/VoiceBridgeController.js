@@ -41,6 +41,17 @@ export class VoiceBridgeController {
     this._postMessage(VOICE_BRIDGE_COMMANDS.START_SYNTHESIS, { options })
   }
 
+  async applyNoteEdits(edits = []) {
+    await this.waitUntilReady()
+    const payload = await this._sendRequest(VOICE_BRIDGE_COMMANDS.APPLY_NOTE_EDITS, { edits })
+    return payload || null
+  }
+
+  async setEditorMode(mode) {
+    await this.waitUntilReady()
+    this._postMessage(VOICE_BRIDGE_COMMANDS.SET_EDITOR_MODE, { mode })
+  }
+
   async togglePlayback() {
     await this.waitUntilReady()
     this._postMessage(VOICE_BRIDGE_COMMANDS.TOGGLE_PLAYBACK, {})
@@ -76,6 +87,7 @@ export class VoiceBridgeController {
         break
       case VOICE_BRIDGE_EVENTS.TRACK_LOADED:
       case VOICE_BRIDGE_EVENTS.SNAPSHOT_RESPONSE:
+      case VOICE_BRIDGE_EVENTS.NOTE_EDITS_RESPONSE:
         this._resolvePending(event.data.requestId, event.data.payload || {})
         break
       case VOICE_BRIDGE_EVENTS.EDITOR_DIRTY:

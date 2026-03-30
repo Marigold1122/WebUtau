@@ -3,6 +3,7 @@ export class HostSessionStore {
     this._focusSoloTrackId = null
     this._monitorDirtySinceFocus = false
     this._openSourcePickerTrackId = null
+    this._editorMode = 'note'
   }
 
   getSnapshot() {
@@ -10,7 +11,17 @@ export class HostSessionStore {
       focusSoloTrackId: this._focusSoloTrackId,
       monitorDirtySinceFocus: this._monitorDirtySinceFocus,
       openSourcePickerTrackId: this._openSourcePickerTrackId,
+      editorMode: this._editorMode,
     }
+  }
+
+  getEditorMode() {
+    return this._editorMode
+  }
+
+  setEditorMode(mode) {
+    this._editorMode = mode === 'lyric' || mode === 'pitch' ? mode : 'note'
+    return this._editorMode
   }
 
   getOpenSourcePickerTrackId() {

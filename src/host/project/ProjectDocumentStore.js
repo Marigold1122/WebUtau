@@ -264,6 +264,18 @@ export class ProjectDocumentStore {
   }
 
   replaceTrackNotes(trackId, notes = []) {
+    return this.replaceTrackPreviewNotes(trackId, notes, {
+      rebuildSourcePhrases: true,
+      clearVoiceSnapshot: true,
+      clearPendingVoiceEditState: true,
+    })
+  }
+
+  replaceTrackPreviewNotes(trackId, notes = [], {
+    rebuildSourcePhrases = true,
+    clearVoiceSnapshot = true,
+    clearPendingVoiceEditState = false,
+  } = {}) {
     const track = this.getTrack(trackId)
     if (!track) return null
     const normalizedNotes = sortPreviewNotes(
@@ -271,12 +283,15 @@ export class ProjectDocumentStore {
     )
     const stats = buildPreviewStats(normalizedNotes)
     track.previewNotes = cloneValue(normalizedNotes, [])
-    track.sourcePhrases = buildSourcePhrasesFromPreviewNotes(normalizedNotes)
+    if (rebuildSourcePhrases) {
+      track.sourcePhrases = buildSourcePhrasesFromPreviewNotes(normalizedNotes)
+    }
     track.noteCount = stats.noteCount
-    track.phraseCount = track.sourcePhrases.length
+    track.phraseCount = Array.isArray(track.sourcePhrases) ? track.sourcePhrases.length : 0
     track.duration = stats.duration
     track.durationTicks = stats.durationTicks
-    track.voiceSnapshot = null
+    if (clearVoiceSnapshot) track.voiceSnapshot = null
+    if (clearPendingVoiceEditState) track.pendingVoiceEditState = null
     return track
   }
 
@@ -433,9 +448,10 @@ export class ProjectDocumentStore {
     if (!track || !snapshot) return null
     const projection = buildPreviewProjection(snapshot, this._project?.tempoData, this._project?.ppq)
     track.voiceSnapshot = cloneValue(snapshot, null)
+    track.sourcePhrases = createPhraseDocuments(snapshot?.phrases)
     track.previewNotes = cloneValue(projection.previewNotes, track.previewNotes)
     track.noteCount = projection.noteCount ?? snapshot.noteCount ?? track.noteCount
-    track.phraseCount = snapshot.phraseCount ?? track.phraseCount
+    track.phraseCount = snapshot.phraseCount ?? track.sourcePhrases.length ?? track.phraseCount
     track.duration = projection.duration ?? snapshot.duration ?? track.duration
     track.durationTicks = projection.durationTicks ?? track.durationTicks
     return track

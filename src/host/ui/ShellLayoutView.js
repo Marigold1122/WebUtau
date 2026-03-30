@@ -64,6 +64,11 @@ export class ShellLayoutView {
     this.fileMenu = this._createFileMenu()
     this.trackContextMenu = this._createTrackContextMenu()
     this.trackContextTrackId = null
+    this.editorModeControls = null
+    this.btnEditorNoteMode = null
+    this.btnEditorLyricMode = null
+    this.btnEditorPitchMode = null
+    this.btnRenderTrackAsVoice = null
     this._handleDocumentPointerDown = (event) => {
       if (event.target?.closest?.('.file-menu')) return
       if (event.target?.closest?.('#btn-import')) return
@@ -110,6 +115,7 @@ export class ShellLayoutView {
     if (this.refs.voiceRuntimeFrame) {
       this.refs.voiceRuntimeFrame.src = '/voice-runtime.html?embedded=1'
     }
+    this._mountEditorModeControls()
   }
 
   render(project, viewState = {}) {
@@ -127,8 +133,9 @@ export class ShellLayoutView {
     this.trackViewportController.syncRulerOffset()
     this._syncTimelinePlayhead(timelineViewMetrics)
     this._setEditorVisible(Boolean(editorTrack))
-    this._syncEditorSurface(project, editorTrack)
-    this.setMidiRecordingEnabled(Boolean(editorTrack) && !isVoiceRuntimeSource(editorTrack.playbackState?.assignedSourceId))
+    this._renderEditorModeControls(editorTrack, viewState)
+    this._syncEditorSurface(project, editorTrack, viewState)
+    this.setMidiRecordingEnabled(Boolean(editorTrack) && !isAudioTrack(editorTrack) && viewState?.editorMode === 'note')
   }
 
   syncProjectMeta(project, viewState = {}) {
@@ -213,6 +220,12 @@ export class ShellLayoutView {
     return this.instrumentEditorView.appendRecordedNote(note)
   }
 
+  getEditorMode() {
+    if (this.btnEditorPitchMode?.classList.contains('active')) return 'pitch'
+    if (this.btnEditorLyricMode?.classList.contains('active')) return 'lyric'
+    return 'note'
+  }
+
   markInstrumentEditorSaved() {
     this.instrumentEditorView.markSaved()
   }
@@ -243,6 +256,75 @@ export class ShellLayoutView {
       if (event.propertyName !== 'width') return
       this.notifyRuntimeLayoutChanged()
     })
+  }
+
+  _mountEditorModeControls() {
+    const host = this.refs.editorRuntimeTools
+    if (!host || this.editorModeControls) return
+
+    const modeGroup = document.createElement('div')
+    modeGroup.className = 'piano-roll-editor-mode-group host-editor-mode-group'
+
+    const createModeButton = (label, mode) => {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'piano-roll-editor-btn'
+      button.textContent = label
+      button.addEventListener('click', () => this.handlers.onEditorModeSelected?.(mode))
+      return button
+    }
+
+    this.btnEditorNoteMode = createModeButton('音符', 'note')
+    this.btnEditorLyricMode = createModeButton('歌词', 'lyric')
+    this.btnEditorPitchMode = createModeButton('音高', 'pitch')
+    modeGroup.append(this.btnEditorNoteMode, this.btnEditorLyricMode, this.btnEditorPitchMode)
+
+    const actions = document.createElement('div')
+    actions.className = 'piano-roll-editor-control-group host-editor-action-group'
+
+    this.btnRenderTrackAsVoice = document.createElement('button')
+    this.btnRenderTrackAsVoice.type = 'button'
+    this.btnRenderTrackAsVoice.className = 'piano-roll-editor-btn piano-roll-editor-btn--secondary'
+    this.btnRenderTrackAsVoice.textContent = '将该轨道渲染为人声'
+    this.btnRenderTrackAsVoice.addEventListener('click', () => {
+      const trackId = this.refs.editorPanel?.dataset?.trackId || null
+      this.handlers.onRenderTrackAsVoice?.(trackId)
+    })
+    actions.appendChild(this.btnRenderTrackAsVoice)
+
+    this.editorModeControls = document.createElement('div')
+    this.editorModeControls.className = 'editor-mode-controls'
+    this.editorModeControls.append(modeGroup, actions)
+    host.appendChild(this.editorModeControls)
+  }
+
+  _renderEditorModeControls(editorTrack, viewState = {}) {
+    const isMidiTrack = Boolean(editorTrack) && !isAudioTrack(editorTrack)
+    const isVocalTrack = isVoiceRuntimeSource(editorTrack?.playbackState?.assignedSourceId)
+    const mode = viewState?.editorMode === 'pitch' || viewState?.editorMode === 'lyric'
+      ? viewState.editorMode
+      : 'note'
+
+    if (this.refs.editorPanel) {
+      this.refs.editorPanel.dataset.trackId = editorTrack?.id || ''
+    }
+
+    if (this.btnEditorNoteMode) {
+      this.btnEditorNoteMode.disabled = !isMidiTrack
+      this.btnEditorNoteMode.classList.toggle('active', mode === 'note')
+    }
+    if (this.btnEditorLyricMode) {
+      this.btnEditorLyricMode.disabled = !(isMidiTrack && isVocalTrack)
+      this.btnEditorLyricMode.classList.toggle('active', isVocalTrack && mode === 'lyric')
+    }
+    if (this.btnEditorPitchMode) {
+      this.btnEditorPitchMode.disabled = !(isMidiTrack && isVocalTrack)
+      this.btnEditorPitchMode.classList.toggle('active', isVocalTrack && mode === 'pitch')
+    }
+    if (this.btnRenderTrackAsVoice) {
+      this.btnRenderTrackAsVoice.disabled = !(isMidiTrack && !isVocalTrack)
+      this.btnRenderTrackAsVoice.hidden = !isMidiTrack
+    }
   }
 
   _renderProjectMeta(project, selectedTrack, editorTrack, renderBadgeTrack, viewState) {
@@ -378,7 +460,7 @@ export class ShellLayoutView {
     this.timelinePlayheadView.setTime(this.timelinePlayheadTime)
   }
 
-  _syncEditorSurface(project, editorTrack) {
+  _syncEditorSurface(project, editorTrack, viewState = {}) {
     const voiceFrame = this.refs.voiceRuntimeFrame
     const instrumentRoot = this.refs.instrumentEditorRoot
     if (!editorTrack) {
@@ -395,7 +477,12 @@ export class ShellLayoutView {
       return
     }
 
-    if (isVoiceRuntimeSource(editorTrack.playbackState?.assignedSourceId)) {
+    const editorMode = viewState?.editorMode === 'pitch' || viewState?.editorMode === 'lyric'
+      ? viewState.editorMode
+      : 'note'
+    const shouldShowVoiceSurface = editorMode !== 'note' && isVoiceRuntimeSource(editorTrack.playbackState?.assignedSourceId)
+
+    if (shouldShowVoiceSurface) {
       if (voiceFrame) voiceFrame.hidden = false
       if (instrumentRoot) instrumentRoot.hidden = true
       this.instrumentEditorView.clear()

@@ -23,10 +23,12 @@ function buildPhraseEntries(tracks, audibleTrackIds, excludedTrackIds = new Set(
     if (!audibleTrackIds.has(track?.id)) return
     if (excludedTrackIds.has(track?.id)) return
     if (!isVoiceRuntimeSource(track?.playbackState?.assignedSourceId)) return
+    const dirtyPhraseIndices = new Set(track?.pendingVoiceEditState?.dirtyPhraseIndices || [])
     const manifest = track?.vocalManifest
     const phraseStates = Array.isArray(manifest?.phraseStates) ? manifest.phraseStates : []
 
     phraseStates.forEach((phraseState) => {
+      if (dirtyPhraseIndices.has(phraseState?.phraseIndex)) return
       if (!Number.isFinite(phraseState?.startMs) || !Number.isFinite(phraseState?.durationMs)) return
       const startSec = Math.max(0, phraseState.startMs / 1000)
       const durationSec = Math.max(0.05, phraseState.durationMs / 1000)

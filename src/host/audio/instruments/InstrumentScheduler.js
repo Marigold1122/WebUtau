@@ -10,7 +10,13 @@ function createScheduledNotes(tracks, audibleTrackIds, fromTimeSec) {
 
   tracks.forEach((track) => {
     if (!audibleTrackIds.has(track.id)) return
-    const sourceId = getHostPlaybackSourceId(track.playbackState?.assignedSourceId)
+    const dirtyRanges = Array.isArray(track?.pendingVoiceEditState?.dirtyRanges)
+      ? track.pendingVoiceEditState.dirtyRanges
+      : []
+    const previewDirtyVocal = track?.playbackState?.assignedSourceId === 'vocal' && dirtyRanges.length > 0
+    const sourceId = previewDirtyVocal
+      ? 'piano'
+      : getHostPlaybackSourceId(track.playbackState?.assignedSourceId)
     if (!sourceId) return
     trackVolumes.set(track.id, normalizeTrackVolume(track.playbackState?.volume))
     sourceIds.add(sourceId)
@@ -20,6 +26,12 @@ function createScheduledNotes(tracks, audibleTrackIds, fromTimeSec) {
       const durationSec = Number.isFinite(note?.duration) ? Math.max(0.05, note.duration) : 0.05
       const endSec = startSec + durationSec
       if (endSec <= fromTimeSec) return
+      if (
+        previewDirtyVocal
+        && !dirtyRanges.some((range) => startSec < (range?.endTime || 0) && (range?.startTime || 0) < endSec)
+      ) {
+        return
+      }
 
       notes.push({
         trackId: track.id,
