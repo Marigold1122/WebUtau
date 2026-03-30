@@ -1,3 +1,5 @@
+import eventBus from '../core/EventBus.js'
+import { EVENTS } from '../config/constants.js'
 import viewport from './PianoRollViewport.js'
 
 class NoteSelection {
@@ -8,6 +10,7 @@ class NoteSelection {
 
   startMarquee(x, y) {
     this._marqueeRect = { x1: x, y1: y, x2: x, y2: y }
+    this._emitChange()
   }
 
   updateMarquee(x, y) {
@@ -34,24 +37,29 @@ class NoteSelection {
       }
     }
     this._marqueeRect = null
+    this._emitChange()
   }
 
   cancelMarquee() {
     this._marqueeRect = null
+    this._emitChange()
   }
 
   selectNote(note, phrase) {
     this._selected.set(note, phrase)
+    this._emitChange()
   }
 
   replaceWithNote(note, phrase) {
     this._selected.clear()
     this._selected.set(note, phrase)
+    this._emitChange()
   }
 
   clear() {
     this._selected.clear()
     this._marqueeRect = null
+    this._emitChange()
   }
 
   isSelected(note) {
@@ -89,6 +97,13 @@ class NoteSelection {
       x2: Math.max(r.x1, r.x2),
       y2: Math.max(r.y1, r.y2),
     }
+  }
+
+  _emitChange() {
+    eventBus.emit(EVENTS.NOTE_SELECTION_CHANGED, {
+      count: this._selected.size,
+      hasMarquee: this._marqueeRect != null,
+    })
   }
 }
 

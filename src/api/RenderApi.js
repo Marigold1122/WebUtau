@@ -47,6 +47,18 @@ const renderApi = {
     if (!response.ok) throw new Error(`getPitch failed: ${response.status}`)
     return response.json()
   },
+  async applyPitchDeviation(jobId, deviation) {
+    const response = await fetch(buildRenderApiUrl(`/api/jobs/${jobId}/pitch`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviation }),
+    })
+    const data = await response.json().catch(() => null)
+    if (!response.ok) {
+      throw new Error(data?.error || `applyPitchDeviation failed: ${response.status}`)
+    }
+    return data
+  },
   async deleteJob(jobId) {
     const response = await fetch(buildRenderApiUrl(`/api/jobs/${jobId}`), {
       method: 'DELETE',

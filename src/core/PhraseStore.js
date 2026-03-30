@@ -7,7 +7,7 @@ class PhraseStore {
     this._midiFile = null
     this._jobId = null
     this._bpm = 120
-    this._pitchData = null  // { pitchCurve: [{tick, pitch}], pitchDeviation: {xs, ys} }
+    this._pitchData = null  // { pitchCurve, pitchDeviation, midiPpq, pitchStepTick }
   }
 
   setPhrases(phrases) {
@@ -63,13 +63,40 @@ class PhraseStore {
   }
 
   setPitchData(pitchData) {
-    this._pitchData = pitchData
-    console.log(`[数据中心] 音高数据已加载 | ${pitchData?.pitchCurve?.length ?? 0}个采样点`)
-    eventBus.emit(EVENTS.PITCH_LOADED, { pitchData })
+    this._pitchData = this._clonePitchData(pitchData)
+    console.log(`[数据中心] 音高数据已加载 | ${this._pitchData?.pitchCurve?.length ?? 0}个采样点`)
+    eventBus.emit(EVENTS.PITCH_LOADED, { pitchData: this._pitchData })
+  }
+
+  previewPitchData(pitchData) {
+    this._pitchData = this._clonePitchData(pitchData)
+    eventBus.emit(EVENTS.PITCH_CHANGED, { pitchData: this._pitchData })
   }
 
   getPitchData() {
     return this._pitchData
+  }
+
+  _clonePitchData(pitchData) {
+    if (!pitchData) return null
+    return {
+      pitchCurve: Array.isArray(pitchData.pitchCurve)
+        ? pitchData.pitchCurve.map((point) => ({
+          tick: Number.isFinite(point?.tick) ? Math.round(point.tick) : 0,
+          pitch: Number.isFinite(point?.pitch) ? point.pitch : 0,
+        }))
+        : [],
+      pitchDeviation: {
+        xs: Array.isArray(pitchData.pitchDeviation?.xs)
+          ? pitchData.pitchDeviation.xs.map((x) => (Number.isFinite(x) ? Math.round(x) : 0))
+          : [],
+        ys: Array.isArray(pitchData.pitchDeviation?.ys)
+          ? pitchData.pitchDeviation.ys.map((y) => (Number.isFinite(y) ? Math.round(y) : 0))
+          : [],
+      },
+      midiPpq: Number.isFinite(pitchData.midiPpq) ? Math.max(1, Math.round(pitchData.midiPpq)) : 480,
+      pitchStepTick: Number.isFinite(pitchData.pitchStepTick) ? Math.max(1, Math.round(pitchData.pitchStepTick)) : 5,
+    }
   }
 
   // text 的唯一产生方式：从 notes 的 lyric 拼接

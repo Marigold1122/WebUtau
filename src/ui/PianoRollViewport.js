@@ -32,6 +32,10 @@ class PianoRollViewport {
     return (PIANO_ROLL.PITCH_MAX - midiPitch) * PIANO_ROLL.KEY_HEIGHT - this.scrollY
   }
 
+  yToPitchValue(pixelY) {
+    return PIANO_ROLL.PITCH_MAX + 0.5 - ((pixelY + this.scrollY) / PIANO_ROLL.KEY_HEIGHT)
+  }
+
   yToPitch(pixelY) {
     return PIANO_ROLL.PITCH_MAX - Math.floor((pixelY + this.scrollY) / PIANO_ROLL.KEY_HEIGHT)
   }

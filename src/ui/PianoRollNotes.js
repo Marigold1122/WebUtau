@@ -4,6 +4,7 @@ import noteSelection from './NoteSelection.js'
 import phraseStore from '../core/PhraseStore.js'
 import viewport from './PianoRollViewport.js'
 import phraseRenderStateStore from '../voice-runtime/app/phraseRenderStateStore.js'
+import pitchEditor from '../modules/PitchEditor.js'
 
 class PianoRollNotes {
   constructor() {
@@ -78,22 +79,47 @@ class PianoRollNotes {
     if (!pitchData?.pitchCurve?.length) return
     if (viewport.pixelsPerSecond < 30) return
 
+    if (pitchEditor.isEnabled()) {
+      this._drawPitchPath(pitchData, { applyDeviation: false, dashed: true, color: PIANO_ROLL.PITCH_BASE_LINE_COLOR, width: 1 })
+    }
+    this._drawPitchPath(pitchData, {
+      applyDeviation: true,
+      dashed: false,
+      color: PIANO_ROLL.PITCH_LINE_COLOR,
+      width: pitchEditor.isEnabled() ? 1.8 : PIANO_ROLL.PITCH_LINE_WIDTH,
+    })
+    if (pitchEditor.isEnabled()) {
+      this._drawSelectedPitchSegment()
+      this._drawPitchControlPoints(pitchData)
+    }
+  }
+
+  requestDraw() {
+    if (this.drawFrame) return
+    this.drawFrame = requestAnimationFrame(() => {
+      this.drawFrame = 0
+      this.draw()
+    })
+  }
+
+  _drawPitchPath(pitchData, options = {}) {
     const bpm = phraseStore.getBpm()
     const timeRange = viewport.getVisibleTimeRange()
     const curve = pitchData.pitchCurve
-    const tickToSec = 60 / (480 * bpm)
+    const midiPpq = Number.isFinite(pitchData?.midiPpq) ? pitchData.midiPpq : 480
+    const tickToSec = 60 / (midiPpq * bpm)
     const visibleStartTick = timeRange.start / tickToSec
     const visibleEndTick = timeRange.end / tickToSec
-
-    // 构建 PITD 偏差查找（从 pitchDeviation 的 xs/ys 稀疏点插值）
     const dev = pitchData.pitchDeviation
     const devXs = dev?.xs || []
     const devYs = dev?.ys || []
 
     this.ctx.save()
-    this.ctx.strokeStyle = PIANO_ROLL.PITCH_LINE_COLOR
-    this.ctx.lineWidth = PIANO_ROLL.PITCH_LINE_WIDTH
+    this.ctx.strokeStyle = options.color
+    this.ctx.lineWidth = options.width
     this.ctx.lineJoin = 'round'
+    this.ctx.lineCap = 'round'
+    if (options.dashed) this.ctx.setLineDash([5, 5])
 
     for (const phrase of this.phrases) {
       if (phrase.endTime < timeRange.start || phrase.startTime > timeRange.end) continue
@@ -109,17 +135,25 @@ class PianoRollNotes {
       for (let i = lo; i < hi; i++) {
         const pt = curve[i]
         if (pt.pitch <= 0) {
-          if (moved) { this.ctx.stroke(); this.ctx.beginPath(); moved = false }
+          if (moved) {
+            this.ctx.stroke()
+            this.ctx.beginPath()
+            moved = false
+          }
           continue
         }
-        // 叠加 PITD 偏差（cents → semitone: /100）
-        const devCents = this._interpolateDev(devXs, devYs, pt.tick)
-        const finalPitch = pt.pitch + devCents / 100
 
+        const pitch = options.applyDeviation
+          ? pt.pitch + this._interpolateDev(devXs, devYs, pt.tick) / 100
+          : pt.pitch
         const x = viewport.timeToX(pt.tick * tickToSec)
-        const y = viewport.pitchToY(finalPitch) + PIANO_ROLL.KEY_HEIGHT / 2
-        if (!moved) { this.ctx.moveTo(x, y); moved = true }
-        else this.ctx.lineTo(x, y)
+        const y = viewport.pitchToY(pitch) + PIANO_ROLL.KEY_HEIGHT / 2
+        if (!moved) {
+          this.ctx.moveTo(x, y)
+          moved = true
+        } else {
+          this.ctx.lineTo(x, y)
+        }
       }
       if (moved) this.ctx.stroke()
     }
@@ -127,12 +161,104 @@ class PianoRollNotes {
     this.ctx.restore()
   }
 
-  requestDraw() {
-    if (this.drawFrame) return
-    this.drawFrame = requestAnimationFrame(() => {
-      this.drawFrame = 0
-      this.draw()
-    })
+  _drawSelectedPitchSegment() {
+    const segment = pitchEditor.getSelectedSegment()
+    if (!segment) return
+    const timeRange = viewport.getVisibleTimeRange()
+    if (segment.endTime < timeRange.start || segment.startTime > timeRange.end) return
+
+    const x1 = viewport.timeToX(segment.startTime)
+    const y1 = viewport.pitchToY(segment.startPitch) + PIANO_ROLL.KEY_HEIGHT / 2
+    const x2 = viewport.timeToX(segment.endTime)
+    const y2 = viewport.pitchToY(segment.endPitch) + PIANO_ROLL.KEY_HEIGHT / 2
+
+    this.ctx.save()
+    this.ctx.strokeStyle = 'rgba(201, 66, 52, 0.4)'
+    this.ctx.lineWidth = 6
+    this.ctx.lineCap = 'round'
+    this.ctx.beginPath()
+    this.ctx.moveTo(x1, y1)
+    this.ctx.lineTo(x2, y2)
+    this.ctx.stroke()
+    this.ctx.restore()
+  }
+
+  _drawPitchControlPoints(_pitchData) {
+    const timeRange = viewport.getVisibleTimeRange()
+    const points = pitchEditor.getDisplayPoints(undefined, { includeAnchors: true })
+    if (points.length === 0) return
+
+    this.ctx.save()
+    const minGapPx = Math.max(6, PIANO_ROLL.PITCH_POINT_RADIUS * 2)
+    let lastDrawnX = -Infinity
+    let selectedPoint = null
+    const focusedNotes = new Set(
+      noteSelection.getSelected().map((entry) => `${entry.phrase.index}:${entry.phrase.notes.indexOf(entry.note)}`),
+    )
+
+    for (const point of points) {
+      if (point.time < timeRange.start || point.time > timeRange.end) continue
+      const x = viewport.timeToX(point.time)
+      const y = viewport.pitchToY(point.pitch) + PIANO_ROLL.KEY_HEIGHT / 2
+      const selected = pitchEditor.getSelectedPointId() === point.id
+      const focusKey = `${point.phraseIndex}:${point.noteIndex}`
+      const focused = focusedNotes.has(focusKey)
+      if (selected) {
+        selectedPoint = { x, y, point }
+        continue
+      }
+      if (point.kind !== 'normal' && !focused) continue
+      if (point.kind === 'normal' && point.source !== 'user' && x - lastDrawnX < minGapPx) continue
+      lastDrawnX = x
+
+      this._drawPitchControlPoint(x, y, point, false)
+    }
+
+    if (selectedPoint) {
+      this._drawPitchControlPoint(selectedPoint.x, selectedPoint.y, selectedPoint.point, true)
+    }
+    this.ctx.restore()
+  }
+
+  _drawPitchControlPoint(x, y, point, selected) {
+    if (point.kind !== 'normal') {
+      const size = selected ? PIANO_ROLL.PITCH_POINT_RADIUS + 2 : PIANO_ROLL.PITCH_POINT_RADIUS - 1
+      this.ctx.fillStyle = selected ? 'rgba(201, 66, 52, 0.24)' : 'rgba(95, 90, 83, 0.14)'
+      this.ctx.strokeStyle = selected ? PIANO_ROLL.PITCH_POINT_ACTIVE_COLOR : 'rgba(95, 90, 83, 0.46)'
+      this.ctx.lineWidth = selected ? 2 : 1
+      this.ctx.beginPath()
+      this.ctx.moveTo(x, y - size)
+      this.ctx.lineTo(x + size, y)
+      this.ctx.lineTo(x, y + size)
+      this.ctx.lineTo(x - size, y)
+      this.ctx.closePath()
+      this.ctx.fill()
+      this.ctx.stroke()
+      return
+    }
+
+    const userPoint = point.source === 'user'
+    this.ctx.fillStyle = selected
+      ? PIANO_ROLL.PITCH_POINT_ACTIVE_COLOR
+      : userPoint
+        ? '#d37b36'
+        : PIANO_ROLL.PITCH_POINT_COLOR
+    this.ctx.strokeStyle = selected
+      ? '#fff6ef'
+      : userPoint
+        ? 'rgba(104, 56, 19, 0.55)'
+        : 'rgba(43, 40, 37, 0.35)'
+    this.ctx.lineWidth = selected ? 2 : 1
+    this.ctx.beginPath()
+    this.ctx.arc(
+      x,
+      y,
+      selected ? PIANO_ROLL.PITCH_POINT_RADIUS + 1 : userPoint ? PIANO_ROLL.PITCH_POINT_RADIUS : PIANO_ROLL.PITCH_POINT_RADIUS - 1,
+      0,
+      Math.PI * 2,
+    )
+    this.ctx.fill()
+    this.ctx.stroke()
   }
 
   // 在 PITD 稀疏点之间线性插值，返回 cents 偏差
@@ -185,7 +311,15 @@ class PianoRollNotes {
   }
 
   _listenEvents() {
-    for (const eventName of [EVENTS.RENDER_COMPLETE, EVENTS.CACHE_INVALIDATED, EVENTS.CACHE_UPDATED, EVENTS.RENDER_PRIORITIZE, EVENTS.PITCH_LOADED]) {
+    for (const eventName of [
+      EVENTS.RENDER_COMPLETE,
+      EVENTS.CACHE_INVALIDATED,
+      EVENTS.CACHE_UPDATED,
+      EVENTS.RENDER_PRIORITIZE,
+      EVENTS.PITCH_LOADED,
+      EVENTS.PITCH_CHANGED,
+      EVENTS.PITCH_EDITOR_MODE_CHANGED,
+    ]) {
       eventBus.on(eventName, () => this.requestDraw())
     }
     eventBus.on(EVENTS.CACHE_MISS, () => {

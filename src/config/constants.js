@@ -44,7 +44,11 @@ export const EVENTS = {
   PLAYHEAD_RESUMED: 'playhead:resumed',
   PHRASES_REBUILT: 'phrases:rebuilt',
   PHRASES_EDITED: 'phrases:edited',
+  NOTE_SELECTION_CHANGED: 'note-selection-changed',
   PITCH_LOADED: 'pitch:loaded',
+  PITCH_CHANGED: 'pitch:changed',
+  PITCH_EDITOR_MODE_CHANGED: 'pitch:editor-mode-changed',
+  PITCH_EDITOR_SELECTION_CHANGED: 'pitch:editor-selection-changed',
 }
 
 export const JOB_STATUS = {
@@ -91,4 +95,9 @@ export const PIANO_ROLL = {
   NOTE_COLOR_EXPIRED: '#8D746E',
   PITCH_LINE_COLOR: 'rgba(201, 66, 52, 0.78)',
   PITCH_LINE_WIDTH: 1.5,
+  PITCH_BASE_LINE_COLOR: 'rgba(95, 90, 83, 0.3)',
+  PITCH_POINT_COLOR: '#f5ede0',
+  PITCH_POINT_ACTIVE_COLOR: '#c94234',
+  PITCH_POINT_RADIUS: 4,
+  PITCH_POINT_HIT_RADIUS: 8,
 }

@@ -13,6 +13,28 @@ public class SynthesisController : ControllerBase {
         _synthesis = synthesis;
     }
 
+    private PitchResponse BuildPitchResponse(SynthesisJob job, List<int>? affectedIndices = null) {
+        var (devXs, devYs) = _synthesis.GetPitchDeviation(job);
+        int ppq = job.MidiPPQ > 0 ? job.MidiPPQ : (short)480;
+        int pitchStepTick = Math.Max(1, (int)Math.Round(5.0 * ppq / 480.0));
+
+        return new PitchResponse {
+            PitchCurve = (job.PitchCurve ?? new List<PitchPoint>())
+                .Select(p => new PitchCurvePointResponse {
+                    Tick = p.Tick * ppq / 480,
+                    Pitch = p.Pitch,
+                })
+                .ToList(),
+            PitchDeviation = new PitchDeviationResponse {
+                Xs = devXs.Select(x => x * ppq / 480).ToList(),
+                Ys = devYs,
+            },
+            MidiPpq = ppq,
+            PitchStepTick = pitchStepTick,
+            AffectedIndices = affectedIndices,
+        };
+    }
+
     [HttpPost("synthesize")]
     [RequestSizeLimit(50_000_000)] // 50MB max for MIDI
     public IActionResult Synthesize([FromForm] IFormFile midi, [FromForm] string singerId, [FromForm] string? defaultLanguageCode) {
@@ -118,25 +140,7 @@ public class SynthesisController : ControllerBase {
         if (job == null)
             return NotFound(new { error = "Job not found." });
 
-        var (devXs, devYs) = _synthesis.GetPitchDeviation(job);
-
-        // 坐标换算：OpenUtau 内部 480 → 前端原始 MIDI PPQ
-        int ppq = job.MidiPPQ;
-        var convertedDevXs = devXs.Select(x => x * ppq / 480).ToList();
-
-        if (job.PitchCurve == null || job.PitchCurve.Count == 0)
-            return Ok(new {
-                pitchCurve = Array.Empty<object>(),
-                pitchDeviation = new { xs = convertedDevXs, ys = devYs },
-            });
-
-        return Ok(new {
-            pitchCurve = job.PitchCurve.Select(p => new {
-                tick = p.Tick * ppq / 480,
-                pitch = p.Pitch,
-            }),
-            pitchDeviation = new { xs = convertedDevXs, ys = devYs },
-        });
+        return Ok(BuildPitchResponse(job));
     }
 
     /// <summary>
@@ -147,19 +151,17 @@ public class SynthesisController : ControllerBase {
         var job = _synthesis.GetJob(id);
         if (job == null)
             return NotFound(new { error = "Job not found." });
-        if (req.Deviation == null || req.Deviation.Count == 0)
-            return BadRequest(new { error = "No deviation data." });
 
         // 坐标换算：前端原始 MIDI PPQ → OpenUtau 内部 480
-        int ppq = job.MidiPPQ;
+        int ppq = job.MidiPPQ > 0 ? job.MidiPPQ : (short)480;
         var deviation = new Dictionary<int, int>();
-        foreach (var point in req.Deviation) {
+        foreach (var point in req.Deviation ?? new List<PitchDeviationPoint>()) {
             int internalTick = point.Tick * 480 / ppq;
             deviation[internalTick] = point.Cent;
         }
 
         _synthesis.ApplyPitchDeviationAndRerender(job, deviation, out var affectedIndices);
-        return Ok(new { ok = true, affectedIndices });
+        return Ok(BuildPitchResponse(job, affectedIndices));
     }
 
     public class PitchDeviationRequest {
@@ -169,6 +171,24 @@ public class SynthesisController : ControllerBase {
     public class PitchDeviationPoint {
         public int Tick { get; set; }
         public int Cent { get; set; }
+    }
+
+    public class PitchResponse {
+        public List<PitchCurvePointResponse> PitchCurve { get; set; } = new();
+        public PitchDeviationResponse PitchDeviation { get; set; } = new();
+        public int MidiPpq { get; set; }
+        public int PitchStepTick { get; set; }
+        public List<int>? AffectedIndices { get; set; }
+    }
+
+    public class PitchCurvePointResponse {
+        public int Tick { get; set; }
+        public float Pitch { get; set; }
+    }
+
+    public class PitchDeviationResponse {
+        public List<int> Xs { get; set; } = new();
+        public List<int> Ys { get; set; } = new();
     }
 
     /// <summary>

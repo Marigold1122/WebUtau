@@ -573,6 +573,95 @@ public class SynthesisService : IHostedService {
         project.Validate(new ValidateOptions { SkipPhonemizer = true });
     }
 
+    private static List<KeyValuePair<int, int>> ToSortedPitchPoints(IEnumerable<KeyValuePair<int, int>> points) {
+        return points
+            .Where(kv => kv.Key >= 0)
+            .GroupBy(kv => kv.Key)
+            .Select(group => new KeyValuePair<int, int>(group.Key, group.Last().Value))
+            .OrderBy(kv => kv.Key)
+            .ToList();
+    }
+
+    private static bool PitchPointsEqual(IReadOnlyList<KeyValuePair<int, int>> left, IReadOnlyList<KeyValuePair<int, int>> right) {
+        if (left.Count != right.Count) {
+            return false;
+        }
+        for (int i = 0; i < left.Count; i++) {
+            if (!left[i].Equals(right[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static void AddTickCandidate(List<int> candidates, IReadOnlyList<KeyValuePair<int, int>> points, int index) {
+        if (index >= 0 && index < points.Count) {
+            candidates.Add(points[index].Key);
+        }
+    }
+
+    private static (int StartTick, int EndTick)? ComputeChangedPitchRange(
+        IReadOnlyList<KeyValuePair<int, int>> oldPoints,
+        IReadOnlyList<KeyValuePair<int, int>> newPoints) {
+        if (PitchPointsEqual(oldPoints, newPoints)) {
+            return null;
+        }
+
+        int prefix = 0;
+        int common = Math.Min(oldPoints.Count, newPoints.Count);
+        while (prefix < common && oldPoints[prefix].Equals(newPoints[prefix])) {
+            prefix++;
+        }
+
+        int oldSuffix = oldPoints.Count - 1;
+        int newSuffix = newPoints.Count - 1;
+        while (oldSuffix >= prefix && newSuffix >= prefix && oldPoints[oldSuffix].Equals(newPoints[newSuffix])) {
+            oldSuffix--;
+            newSuffix--;
+        }
+
+        var candidates = new List<int>();
+        AddTickCandidate(candidates, oldPoints, prefix - 1);
+        AddTickCandidate(candidates, oldPoints, prefix);
+        AddTickCandidate(candidates, oldPoints, oldSuffix);
+        AddTickCandidate(candidates, oldPoints, oldSuffix + 1);
+        AddTickCandidate(candidates, newPoints, prefix - 1);
+        AddTickCandidate(candidates, newPoints, prefix);
+        AddTickCandidate(candidates, newPoints, newSuffix);
+        AddTickCandidate(candidates, newPoints, newSuffix + 1);
+
+        if (candidates.Count == 0) {
+            return null;
+        }
+
+        return (candidates.Min(), candidates.Max());
+    }
+
+    private static void ReplacePitchDeviationCurve(
+        UVoicePart part,
+        UCurve pitchCurve,
+        UExpressionDescriptor descriptor,
+        IReadOnlyList<KeyValuePair<int, int>> points) {
+        var localPoints = new SortedDictionary<int, int>();
+        int minCent = (int)Math.Round(descriptor.min);
+        int maxCent = (int)Math.Round(descriptor.max);
+
+        foreach (var point in points) {
+            if (point.Key < part.position || point.Key > part.End) {
+                continue;
+            }
+
+            int localTick = (int)Math.Round((point.Key - part.position) / (double)UCurve.interval) * UCurve.interval;
+            localTick = Math.Max(0, localTick);
+            localPoints[localTick] = Math.Clamp(point.Value, minCent, maxCent);
+        }
+
+        pitchCurve.descriptor = descriptor;
+        pitchCurve.abbr = descriptor.abbr;
+        pitchCurve.xs = localPoints.Keys.ToList();
+        pitchCurve.ys = localPoints.Values.ToList();
+    }
+
     /// <summary>
     /// 接收前端的 PITD 偏移数据，写入 UCurve，重新 Validate 并重渲染受影响的短语
     /// </summary>
@@ -588,103 +677,96 @@ public class SynthesisService : IHostedService {
         job.CurrentPhraseCts?.Cancel();
 
         try {
+            var project = job.Project;
+            var voiceParts = job.VoiceParts;
+            var currentDeviation = GetPitchDeviation(job);
+            var oldPoints = ToSortedPitchPoints(currentDeviation.xs.Zip(currentDeviation.ys, (x, y) => new KeyValuePair<int, int>(x, y)));
+            var newPoints = ToSortedPitchPoints(deviation);
+            var changedRange = ComputeChangedPitchRange(oldPoints, newPoints);
 
-        var project = job.Project;
-        var voiceParts = job.VoiceParts;
-
-        // 写入 PITD 曲线
-        foreach (var part in voiceParts) {
-            if (!project.expressions.TryGetValue(Ustx.PITD, out var pitdDescriptor)) continue;
-            var pitchCurve = part.curves.FirstOrDefault(c => c.abbr == Ustx.PITD);
-            if (pitchCurve == null) {
-                pitchCurve = new UCurve(pitdDescriptor);
-                part.curves.Add(pitchCurve);
+            if (changedRange == null) {
+                Log.Information("Job {JobId}: pitch edit is a no-op, skipped.", job.JobId);
+                return;
             }
 
-            // 用前端的偏移数据按 tick 排序后连续 Set（保持 lastX/lastY 上下文）
-            var sorted = deviation.OrderBy(kv => kv.Key).ToList();
-            int? lastLocalTick = null;
-            int? lastCent = null;
-            foreach (var kv in sorted) {
-                // tick 是全局 tick，PITD 中的 x 是 part-local tick
-                int localTick = kv.Key - part.position;
-                int cent = kv.Value;
-                if (lastLocalTick == null) {
-                    pitchCurve.Set(localTick, cent, localTick, cent);
-                } else {
-                    pitchCurve.Set(localTick, cent, lastLocalTick.Value, lastCent!.Value);
+            if (!project.expressions.TryGetValue(Ustx.PITD, out var pitdDescriptor)) {
+                Log.Warning("Job {JobId}: PITD descriptor missing, cannot apply pitch edit.", job.JobId);
+                return;
+            }
+
+            foreach (var part in voiceParts) {
+                var pitchCurve = part.curves.FirstOrDefault(c => c.abbr == Ustx.PITD);
+                if (pitchCurve == null) {
+                    pitchCurve = new UCurve(pitdDescriptor);
+                    part.curves.Add(pitchCurve);
                 }
-                lastLocalTick = localTick;
-                lastCent = cent;
+                ReplacePitchDeviationCurve(part, pitchCurve, pitdDescriptor, newPoints);
             }
-            pitchCurve.Simplify();
-        }
 
-        // 重新 Validate 让 pitches 数组更新
-        project.Validate(new ValidateOptions { SkipPhonemizer = true });
+            // 重新 Validate 让 pitches 数组更新
+            project.Validate(new ValidateOptions { SkipPhonemizer = true });
 
-        // 重新获取 allPhrases（Validate 后可能重建）
-        var allPhrases = voiceParts
-            .SelectMany(p => p.renderPhrases)
-            .OrderBy(p => p.positionMs)
-            .ToList();
-        job.AllPhrases = allPhrases;
+            // 重新获取 allPhrases（Validate 后可能重建）
+            var allPhrases = voiceParts
+                .SelectMany(p => p.renderPhrases)
+                .OrderBy(p => p.positionMs)
+                .ToList();
+            job.AllPhrases = allPhrases;
 
-        // 更新 pitch curve 数据
-        ExtractPitchCurve(job, voiceParts);
+            // 更新 pitch curve 数据
+            ExtractPitchCurve(job, voiceParts);
 
-        // 找出需要重渲染的短语（偏移覆盖的 tick 范围内的短语）
-        int minTick = deviation.Keys.Min();
-        int maxTick = deviation.Keys.Max();
-        var affectedIndices = new List<int>();
-        for (int i = 0; i < allPhrases.Count; i++) {
-            var phrase = allPhrases[i];
-            int phraseStart = phrase.position - phrase.leading;
-            int phraseEnd = phrase.position + phrase.duration;
-            if (phraseEnd >= minTick && phraseStart <= maxTick) {
-                affectedIndices.Add(i);
+            var affectedIndices = new List<int>();
+            for (int i = 0; i < allPhrases.Count; i++) {
+                var phrase = allPhrases[i];
+                int phraseStart = phrase.position - phrase.leading;
+                int phraseEnd = phrase.position + phrase.duration;
+                if (phraseEnd >= changedRange.Value.StartTick && phraseStart <= changedRange.Value.EndTick) {
+                    affectedIndices.Add(i);
+                }
             }
-        }
 
-        if (affectedIndices.Count == 0) return;
-        affectedOut = affectedIndices;
-
-        // 通过操作 RenderedSet 让 RenderPhrases 循环重新渲染受影响的 phrase
-        lock (job.RenderLock) {
-            foreach (int idx in affectedIndices) {
-                job.RenderedSet.Remove(idx);
-                if (idx < job.Phrases!.Count)
-                    job.Phrases[idx].Status = "pending";
+            if (affectedIndices.Count == 0) {
+                return;
             }
-            if (affectedIndices.Count > 0)
-                job.PriorityPhraseIndex = affectedIndices.Min();
-        }
+            affectedOut = affectedIndices;
 
-        // 如果初次渲染已结束，启动新的渲染循环
-        if (job.Status == "completed" || job.Status == "ready") {
-            job.Status = "rendering";
-            var currentPhrases = allPhrases;
-            var currentRenderer = job.Renderer;
-            Task.Run(() => {
-                try {
-                    RenderPhrases(job, currentPhrases, currentRenderer!);
-                    lock (job.RenderLock) {
-                        if (job.RenderedSet.Count >= (job.AllPhrases?.Count ?? 0)) {
-                            try {
-                                var fullOutputPath = Path.Combine(_outputDir, $"{job.JobId}.wav");
-                                MergePhrasesToWav(job, fullOutputPath, 44100);
-                                job.OutputPath = fullOutputPath;
-                            } catch (Exception ex) {
-                                Log.Warning("Job {JobId}: full WAV merge after pitch edit failed: {Error}", job.JobId, ex.Message);
-                            }
-                            job.Status = "completed";
-                        }
+            // 通过操作 RenderedSet 让 RenderPhrases 循环重新渲染受影响的 phrase
+            lock (job.RenderLock) {
+                foreach (int idx in affectedIndices) {
+                    job.RenderedSet.Remove(idx);
+                    if (idx < job.Phrases!.Count) {
+                        job.Phrases[idx].Status = "pending";
                     }
-                } catch (Exception ex) {
-                    Log.Error(ex, "Job {JobId}: re-render after pitch edit failed.", job.JobId);
                 }
-            });
-        }
+                job.PriorityPhraseIndex = affectedIndices.Min();
+            }
+
+            // 如果初次渲染已结束，启动新的渲染循环
+            if (job.Status == "completed" || job.Status == "ready") {
+                job.Status = "rendering";
+                var currentPhrases = allPhrases;
+                var currentRenderer = job.Renderer;
+                Task.Run(() => {
+                    try {
+                        RenderPhrases(job, currentPhrases, currentRenderer!);
+                        lock (job.RenderLock) {
+                            if (job.RenderedSet.Count >= (job.AllPhrases?.Count ?? 0)) {
+                                try {
+                                    var fullOutputPath = Path.Combine(_outputDir, $"{job.JobId}.wav");
+                                    MergePhrasesToWav(job, fullOutputPath, 44100);
+                                    job.OutputPath = fullOutputPath;
+                                } catch (Exception ex) {
+                                    Log.Warning("Job {JobId}: full WAV merge after pitch edit failed: {Error}", job.JobId, ex.Message);
+                                }
+                                job.Status = "completed";
+                            }
+                        }
+                    } catch (Exception ex) {
+                        Log.Error(ex, "Job {JobId}: re-render after pitch edit failed.", job.JobId);
+                    }
+                });
+            }
 
         } finally {
             job.RenderGate.Set();

@@ -1154,7 +1154,7 @@ body {
 .editor-panel.hidden { display: none !important; }
 
 .editor-header {
-  height: 28px; flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 0 12px;
+  min-height: 40px; flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 4px 12px;
   background: var(--bg-2); border-bottom: 1px solid var(--border-color);
   color: var(--text-main); font-size: 11px; font-weight: 600;
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.6);
@@ -1164,10 +1164,102 @@ body {
   height: 18px; padding: 0 8px; border-radius: var(--radius-sm);
   color: #FFF; background: var(--text-main); font-family: 'Oswald', sans-serif; letter-spacing: 0.5px;
 }
-.editor-track-name { max-width: 34%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.editor-track-name { max-width: 28%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.editor-runtime-tools {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
 
 .editor-close {
-  margin-left: auto; min-width: 24px; height: 22px; padding: 0 8px;
+  flex-shrink: 0; min-width: 24px; height: 22px; padding: 0 8px;
+}
+
+.editor-runtime-tools .piano-roll-editor-toolbar {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.editor-runtime-tools .piano-roll-editor-mode-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 6px;
+  margin-right: 2px;
+  border-right: 1px solid rgba(163, 160, 151, 0.55);
+}
+
+.editor-runtime-tools .piano-roll-editor-control-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.editor-runtime-tools .piano-roll-editor-btn {
+  min-width: 58px;
+  height: 26px;
+  padding: 0 11px;
+  border: 1px solid var(--border-dark);
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffffff 0%, #efe9dd 100%);
+  color: var(--text-main);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  transition: transform 0.08s ease, border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+
+.editor-runtime-tools .piano-roll-editor-btn:hover:not(:disabled) {
+  border-color: var(--atomic-teal);
+  background: #f1ece1;
+}
+
+.editor-runtime-tools .piano-roll-editor-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.editor-runtime-tools .piano-roll-editor-btn.active {
+  border-color: rgba(59, 139, 136, 0.92);
+  background: linear-gradient(180deg, rgba(59, 139, 136, 0.96) 0%, rgba(47, 117, 114, 0.96) 100%);
+  color: #FFF;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.18);
+}
+
+.editor-runtime-tools .piano-roll-editor-btn--secondary {
+  min-width: 68px;
+}
+
+.editor-runtime-tools .piano-roll-editor-btn--compact {
+  min-width: 50px;
+  padding: 0 9px;
+}
+
+.editor-runtime-tools .piano-roll-editor-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.editor-runtime-tools .piano-roll-editor-hint {
+  max-width: 168px;
+  color: var(--text-muted);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .editor-body { flex: 1; min-height: 0; display: flex; overflow: hidden; background: var(--bg-0); }
