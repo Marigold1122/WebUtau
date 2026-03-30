@@ -11,7 +11,9 @@ class PhraseStore {
   }
 
   setPhrases(phrases) {
-    this._phrases = Array.isArray(phrases) ? [...phrases] : []
+    this._phrases = Array.isArray(phrases)
+      ? phrases.map((phrase) => this._normalizePhraseHashes(phrase))
+      : []
     eventBus.emit(EVENTS.PHRASES_UPDATED)
   }
 
@@ -23,19 +25,74 @@ class PhraseStore {
     return this._phrases[index] ?? null
   }
 
+  getPhraseInputHash(index) {
+    const phrase = this.getPhrase(index)
+    return typeof phrase?.inputHash === 'string' && phrase.inputHash.length > 0
+      ? phrase.inputHash
+      : null
+  }
+
   updatePhrase(index, changes) {
     const phrase = this._phrases[index]
     if (!phrase) return null
 
     const oldHash = phrase.inputHash ?? this._computeHash(phrase)
-    const nextPhrase = { ...phrase, ...changes }
-    const newHash = this._computeHash(nextPhrase)
-
-    nextPhrase.inputHash = newHash
+    const nextPhrase = this._normalizePhraseHashes({ ...phrase, ...changes })
+    const newHash = nextPhrase.inputHash
     this._phrases[index] = nextPhrase
 
     eventBus.emit(EVENTS.PHRASE_MODIFIED, { phraseIndex: index, newHash, oldHash })
     return nextPhrase
+  }
+
+  capturePhraseHashes(indices) {
+    if (!Array.isArray(indices) || indices.length === 0) return []
+    return [...new Set(indices)]
+      .filter((index) => Number.isInteger(index) && index >= 0)
+      .map((index) => {
+        const phrase = this._phrases[index]
+        return {
+          phraseIndex: index,
+          exists: Boolean(phrase),
+          inputHash: phrase?.inputHash ?? null,
+          baseInputHash: phrase?.baseInputHash ?? null,
+        }
+      })
+  }
+
+  restorePhraseHashes(snapshot) {
+    if (!Array.isArray(snapshot) || snapshot.length === 0) return
+    let changed = false
+    for (const entry of snapshot) {
+      if (!entry?.exists) continue
+      const phrase = this._phrases[entry.phraseIndex]
+      if (!phrase) continue
+      phrase.inputHash = entry.inputHash ?? this._computeHash(phrase)
+      phrase.baseInputHash = entry.baseInputHash ?? phrase.inputHash
+      changed = true
+    }
+    if (changed) eventBus.emit(EVENTS.PHRASES_UPDATED)
+  }
+
+  applyPitchRenderVersion(indices, versionTag) {
+    if (!Array.isArray(indices) || indices.length === 0 || typeof versionTag !== 'string' || versionTag.length === 0) {
+      return
+    }
+
+    let changed = false
+    for (const index of [...new Set(indices)]) {
+      if (!Number.isInteger(index) || index < 0) continue
+      const phrase = this._phrases[index]
+      if (!phrase) continue
+      const baseInputHash = this._resolveBaseInputHash(phrase)
+      const nextInputHash = `${baseInputHash}|pitch:${versionTag}`
+      if (phrase.baseInputHash === baseInputHash && phrase.inputHash === nextInputHash) continue
+      phrase.baseInputHash = baseInputHash
+      phrase.inputHash = nextInputHash
+      changed = true
+    }
+
+    if (changed) eventBus.emit(EVENTS.PHRASES_UPDATED)
   }
 
   setMidiFile(file) {
@@ -158,8 +215,16 @@ class PhraseStore {
       const endSec = (bp.startMs + bp.durationMs) / 1000
       const notes = phraseNotes[i]
       const text = this._buildTextFromNotes(notes)
-      const inputHash = this._computeHashFromNotes(notes, text)
-      return { index: bp.index, startTime: startSec, endTime: endSec, text, notes, inputHash }
+      const baseInputHash = this._computeHashFromNotes(notes, text)
+      return {
+        index: bp.index,
+        startTime: startSec,
+        endTime: endSec,
+        text,
+        notes,
+        baseInputHash,
+        inputHash: baseInputHash,
+      }
     })
 
     this._phrases = rebuilt
@@ -206,9 +271,17 @@ class PhraseStore {
       }
 
       const text = this._buildTextFromNotes(notes)
-      const inputHash = this._computeHashFromNotes(notes, text)
-      console.log(`[数据中心] 编辑重建 → phrase ${bp.index}: ${notes.length}个notes, lyric更新=${totalLyricUpdated}, text="${text}", hash=${inputHash}`)
-      return { index: bp.index, startTime: startSec, endTime: endSec, text, notes, inputHash }
+      const baseInputHash = this._computeHashFromNotes(notes, text)
+      console.log(`[数据中心] 编辑重建 → phrase ${bp.index}: ${notes.length}个notes, lyric更新=${totalLyricUpdated}, text="${text}", hash=${baseInputHash}`)
+      return {
+        index: bp.index,
+        startTime: startSec,
+        endTime: endSec,
+        text,
+        notes,
+        baseInputHash,
+        inputHash: baseInputHash,
+      }
     })
 
     this._phrases = rebuilt
@@ -230,6 +303,28 @@ class PhraseStore {
       return this._computeHashFromNotes(phrase.notes, this._buildTextFromNotes(phrase.notes))
     }
     return `${phrase.startTime.toFixed(3)}-${phrase.endTime.toFixed(3)}-${phrase.text}`
+  }
+
+  _resolveBaseInputHash(phrase) {
+    if (typeof phrase?.baseInputHash === 'string' && phrase.baseInputHash.length > 0) {
+      return phrase.baseInputHash
+    }
+    if (typeof phrase?.inputHash === 'string' && phrase.inputHash.length > 0) {
+      return phrase.inputHash.split('|pitch:')[0]
+    }
+    return this._computeHash(phrase)
+  }
+
+  _normalizePhraseHashes(phrase) {
+    const baseInputHash = this._resolveBaseInputHash(phrase)
+    const inputHash = typeof phrase?.inputHash === 'string' && phrase.inputHash.length > 0
+      ? phrase.inputHash
+      : baseInputHash
+    return {
+      ...phrase,
+      baseInputHash,
+      inputHash,
+    }
   }
 }
 

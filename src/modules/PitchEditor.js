@@ -4,6 +4,8 @@ import renderApi from '../api/RenderApi.js'
 import renderCache from './RenderCache.js'
 import renderJobManager from './RenderJobManager.js'
 import audioEngine from './AudioEngine.js'
+import renderPriorityStrategy from './RenderPriorityStrategy.js'
+import renderScheduler from './RenderScheduler.js'
 import { EVENTS } from '../config/constants.js'
 
 const MODE = {
@@ -557,26 +559,73 @@ class PitchEditor {
     const jobId = phraseStore.getJobId()
     if (!jobId) throw new Error('No active job')
 
-    const compiledDeviation = this._mergeCompiledDeviationWithServer(
-      this._noteControls,
-      this._serverPitchData || phraseStore.getPitchData(),
-    )
+    const currentPitchData = this._serverPitchData || phraseStore.getPitchData()
+    const compiledDeviation = this._mergeCompiledDeviationWithServer(this._noteControls, currentPitchData)
     const requestVersion = this._previewVersion
     const payload = compiledDeviation.map((point) => ({ tick: point.tick, cent: point.cent }))
+    const optimisticAffected = this._getAffectedPhraseIndices(this._noteControls)
+    if (optimisticAffected.length === 0) {
+      console.log(`[音高编辑] 跳过空提交 ${reason} | 无受影响短语`)
+      return {
+        affectedIndices: [],
+        pitchCurve: currentPitchData?.pitchCurve || [],
+        pitchDeviation: currentPitchData?.pitchDeviation || { xs: [], ys: [] },
+        midiPpq: currentPitchData?.midiPpq || 480,
+        pitchStepTick: currentPitchData?.pitchStepTick || 5,
+      }
+    }
 
-    console.log(`[音高编辑] → 提交 ${reason} | 点数=${payload.length}, 版本=${requestVersion}`)
+    const renderVersion = this._buildRenderVersion(payload)
+    const phraseHashSnapshot = phraseStore.capturePhraseHashes(optimisticAffected)
+    const cacheSnapshot = renderCache.capture(optimisticAffected)
+
+    phraseStore.applyPitchRenderVersion(optimisticAffected, renderVersion)
+    renderCache.clearIndices(optimisticAffected)
+    optimisticAffected.forEach((phraseIndex) => {
+      eventBus.emit(EVENTS.CACHE_INVALIDATED, { phraseIndex })
+    })
+    audioEngine.cancelPhrases(optimisticAffected)
+    renderJobManager.incrementGeneration()
+    this._prioritizeDirtyPhrase()
+
+    console.log(
+      `[音高编辑] → 提交 ${reason} | 点数=${payload.length}, 版本=${requestVersion}, 受影响=[${optimisticAffected.join(',')}]`,
+    )
 
     const task = this._commitQueue.then(async () => {
       const response = await renderApi.applyPitchDeviation(jobId, payload)
       const nextPitchData = this._extractPitchDataFromResponse(response)
-      const affectedIndices = Array.isArray(response?.affectedIndices) ? response.affectedIndices : []
+      const serverAffected = Array.isArray(response?.affectedIndices)
+        ? response.affectedIndices.filter((index) => Number.isInteger(index) && index >= 0)
+        : []
+      const affectedIndices = [...new Set(serverAffected.length > 0
+        ? serverAffected
+        : optimisticAffected)]
+      const isCurrentRequest = requestVersion === this._previewVersion
 
       this._serverPitchData = this._clonePitchData(nextPitchData)
 
+      if (isCurrentRequest) {
+        const restoredIndices = optimisticAffected.filter((index) => !affectedIndices.includes(index))
+        if (restoredIndices.length > 0) {
+          phraseStore.restorePhraseHashes(phraseHashSnapshot.filter((entry) => restoredIndices.includes(entry.phraseIndex)))
+          renderCache.restore(cacheSnapshot.filter((entry) => restoredIndices.includes(entry.phraseIndex)))
+        }
+
+        const extraAffected = affectedIndices.filter((index) => !optimisticAffected.includes(index))
+        if (extraAffected.length > 0) {
+          phraseStore.applyPitchRenderVersion(extraAffected, renderVersion)
+          renderCache.clearIndices(extraAffected)
+          extraAffected.forEach((phraseIndex) => {
+            eventBus.emit(EVENTS.CACHE_INVALIDATED, { phraseIndex })
+          })
+          audioEngine.cancelPhrases(extraAffected)
+        }
+      }
+
       if (affectedIndices.length > 0) {
-        renderCache.clearIndices(affectedIndices)
-        audioEngine.cancelPhrases(affectedIndices)
         renderJobManager.restartForEdit(phraseStore.getPhrases().length)
+        this._prioritizeDirtyPhrase()
       }
 
       if (requestVersion === this._previewVersion) {
@@ -594,6 +643,10 @@ class PitchEditor {
       return response
     }).catch((error) => {
       console.error(`[音高编辑] 提交失败 ${reason}`, error)
+      if (requestVersion === this._previewVersion) {
+        phraseStore.restorePhraseHashes(phraseHashSnapshot)
+        renderCache.restore(cacheSnapshot)
+      }
       if (requestVersion === this._previewVersion && this._serverPitchData) {
         phraseStore.setPitchData(this._serverPitchData)
       }
@@ -1253,6 +1306,46 @@ class PitchEditor {
   _interpolateLinear(x0, x1, y0, y1, x) {
     if (x1 - x0 < EPSILON) return y1
     return y0 + (y1 - y0) * (x - x0) / (x1 - x0)
+  }
+
+  _getAffectedPhraseIndices(controls = this._noteControls) {
+    const baselineMap = new Map(this._serverNoteControls.map((control) => [control.noteKey, control]))
+    const changedRanges = controls
+      .filter((control) => !areControlsEquivalent(control, baselineMap.get(control.noteKey)))
+      .map((control) => ({
+        startTick: control.startTick,
+        endTick: control.endTick,
+      }))
+
+    if (changedRanges.length === 0) return []
+
+    const affected = []
+    for (const phrase of phraseStore.getPhrases()) {
+      const phraseStartTick = this.getTickForTime(phrase.startTime)
+      const phraseEndTick = this.getTickForTime(phrase.endTime)
+      if (changedRanges.some((range) => range.endTick >= phraseStartTick && range.startTick <= phraseEndTick)) {
+        affected.push(phrase.index)
+      }
+    }
+    return [...new Set(affected)].sort((left, right) => left - right)
+  }
+
+  _buildRenderVersion(payload) {
+    let hash = 2166136261
+    for (const point of payload) {
+      hash ^= Number.isFinite(point?.tick) ? Math.round(point.tick) : 0
+      hash = Math.imul(hash, 16777619)
+      hash ^= Number.isFinite(point?.cent) ? Math.round(point.cent) : 0
+      hash = Math.imul(hash, 16777619)
+    }
+    return `${payload.length.toString(36)}-${(hash >>> 0).toString(36)}`
+  }
+
+  _prioritizeDirtyPhrase() {
+    if (!audioEngine.isPlaying()) return
+    const phraseIndex = renderPriorityStrategy.getNextPriority(audioEngine.getSongTime())
+    if (!Number.isInteger(phraseIndex)) return
+    renderScheduler.prioritize(phraseIndex)
   }
 
   _findPointRef(pointId, controls = this._noteControls) {

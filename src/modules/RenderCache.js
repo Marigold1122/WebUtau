@@ -10,6 +10,51 @@ class RenderCache {
     return this.cache.get(phraseIndex) || null
   }
 
+  capture(indices) {
+    if (!Array.isArray(indices) || indices.length === 0) return []
+    return [...new Set(indices)]
+      .filter((phraseIndex) => Number.isInteger(phraseIndex) && phraseIndex >= 0)
+      .map((phraseIndex) => {
+        const entry = this.cache.get(phraseIndex)
+        return {
+          phraseIndex,
+          existed: entry != null,
+          entry: entry
+            ? {
+              audioBuffer: entry.audioBuffer,
+              inputHash: entry.inputHash,
+              status: entry.status,
+              startMs: entry.startMs ?? null,
+              durationMs: entry.durationMs ?? null,
+            }
+            : null,
+        }
+      })
+  }
+
+  restore(snapshot) {
+    if (!Array.isArray(snapshot) || snapshot.length === 0) return
+    for (const item of snapshot) {
+      if (!Number.isInteger(item?.phraseIndex)) continue
+      if (!item.existed || !item.entry) {
+        this.cache.delete(item.phraseIndex)
+        eventBus.emit(EVENTS.CACHE_INVALIDATED, { phraseIndex: item.phraseIndex })
+        continue
+      }
+      this.cache.set(item.phraseIndex, {
+        audioBuffer: item.entry.audioBuffer,
+        inputHash: item.entry.inputHash,
+        status: item.entry.status,
+        startMs: item.entry.startMs,
+        durationMs: item.entry.durationMs,
+      })
+      eventBus.emit(
+        item.entry.status === PHRASE_STATUS.AVAILABLE ? EVENTS.CACHE_UPDATED : EVENTS.CACHE_INVALIDATED,
+        { phraseIndex: item.phraseIndex },
+      )
+    }
+  }
+
   set(phraseIndex, audioBuffer, inputHash, timeInfo = null) {
     this.cache.set(phraseIndex, {
       audioBuffer,
