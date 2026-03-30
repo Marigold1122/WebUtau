@@ -53,7 +53,7 @@ class PianoRoll {
     notes.init(this.noteCanvas)
     this._listenEvents()
     window.addEventListener('resize', () => this._resize())
-    this.canvasWrapper.addEventListener('wheel', (event) => this._onWheel(event))
+    this.canvasWrapper.addEventListener('wheel', (event) => this._onWheel(event), { passive: false })
     this.timeRulerCanvas.addEventListener('click', (event) => this._onTimeRulerClick(event))
     inputController.bindTo(this.canvasWrapper, this.noteCanvas)
     grid.draw()
@@ -277,11 +277,31 @@ class PianoRoll {
       }
       return
     }
-    if (event.shiftKey) viewport.scrollByY(event.deltaY)
-    else viewport.scrollByX(event.deltaY)
+    const { horizontalDelta, verticalDelta } = this._resolveWheelScrollDeltas(event)
+    if (event.shiftKey) {
+      if (!verticalDelta) return
+      viewport.scrollByY(verticalDelta)
+    } else {
+      if (!horizontalDelta) return
+      viewport.scrollByX(horizontalDelta)
+    }
     grid.draw()
     notes.draw()
     playheadController.setPosition(playheadController.getPosition())
+  }
+
+  _resolveWheelScrollDeltas(event) {
+    const absX = Math.abs(event.deltaX)
+    const absY = Math.abs(event.deltaY)
+
+    // Some browsers on macOS rewrite Shift+wheel into horizontal deltas.
+    // Preserve the app shortcut semantics: Shift means vertical piano-roll scroll.
+    const horizontalDelta = absX > absY ? event.deltaX : event.deltaY
+    const verticalDelta = absY >= absX
+      ? event.deltaY
+      : event.deltaX
+
+    return { horizontalDelta, verticalDelta }
   }
 
   _onTimeRulerClick(event) {
