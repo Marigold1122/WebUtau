@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Text;
 using DiffSingerApi.Models;
 using NAudio.Wave;
@@ -333,6 +334,110 @@ public class SynthesisService : IHostedService {
         return (allPhrases, renderer!);
     }
 
+    private static void EnterInteractivePreparationPhase(SynthesisJob job, string progress) {
+        job.Status = "preparing";
+        job.Progress = progress;
+    }
+
+    private static void RestoreInteractivePhaseState(SynthesisJob job, string previousStatus, string? previousProgress) {
+        job.Status = previousStatus;
+        job.Progress = previousProgress;
+    }
+
+    private static void TransitionToBackgroundRenderPhase(SynthesisJob job, int affectedCount, int totalPhrases) {
+        job.Status = "rendering";
+        job.Progress = affectedCount > 0
+            ? $"Rendering affected phrases (0/{affectedCount})..."
+            : (totalPhrases > 0 ? $"Rendering phrase 0/{totalPhrases}..." : "Rendering...");
+    }
+
+    private static bool PauseRenderLoopAndAwaitQuietPhrase(SynthesisJob job, string waitProgress, int timeoutMs = 15000) {
+        job.RenderGate.Reset();
+        var currentPhraseCts = job.CurrentPhraseCts;
+        if (currentPhraseCts == null) {
+            return true;
+        }
+
+        job.Progress = waitProgress;
+        var stopwatch = Stopwatch.StartNew();
+        currentPhraseCts.Cancel();
+        bool quiet = job.CurrentPhraseQuietGate.Wait(TimeSpan.FromMilliseconds(timeoutMs));
+        stopwatch.Stop();
+
+        if (quiet) {
+            Log.Information("Job {JobId}: active phrase render yielded in {ElapsedMs}ms.", job.JobId, stopwatch.ElapsedMilliseconds);
+        } else {
+            Log.Warning("Job {JobId}: active phrase render did not yield within {TimeoutMs}ms; continuing with edit preparation.", job.JobId, timeoutMs);
+        }
+        return quiet;
+    }
+
+    private sealed record PhraseSnapshot(
+        int Index,
+        ulong Hash,
+        int Position,
+        int End);
+
+    private static List<PhraseSnapshot> CapturePhraseSnapshots(IReadOnlyList<RenderPhrase>? phrases) {
+        if (phrases == null || phrases.Count == 0) {
+            return new List<PhraseSnapshot>();
+        }
+        return phrases
+            .Select((phrase, index) => new PhraseSnapshot(
+                index,
+                phrase.hash,
+                phrase.position,
+                phrase.end))
+            .ToList();
+    }
+
+    private static Dictionary<int, int> MatchReusableOldPhrases(
+        IReadOnlyList<PhraseSnapshot> oldPhrases,
+        IReadOnlyList<RenderPhrase> newPhrases) {
+        if (oldPhrases.Count == 0 || newPhrases.Count == 0) {
+            return new Dictionary<int, int>();
+        }
+
+        var oldQueuesByHash = oldPhrases
+            .OrderBy(snapshot => snapshot.Position)
+            .ThenBy(snapshot => snapshot.End)
+            .ThenBy(snapshot => snapshot.Index)
+            .GroupBy(snapshot => snapshot.Hash)
+            .ToDictionary(
+                group => group.Key,
+                group => new Queue<PhraseSnapshot>(group));
+
+        var matches = new Dictionary<int, int>();
+        var newPhraseOrder = Enumerable.Range(0, newPhrases.Count)
+            .OrderBy(index => newPhrases[index].position)
+            .ThenBy(index => newPhrases[index].end)
+            .ThenBy(index => index);
+
+        foreach (int newIndex in newPhraseOrder) {
+            ulong hash = newPhrases[newIndex].hash;
+            if (!oldQueuesByHash.TryGetValue(hash, out var queue) || queue.Count == 0) {
+                continue;
+            }
+            matches[newIndex] = queue.Dequeue().Index;
+        }
+
+        return matches;
+    }
+
+    private string GetPhraseOutputPath(string jobId, int phraseIndex) {
+        return Path.Combine(_outputDir, $"{jobId}_p{phraseIndex}.wav");
+    }
+
+    private string PromotePhraseAudioForReuse(string jobId, int oldIndex, int newIndex) {
+        string oldPath = GetPhraseOutputPath(jobId, oldIndex);
+        string newPath = GetPhraseOutputPath(jobId, newIndex);
+        if (oldIndex == newIndex) {
+            return newPath;
+        }
+        File.Copy(oldPath, newPath, overwrite: true);
+        return newPath;
+    }
+
     /// <summary>
     /// 阶段 2: 逐短语渲染，支持优先级调度
     /// 渲染顺序：优先渲染 PriorityPhraseIndex 开始的连续短语，然后回头补未渲染的
@@ -365,14 +470,29 @@ public class SynthesisService : IHostedService {
 
             // 为这个 phrase 创建独立的 CTS，edit 可以 Cancel 它来中断
             var phraseCts = new CancellationTokenSource();
+            job.CurrentPhraseQuietGate.Reset();
             job.CurrentPhraseCts = phraseCts;
 
             try {
                 var phrase = currentPhrases[nextIndex];
                 var progress = new Progress(total);
-                var task = renderer.Render(phrase, progress, 0, phraseCts, true);
-                task.Wait();
-                var result = task.Result;
+                RenderResult result;
+                try {
+                    var task = renderer.Render(phrase, progress, 0, phraseCts, true);
+                    result = task.GetAwaiter().GetResult();
+                } finally {
+                    job.CurrentPhraseQuietGate.Set();
+                    if (job.CurrentPhraseCts == phraseCts) {
+                        job.CurrentPhraseCts = null;
+                    }
+                }
+
+                if (phraseCts.IsCancellationRequested) {
+                    throw new OperationCanceledException("Phrase render cancelled by edit.", phraseCts.Token);
+                }
+                if (result?.samples == null) {
+                    throw new InvalidOperationException("Renderer returned no samples.");
+                }
 
                 var phrasePath = Path.Combine(_outputDir, $"{job.JobId}_p{nextIndex}.wav");
                 WriteSamplesToWav(phrasePath, result.samples, 44100);
@@ -409,8 +529,10 @@ public class SynthesisService : IHostedService {
                     }
                 }
             } finally {
-                if (job.CurrentPhraseCts == phraseCts)
+                job.CurrentPhraseQuietGate.Set();
+                if (job.CurrentPhraseCts == phraseCts) {
                     job.CurrentPhraseCts = null;
+                }
             }
         }
     }
@@ -672,9 +794,11 @@ public class SynthesisService : IHostedService {
             return;
         }
 
-        // 暂停渲染循环 + 中断当前 phrase
-        job.RenderGate.Reset();
-        job.CurrentPhraseCts?.Cancel();
+        string previousStatus = job.Status;
+        string? previousProgress = job.Progress;
+        bool phaseStateResolved = false;
+        EnterInteractivePreparationPhase(job, "Waiting for current render to yield...");
+        PauseRenderLoopAndAwaitQuietPhrase(job, "Waiting for current render to yield...");
 
         try {
             var project = job.Project;
@@ -704,6 +828,7 @@ public class SynthesisService : IHostedService {
             }
 
             // 重新 Validate 让 pitches 数组更新
+            job.Progress = "Refreshing pitch curves...";
             project.Validate(new ValidateOptions { SkipPhonemizer = true });
 
             // 重新获取 allPhrases（Validate 后可能重建）
@@ -727,6 +852,8 @@ public class SynthesisService : IHostedService {
             }
 
             if (affectedIndices.Count == 0) {
+                RestoreInteractivePhaseState(job, previousStatus, previousProgress);
+                phaseStateResolved = true;
                 return;
             }
             affectedOut = affectedIndices;
@@ -742,9 +869,12 @@ public class SynthesisService : IHostedService {
                 job.PriorityPhraseIndex = affectedIndices.Min();
             }
 
+            bool shouldStartDetachedRender = previousStatus == "completed" || previousStatus == "ready";
+            TransitionToBackgroundRenderPhase(job, affectedIndices.Count, allPhrases.Count);
+            phaseStateResolved = true;
+
             // 如果初次渲染已结束，启动新的渲染循环
-            if (job.Status == "completed" || job.Status == "ready") {
-                job.Status = "rendering";
+            if (shouldStartDetachedRender) {
                 var currentPhrases = allPhrases;
                 var currentRenderer = job.Renderer;
                 Task.Run(() => {
@@ -760,6 +890,7 @@ public class SynthesisService : IHostedService {
                                     Log.Warning("Job {JobId}: full WAV merge after pitch edit failed: {Error}", job.JobId, ex.Message);
                                 }
                                 job.Status = "completed";
+                                job.Progress = null;
                             }
                         }
                     } catch (Exception ex) {
@@ -769,6 +900,9 @@ public class SynthesisService : IHostedService {
             }
 
         } finally {
+            if (!phaseStateResolved) {
+                RestoreInteractivePhaseState(job, previousStatus, previousProgress);
+            }
             job.RenderGate.Set();
         }
     }
@@ -794,11 +928,11 @@ public class SynthesisService : IHostedService {
             return;
         }
 
-        // === 第一步：立即暂停渲染循环 + 中断当前 phrase ===
-        // 关门：渲染循环下一轮会阻塞在 RenderGate.Wait()
-        job.RenderGate.Reset();
-        // 中断当前正在渲染的 phrase
-        job.CurrentPhraseCts?.Cancel();
+        string previousStatus = job.Status;
+        string? previousProgress = job.Progress;
+        bool phaseStateResolved = false;
+        EnterInteractivePreparationPhase(job, "Waiting for current render to yield...");
+        PauseRenderLoopAndAwaitQuietPhrase(job, "Waiting for current render to yield...");
         Log.Information("[edit-notes] paused render loop and interrupted current phrase.");
 
         try {  // finally 里开门，确保异常时也恢复
@@ -809,13 +943,8 @@ public class SynthesisService : IHostedService {
         var originalPhraseCount = job.AllPhrases?.Count ?? 0;
         var originalLyricsByNote = new Dictionary<UNote, string>();
 
-        // 记住旧 phrase 的 hash 以便后面比较哪些受影响
-        var oldPhraseHashes = new Dictionary<int, ulong>();
-        if (job.AllPhrases != null) {
-            for (int i = 0; i < job.AllPhrases.Count; i++) {
-                oldPhraseHashes[i] = job.AllPhrases[i].hash;
-            }
-        }
+        // 记住旧 phrase 的稳定快照，后面按 hash + 顺序重配对，避免分句重排时整轨误判为受影响
+        var oldPhraseSnapshots = CapturePhraseSnapshots(job.AllPhrases);
 
         // 对每个 part 应用编辑
         foreach (var part in voiceParts) {
@@ -907,6 +1036,7 @@ public class SynthesisService : IHostedService {
 
         // 重新音素化 + 重建 renderPhrases
         Log.Information("Job {JobId}: ValidateFull after note edits...", job.JobId);
+        job.Progress = "Phonemizing...";
         project.ValidateFull();
 
         // 等待音素化完成
@@ -917,7 +1047,7 @@ public class SynthesisService : IHostedService {
         var allPhrases = CollectAllPhrases(voiceParts);
 
         Log.Information("[edit-notes] after ValidateFull: old phrases={Old}, new phrases={New}",
-            oldPhraseHashes.Count, allPhrases.Count);
+            oldPhraseSnapshots.Count, allPhrases.Count);
         // 列出新的 notes 状态
         foreach (var part in voiceParts) {
             Log.Information("[edit-notes] part notes after edit:");
@@ -941,88 +1071,92 @@ public class SynthesisService : IHostedService {
             }).ToList();
         }
 
-        // 找出受影响的短语：hash 变了 或 是新增的
-        var affectedIndices = new List<int>();
-        // 单独记录真正因编辑而受影响的 indices（返回给前端）
-        var editAffectedIndices = new List<int>();
+        var reusableOldPhraseByNewIndex = MatchReusableOldPhrases(oldPhraseSnapshots, allPhrases);
+        var editAffectedIndices = new HashSet<int>();
         for (int i = 0; i < allPhrases.Count; i++) {
-            if (!oldPhraseHashes.TryGetValue(i, out var oldHash) || oldHash != allPhrases[i].hash) {
-                affectedIndices.Add(i);
-                editAffectedIndices.Add(i);
-                Log.Information("[edit-notes] phrase {Idx} AFFECTED: oldHash={Old} newHash={New}",
-                    i, oldPhraseHashes.ContainsKey(i) ? oldPhraseHashes[i].ToString() : "N/A", allPhrases[i].hash);
+            if (reusableOldPhraseByNewIndex.ContainsKey(i)) {
+                continue;
             }
+            editAffectedIndices.Add(i);
+            Log.Information("[edit-notes] phrase {Idx} AFFECTED: no reusable old phrase for hash={Hash}.",
+                i, allPhrases[i].hash);
         }
 
-        if (affectedIndices.Count == 0) {
-            // hash 全部一样说明编辑没有实质影响（比如移动到原位），
-            // 但仍然更新 pitch curve
-            Log.Information("[edit-notes] NO affected phrases (all hashes match), returning early.");
-            // 恢复 RenderedSet 中所有已完成的 phrase
-            lock (job.RenderLock) {
-                for (int i = 0; i < allPhrases.Count; i++) {
-                    var oldPath = Path.Combine(_outputDir, $"{job.JobId}_p{i}.wav");
-                    if (File.Exists(oldPath)) {
-                        job.Phrases[i].OutputPath = oldPath;
-                        job.Phrases[i].Status = "completed";
-                        job.RenderedSet.Add(i);
+        // 重新基于新 index 构建 RenderedSet / Phrases 状态。
+        // 不能继续沿用旧 index，否则 phrase 重排后会出现整轨误判和状态错乱。
+        var renderAffectedIndices = new HashSet<int>(editAffectedIndices);
+        lock (job.RenderLock) {
+            job.RenderedSet.Clear();
+
+            for (int i = 0; i < allPhrases.Count; i++) {
+                var phraseJob = job.Phrases[i];
+                phraseJob.OutputPath = null;
+                phraseJob.Error = null;
+                phraseJob.Status = "pending";
+
+                if (!reusableOldPhraseByNewIndex.TryGetValue(i, out int oldIndex)) {
+                    continue;
+                }
+
+                string oldPath = GetPhraseOutputPath(job.JobId, oldIndex);
+                if (!File.Exists(oldPath)) {
+                    if (renderAffectedIndices.Add(i)) {
+                        Log.Information("[edit-notes] phrase {Idx} matched old phrase {OldIdx} but had no cached wav, re-queuing audio render.", i, oldIndex);
                     }
+                    continue;
+                }
+
+                string reusablePath = PromotePhraseAudioForReuse(job.JobId, oldIndex, i);
+                phraseJob.OutputPath = reusablePath;
+                phraseJob.Status = "completed";
+                job.RenderedSet.Add(i);
+            }
+
+            job.PriorityPhraseIndex = renderAffectedIndices.Count > 0
+                ? renderAffectedIndices.Min()
+                : -1;
+        }
+
+        var affectedIndices = renderAffectedIndices.OrderBy(index => index).ToList();
+        var pitchPredictionIndices = editAffectedIndices.OrderBy(index => index).ToList();
+
+        if (affectedIndices.Count == 0) {
+            Log.Information("[edit-notes] no phrases require rerender after reuse matching, returning early.");
+            ExtractPitchCurve(job, voiceParts);
+            if (previousStatus == "completed" || previousStatus == "ready") {
+                try {
+                    var fullOutputPath = Path.Combine(_outputDir, $"{job.JobId}.wav");
+                    MergePhrasesToWav(job, fullOutputPath, 44100);
+                    job.OutputPath = fullOutputPath;
+                } catch (Exception ex) {
+                    Log.Warning("Job {JobId}: full WAV merge after reusable note edit failed: {Error}", job.JobId, ex.Message);
                 }
             }
-            ExtractPitchCurve(job, voiceParts);
-            affectedOut = affectedIndices;
+            RestoreInteractivePhaseState(job, previousStatus, previousProgress);
+            phaseStateResolved = true;
+            affectedOut = pitchPredictionIndices;
             return;
         }
 
-        Log.Information("[edit-notes] {Count} affected phrases: [{Indices}]",
-            affectedIndices.Count, string.Join(", ", affectedIndices));
-
-        // 恢复未受影响的 phrase（已有 wav 的标记为 completed，加入 RenderedSet）
-        // 受影响的 phrase 从 RenderedSet 中移除，让 RenderPhrases 循环重新渲染
-        lock (job.RenderLock) {
-            // 先清理 RenderedSet 中超出新 phrase 列表范围的旧 index
-            job.RenderedSet.RemoveWhere(i => i >= allPhrases.Count);
-
-            var affSet = new HashSet<int>(affectedIndices);
-            for (int i = 0; i < allPhrases.Count; i++) {
-                if (affSet.Contains(i)) {
-                    // 受影响：从 RenderedSet 移除，让渲染循环重新处理
-                    job.RenderedSet.Remove(i);
-                } else if (oldPhraseHashes.ContainsKey(i)) {
-                    var oldPath = Path.Combine(_outputDir, $"{job.JobId}_p{i}.wav");
-                    if (File.Exists(oldPath)) {
-                        job.Phrases[i].OutputPath = oldPath;
-                        job.Phrases[i].Status = "completed";
-                        job.RenderedSet.Add(i);
-                    } else {
-                        // 没有 wav（之前还在渲染中），也需要重渲染
-                        job.RenderedSet.Remove(i);
-                        if (!affSet.Contains(i)) {
-                            affectedIndices.Add(i);
-                            Log.Information("[edit-notes] phrase {Idx} was mid-render (no wav), re-queuing.", i);
-                        }
-                    }
-                }
-                // 新增的 phrase（不在 oldPhraseHashes 中）保持 pending + 不在 RenderedSet 中
-            }
-
-            // 设置优先级：优先渲染受影响的第一个 phrase
-            if (affectedIndices.Count > 0) {
-                job.PriorityPhraseIndex = affectedIndices.Min();
-            }
-        }
+        Log.Information("[edit-notes] {RenderCount} phrases queued for audio rerender: [{RenderIndices}]; {PitchCount} phrases need fresh pitch prediction: [{PitchIndices}]",
+            affectedIndices.Count,
+            string.Join(", ", affectedIndices),
+            pitchPredictionIndices.Count,
+            string.Join(", ", pitchPredictionIndices));
 
         // 对受影响的 phrase 重新音高预测
         var renderer = job.Renderer;
-        if (renderer.SupportsRenderPitch) {
+        if (renderer.SupportsRenderPitch && pitchPredictionIndices.Count > 0) {
             float minPitD = -1200;
             if (project.expressions.TryGetValue(Ustx.PITD, out var pitdDescriptor))
                 minPitD = pitdDescriptor.min;
 
-            foreach (int idx in affectedIndices) {
+            for (int affectedIndex = 0; affectedIndex < pitchPredictionIndices.Count; affectedIndex++) {
+                int idx = pitchPredictionIndices[affectedIndex];
                 try {
                     if (idx >= allPhrases.Count) continue;
                     var phrase = allPhrases[idx];
+                    job.Progress = $"Predicting pitch ({affectedIndex + 1}/{pitchPredictionIndices.Count})...";
 
                     // 跳过 pitches 数组为空的短语（新分割出的短语可能尚未填充）
                     if (phrase.pitches == null || phrase.pitches.Length == 0 ||
@@ -1091,16 +1225,18 @@ public class SynthesisService : IHostedService {
         // 更新 pitch curve
         ExtractPitchCurve(job, voiceParts);
         // 只返回真正因编辑而受影响的 indices 给前端（不包含孤儿 phrase）
-        affectedOut = editAffectedIndices;
+        affectedOut = pitchPredictionIndices;
+        bool shouldStartDetachedRender = previousStatus == "completed" || previousStatus == "ready";
+        TransitionToBackgroundRenderPhase(job, affectedIndices.Count, allPhrases.Count);
+        phaseStateResolved = true;
 
         // 不再自己 Task.Run 渲染——通过上面的 RenderedSet.Remove，
         // 正在运行的 RenderPhrases 循环会自动拾起这些 phrase 并按优先级渲染。
         // 如果初次渲染已完成（job.Status == "completed"），需要将 job 状态
         // 改回 "rendering" 让 RenderPhrases 重新进入循环。
-        if (job.Status == "completed" || job.Status == "ready") {
+        if (shouldStartDetachedRender) {
             // 初次渲染已结束，RenderPhrases 循环已退出。
             // 需要启动一个新的渲染循环来处理受影响的 phrase。
-            job.Status = "rendering";
             var currentPhrases = allPhrases;
             var currentRenderer = job.Renderer;
             Task.Run(() => {
@@ -1118,6 +1254,7 @@ public class SynthesisService : IHostedService {
                                 Log.Warning("Job {JobId}: full WAV merge after edit failed: {Error}", job.JobId, ex.Message);
                             }
                             job.Status = "completed";
+                            job.Progress = null;
                         }
                     }
                 } catch (Exception ex) {
@@ -1130,6 +1267,9 @@ public class SynthesisService : IHostedService {
             job.JobId, affectedIndices.Count, allPhrases.Count);
 
         } finally {
+            if (!phaseStateResolved) {
+                RestoreInteractivePhaseState(job, previousStatus, previousProgress);
+            }
             // === 开门：恢复渲染循环 ===
             job.RenderGate.Set();
             Log.Information("[edit-notes] render loop resumed.");

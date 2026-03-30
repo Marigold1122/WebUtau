@@ -56,6 +56,12 @@ public class SynthesisJob {
     [System.Text.Json.Serialization.JsonIgnore]
     public CancellationTokenSource? CurrentPhraseCts;
     /// <summary>
+    /// 当前 phrase 渲染是否已经退出模型推理关键区。
+    /// note-edit / pitch-edit 会等待它重新打开，再进入音高刷新阶段，避免与旧渲染争抢资源。
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public ManualResetEventSlim CurrentPhraseQuietGate { get; } = new(true);
+    /// <summary>
     /// 渲染循环暂停门。edit 时 Reset() 关门暂停循环，处理完 Set() 开门恢复。
     /// </summary>
     [System.Text.Json.Serialization.JsonIgnore]
