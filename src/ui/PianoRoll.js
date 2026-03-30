@@ -42,6 +42,7 @@ class PianoRoll {
     this.noteCanvas.className = 'piano-roll-notes'
     this.canvasWrapper = document.createElement('div')
     this.canvasWrapper.className = 'piano-roll-canvas-wrapper'
+    this.canvasWrapper.tabIndex = -1
     this.container.replaceChildren()
     this.canvasWrapper.append(this.timeRulerCanvas, this.gridCanvas, this.noteCanvas)
     if (playheadElement) this.canvasWrapper.appendChild(playheadElement)
@@ -77,20 +78,24 @@ class PianoRoll {
     this.btnLyricMode.type = 'button'
     this.btnLyricMode.className = 'piano-roll-editor-btn'
     this.btnLyricMode.textContent = '歌词'
+    this._wireToolbarButton(this.btnLyricMode)
     this.btnLyricMode.addEventListener('click', () => {
       pitchEditor.setMode(PITCH_EDITOR_MODE.LYRIC)
       this._updateEditorToolbar()
       notes.requestDraw()
+      this._restoreEditorFocus()
     })
 
     this.btnPitchMode = document.createElement('button')
     this.btnPitchMode.type = 'button'
     this.btnPitchMode.className = 'piano-roll-editor-btn'
     this.btnPitchMode.textContent = '音高'
+    this._wireToolbarButton(this.btnPitchMode)
     this.btnPitchMode.addEventListener('click', () => {
       if (!pitchEditor.setMode(PITCH_EDITOR_MODE.PITCH)) return
       this._updateEditorToolbar()
       notes.requestDraw()
+      this._restoreEditorFocus()
     })
 
     modeGroup.append(this.btnLyricMode, this.btnPitchMode)
@@ -107,11 +112,14 @@ class PianoRoll {
       button.type = 'button'
       button.className = 'piano-roll-editor-btn piano-roll-editor-btn--compact'
       button.textContent = label
+      this._wireToolbarButton(button)
       button.addEventListener('click', async () => {
         try {
           await pitchEditor.setSelectedSegmentShape(shape)
         } catch (error) {
           console.error('[PianoRoll] 设置音高段形失败:', error)
+        } finally {
+          this._restoreEditorFocus()
         }
       })
       this.shapeButtons.set(shape, button)
@@ -129,11 +137,14 @@ class PianoRoll {
       button.type = 'button'
       button.className = 'piano-roll-editor-btn piano-roll-editor-btn--compact'
       button.textContent = label
+      this._wireToolbarButton(button)
       button.addEventListener('click', async () => {
         try {
           await pitchEditor.setBoundaryModeForNoteEntries(noteSelection.getSelected(), mode)
         } catch (error) {
           console.error('[PianoRoll] 设置起始连接失败:', error)
+        } finally {
+          this._restoreEditorFocus()
         }
       })
       this.boundaryButtons.set(mode, button)
@@ -144,6 +155,7 @@ class PianoRoll {
     this.btnResetPitchSelection.type = 'button'
     this.btnResetPitchSelection.className = 'piano-roll-editor-btn piano-roll-editor-btn--secondary'
     this.btnResetPitchSelection.textContent = '恢复所选'
+    this._wireToolbarButton(this.btnResetPitchSelection)
     this.btnResetPitchSelection.addEventListener('click', async () => {
       const range = pitchEditor.getTickRangeForNoteEntries(noteSelection.getSelected())
       if (!range) return
@@ -151,6 +163,8 @@ class PianoRoll {
         await pitchEditor.restoreRange(range.startTick, range.endTick)
       } catch (error) {
         console.error('[PianoRoll] 恢复所选音高失败:', error)
+      } finally {
+        this._restoreEditorFocus()
       }
     })
 
@@ -158,11 +172,14 @@ class PianoRoll {
     this.btnResetPitchAll.type = 'button'
     this.btnResetPitchAll.className = 'piano-roll-editor-btn piano-roll-editor-btn--secondary'
     this.btnResetPitchAll.textContent = '恢复全部'
+    this._wireToolbarButton(this.btnResetPitchAll)
     this.btnResetPitchAll.addEventListener('click', async () => {
       try {
         await pitchEditor.restoreAll()
       } catch (error) {
         console.error('[PianoRoll] 恢复全部音高失败:', error)
+      } finally {
+        this._restoreEditorFocus()
       }
     })
 
@@ -302,6 +319,17 @@ class PianoRoll {
       : event.deltaX
 
     return { horizontalDelta, verticalDelta }
+  }
+
+  _wireToolbarButton(button) {
+    if (!button) return
+    button.tabIndex = -1
+    button.addEventListener('mousedown', (event) => event.preventDefault())
+    button.addEventListener('pointerdown', (event) => event.preventDefault())
+  }
+
+  _restoreEditorFocus() {
+    this.canvasWrapper?.focus?.({ preventScroll: true })
   }
 
   _onTimeRulerClick(event) {

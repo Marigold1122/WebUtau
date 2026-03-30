@@ -1,6 +1,7 @@
 import eventBus from '../core/EventBus.js'
 import { EVENTS } from '../config/constants.js'
 import audioEngine from './AudioEngine.js'
+import { isKeyboardShortcutTargetEditable } from '../shared/isKeyboardShortcutTargetEditable.js'
 
 const M = '[播放控制]'
 
@@ -13,6 +14,7 @@ class TransportControl {
     document.addEventListener('keydown', (event) => {
       if (event.code !== 'Space') return
       if (!this.localInputEnabled) return
+      if (isKeyboardShortcutTargetEditable(event.target)) return
       event.preventDefault()
       this.togglePlayback('用户')
     })

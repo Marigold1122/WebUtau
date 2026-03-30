@@ -13,6 +13,5 @@ export function isKeyboardShortcutTargetEditable(target) {
     || tagName === 'TEXTAREA'
     || tagName === 'SELECT'
     || tagName === 'OPTION'
-    || tagName === 'BUTTON'
   )
 }
