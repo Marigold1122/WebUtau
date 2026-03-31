@@ -52,6 +52,11 @@ export class VoiceBridgeController {
     this._postMessage(VOICE_BRIDGE_COMMANDS.SET_EDITOR_MODE, { mode })
   }
 
+  async setPlayheadFollowMode(mode) {
+    await this.waitUntilReady()
+    this._postMessage(VOICE_BRIDGE_COMMANDS.SET_PLAYHEAD_FOLLOW_MODE, { mode })
+  }
+
   async togglePlayback() {
     await this.waitUntilReady()
     this._postMessage(VOICE_BRIDGE_COMMANDS.TOGGLE_PLAYBACK, {})

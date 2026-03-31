@@ -1,4 +1,5 @@
 import { getLanguageLabel } from '../../config/languageOptions.js'
+import { PLAYHEAD_FOLLOW_MODE_LABELS, PLAYHEAD_FOLLOW_MODES, normalizePlayheadFollowMode } from '../../shared/playheadFollowMode.js'
 import { InspectorVoiceConversionSection } from './InspectorVoiceConversionSection.js'
 import { MenubarTransportView } from './MenubarTransportView.js'
 import { PlaybackToastView } from './PlaybackToastView.js'
@@ -64,6 +65,10 @@ export class ShellLayoutView {
     this.fileMenu = this._createFileMenu()
     this.trackContextMenu = this._createTrackContextMenu()
     this.trackContextTrackId = null
+    this.playbackActive = false
+    this.playheadFollowMode = normalizePlayheadFollowMode(null)
+    this.followModeControls = null
+    this.followModeButtons = new Map()
     this.editorModeControls = null
     this.btnEditorNoteMode = null
     this.btnEditorLyricMode = null
@@ -115,6 +120,7 @@ export class ShellLayoutView {
     if (this.refs.voiceRuntimeFrame) {
       this.refs.voiceRuntimeFrame.src = '/voice-runtime.html?embedded=1'
     }
+    this._mountMenubarFollowControls()
     this._mountEditorModeControls()
   }
 
@@ -158,6 +164,7 @@ export class ShellLayoutView {
     this.timelinePlayheadTime = Number.isFinite(time) ? Math.max(0, time) : 0
     this.timelinePlayheadView.setTime(this.timelinePlayheadTime)
     this.instrumentEditorView.setPlaybackTime(this.timelinePlayheadTime)
+    if (this.playbackActive) this._syncPlaybackFollow()
     const now = performance.now()
     if (this.logger?.debug && now - this.lastPlayheadTraceAtMs >= 200) {
       this.lastPlayheadTraceAtMs = now
@@ -168,8 +175,19 @@ export class ShellLayoutView {
   }
 
   setPlaybackActive(active) {
+    this.playbackActive = Boolean(active)
     this.menubarTransportView.setPlaybackActive(active)
-    this.instrumentEditorView.setPlaybackActive(Boolean(active))
+    this.instrumentEditorView.setPlaybackActive(this.playbackActive)
+    if (this.playbackActive) this._syncPlaybackFollow()
+  }
+
+  setPlayheadFollowMode(mode) {
+    this.playheadFollowMode = normalizePlayheadFollowMode(mode)
+    this.trackViewportController.setPlayheadFollowMode(this.playheadFollowMode)
+    this.instrumentEditorView.setPlayheadFollowMode(this.playheadFollowMode)
+    this._renderMenubarFollowControls()
+    if (this.playbackActive) this._syncPlaybackFollow()
+    return this.playheadFollowMode
   }
 
   setMidiInputDevices(inputs = [], selectedInputId = '', enabled = true) {
@@ -254,8 +272,47 @@ export class ShellLayoutView {
     this.refs.trackViewport?.addEventListener('contextmenu', (event) => this._handleTrackViewportContextMenu(event))
     this.refs.mainInspector?.addEventListener('transitionend', (event) => {
       if (event.propertyName !== 'width') return
+      this._syncPlaybackFollow()
       this.notifyRuntimeLayoutChanged()
     })
+  }
+
+  _mountMenubarFollowControls() {
+    const host = this.refs.menubarFollowTools
+    if (!host || this.followModeControls) return
+
+    const controls = document.createElement('div')
+    controls.className = 'menubar-follow-mode-group'
+
+    const label = document.createElement('span')
+    label.className = 'menubar-follow-label'
+    label.textContent = '滚动'
+    controls.appendChild(label)
+
+    for (const mode of [
+      PLAYHEAD_FOLLOW_MODES.FOLLOW,
+      PLAYHEAD_FOLLOW_MODES.PAGE,
+      PLAYHEAD_FOLLOW_MODES.PUSH,
+    ]) {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'menubar-follow-btn'
+      button.textContent = PLAYHEAD_FOLLOW_MODE_LABELS[mode]
+      button.title = `播放时使用${PLAYHEAD_FOLLOW_MODE_LABELS[mode]}滚动`
+      button.addEventListener('click', () => this.handlers.onPlayheadFollowModeSelected?.(mode))
+      this.followModeButtons.set(mode, button)
+      controls.appendChild(button)
+    }
+
+    this.followModeControls = controls
+    host.appendChild(controls)
+    this._renderMenubarFollowControls()
+  }
+
+  _renderMenubarFollowControls() {
+    for (const [mode, button] of this.followModeButtons.entries()) {
+      button.classList.toggle('active', this.playheadFollowMode === mode)
+    }
   }
 
   _mountEditorModeControls() {
@@ -328,6 +385,7 @@ export class ShellLayoutView {
   }
 
   _renderProjectMeta(project, selectedTrack, editorTrack, renderBadgeTrack, viewState) {
+    this.setPlayheadFollowMode(viewState?.playheadFollowMode)
     this.refs.projectFileName.textContent = project?.fileName || '—'
     this.refs.projectTrackCount.textContent = String(project?.tracks?.length || 0)
     this.refs.selectedTrackName.textContent = selectedTrack?.name || '—'
@@ -458,6 +516,7 @@ export class ShellLayoutView {
     })
     this.timelinePlayheadView.setAxis(timelineMetrics?.axis || null)
     this.timelinePlayheadView.setTime(this.timelinePlayheadTime)
+    if (this.playbackActive) this._syncPlaybackFollow()
   }
 
   _syncEditorSurface(project, editorTrack, viewState = {}) {
@@ -506,6 +565,7 @@ export class ShellLayoutView {
   setInspectorCollapsed(collapsed) {
     this.refs.mainInspector?.classList.toggle('collapsed', Boolean(collapsed))
     this._updateInspectorToggleButton(Boolean(collapsed))
+    this._syncPlaybackFollow()
     this.notifyRuntimeLayoutChanged()
   }
 
@@ -517,6 +577,13 @@ export class ShellLayoutView {
     button.setAttribute('aria-pressed', String(!collapsed))
     button.title = collapsed ? '展开右侧面板' : '收起右侧面板'
     button.setAttribute('aria-label', button.title)
+  }
+
+  _syncPlaybackFollow() {
+    const axis = this.timelinePlayheadView.axis
+    if (!axis) return
+    const playheadX = axis.timeToX(this.timelinePlayheadTime)
+    this.trackViewportController.syncPlaybackFollow(playheadX)
   }
 
   _syncFileMenuState(project) {

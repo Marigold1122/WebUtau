@@ -1,4 +1,5 @@
 import { PIANO_ROLL } from '../../config/constants.js'
+import { computeFollowScrollLeft, normalizePlayheadFollowMode } from '../../shared/playheadFollowMode.js'
 import { createTimelineAxis } from '../../shared/timelineAxis.js'
 import { getTrackColorById } from './tracks/trackColorPalette.js'
 
@@ -173,6 +174,7 @@ export class InstrumentEditorView {
       key: '',
       marks: [],
     }
+    this.playheadFollowMode = normalizePlayheadFollowMode(null)
     this.state = {
       trackId: null,
       trackName: '',
@@ -302,7 +304,13 @@ export class InstrumentEditorView {
       axisChanged: shouldRebuildAxis,
       notesChanged: shouldHydrateNotes || isTrackChanged,
     })
-    if (isTrackChanged) this._scrollToTrackNotes()
+    if (isTrackChanged) {
+      if (this.state.playbackActive) {
+        this._syncPlaybackFollow()
+      } else {
+        this._scrollToTrackNotes()
+      }
+    }
     requestAnimationFrame(() => this._syncAxisExtentToViewport())
   }
 
@@ -340,6 +348,7 @@ export class InstrumentEditorView {
   setPlaybackTime(time) {
     this.state.currentTime = clampNonNegative(time)
     this._renderPlayhead()
+    if (this.state.playbackActive) this._syncPlaybackFollow()
   }
 
   setRecording(active) {
@@ -350,6 +359,13 @@ export class InstrumentEditorView {
   setPlaybackActive(active) {
     this.state.playbackActive = Boolean(active)
     this._renderControls()
+    if (this.state.playbackActive) this._syncPlaybackFollow()
+  }
+
+  setPlayheadFollowMode(mode) {
+    this.playheadFollowMode = normalizePlayheadFollowMode(mode)
+    if (this.state.playbackActive) this._syncPlaybackFollow()
+    return this.playheadFollowMode
   }
 
   setTool(tool) {
@@ -778,6 +794,25 @@ export class InstrumentEditorView {
     if (this.playheadRenderedX != null && Math.abs(this.playheadRenderedX - x) < 0.01) return
     this.playheadRenderedX = x
     this.refs.playhead.style.transform = `translateX(${x}px)`
+  }
+
+  _syncPlaybackFollow() {
+    const viewport = this.refs.gridViewport
+    if (!viewport || !this.state.axis) return false
+    const playheadX = this.state.axis.timeToX(this.state.currentTime)
+    const nextScrollLeft = computeFollowScrollLeft({
+      mode: this.playheadFollowMode,
+      currentScrollLeft: viewport.scrollLeft,
+      playheadX,
+      viewportWidth: viewport.clientWidth || 0,
+      contentWidth: this.state.axis.timelineWidth,
+      padding: 40,
+    })
+    if (Math.abs(nextScrollLeft - viewport.scrollLeft) < 0.5) return false
+    viewport.scrollLeft = nextScrollLeft
+    this._syncScroll()
+    this._scheduleViewportRender()
+    return true
   }
 
   _scrollToTrackNotes() {

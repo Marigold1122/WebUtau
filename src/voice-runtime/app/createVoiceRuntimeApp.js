@@ -232,6 +232,10 @@ export function createVoiceRuntimeApp(callbacks = {}) {
     pianoRoll.setEditorMode?.(mode)
   }
 
+  function setPlayheadFollowMode(mode) {
+    pianoRoll.setPlayheadFollowMode?.(mode)
+  }
+
   function resetRuntime() {
     const previousTrackId = state.trackId
     resetRuntimeState()
@@ -318,6 +322,7 @@ export function createVoiceRuntimeApp(callbacks = {}) {
     applyNoteEdits,
     seekTo,
     setEditorMode,
+    setPlayheadFollowMode,
     syncHostPlaybackState,
     syncHostPlaybackTick,
     togglePlayback,

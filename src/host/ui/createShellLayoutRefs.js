@@ -12,6 +12,7 @@ export function createShellLayoutRefs() {
     btnTopStop: document.getElementById('btn-top-stop'),
     btnTopRecord: document.getElementById('btn-top-record'),
     btnTopNext: document.getElementById('btn-top-next'),
+    menubarFollowTools: document.getElementById('menubar-follow-tools'),
     bpmDisplay: document.getElementById('bpm-display'),
     renderBadge: document.getElementById('render-status-badge'),
     statusText: document.getElementById('status-text'),

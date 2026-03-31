@@ -57,6 +57,9 @@ function buildBridgeHandlers(app) {
     [VOICE_BRIDGE_COMMANDS.SET_EDITOR_MODE](payload) {
       app.setEditorMode?.(payload.mode)
     },
+    [VOICE_BRIDGE_COMMANDS.SET_PLAYHEAD_FOLLOW_MODE](payload) {
+      app.setPlayheadFollowMode?.(payload.mode)
+    },
   }
 }
 

@@ -1,4 +1,5 @@
 import { PIANO_ROLL } from '../config/constants.js'
+import { PLAYHEAD_FOLLOW_MODES, computeFollowScrollLeft, normalizePlayheadFollowMode } from '../shared/playheadFollowMode.js'
 import { createTimelineAxis } from '../shared/timelineAxis.js'
 import { createTempoDocument } from '../shared/tempoDocument.js'
 
@@ -14,6 +15,7 @@ class PianoRollViewport {
     this.axis = null
     this.beatVersion = 0
     this.pixelsPerSecond = PIANO_ROLL.PIXELS_PER_SECOND
+    this.playheadFollowMode = PLAYHEAD_FOLLOW_MODES.PUSH
   }
 
   timeToX(seconds) {
@@ -103,10 +105,25 @@ class PianoRollViewport {
     }))
   }
 
-  ensureTimeVisible(seconds) {
+  setPlayheadFollowMode(mode) {
+    this.playheadFollowMode = normalizePlayheadFollowMode(mode)
+    return this.playheadFollowMode
+  }
+
+  getPlayheadFollowMode() {
+    return this.playheadFollowMode
+  }
+
+  syncPlaybackScroll(seconds) {
     const targetX = seconds * this.pixelsPerSecond
-    if (targetX < this.scrollX) this.scrollX = Math.max(0, targetX - PIANO_ROLL.AUTO_SCROLL_PADDING)
-    if (targetX > this.scrollX + this.canvasWidth) this.scrollX = Math.max(0, targetX - this.canvasWidth + PIANO_ROLL.AUTO_SCROLL_PADDING)
+    this.scrollX = computeFollowScrollLeft({
+      mode: this.playheadFollowMode,
+      currentScrollLeft: this.scrollX,
+      playheadX: targetX,
+      viewportWidth: this.canvasWidth,
+      contentWidth: Math.max(this.canvasWidth, targetX + this.canvasWidth),
+      padding: PIANO_ROLL.AUTO_SCROLL_PADDING,
+    })
   }
 }
 

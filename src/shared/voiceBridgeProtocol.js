@@ -7,6 +7,7 @@ export const VOICE_BRIDGE_COMMANDS = {
   START_SYNTHESIS: 'start-synthesis',
   APPLY_NOTE_EDITS: 'apply-note-edits',
   SET_EDITOR_MODE: 'set-editor-mode',
+  SET_PLAYHEAD_FOLLOW_MODE: 'set-playhead-follow-mode',
   SEEK: 'seek',
   TOGGLE_PLAYBACK: 'toggle-playback',
   HOST_PLAYBACK_STATE: 'host-playback-state',

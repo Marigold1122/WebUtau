@@ -1,9 +1,12 @@
+import { normalizePlayheadFollowMode } from '../../shared/playheadFollowMode.js'
+
 export class HostSessionStore {
   constructor() {
     this._focusSoloTrackId = null
     this._monitorDirtySinceFocus = false
     this._openSourcePickerTrackId = null
     this._editorMode = 'note'
+    this._playheadFollowMode = normalizePlayheadFollowMode(null)
   }
 
   getSnapshot() {
@@ -12,6 +15,7 @@ export class HostSessionStore {
       monitorDirtySinceFocus: this._monitorDirtySinceFocus,
       openSourcePickerTrackId: this._openSourcePickerTrackId,
       editorMode: this._editorMode,
+      playheadFollowMode: this._playheadFollowMode,
     }
   }
 
@@ -22,6 +26,15 @@ export class HostSessionStore {
   setEditorMode(mode) {
     this._editorMode = mode === 'lyric' || mode === 'pitch' ? mode : 'note'
     return this._editorMode
+  }
+
+  getPlayheadFollowMode() {
+    return this._playheadFollowMode
+  }
+
+  setPlayheadFollowMode(mode) {
+    this._playheadFollowMode = normalizePlayheadFollowMode(mode)
+    return this._playheadFollowMode
   }
 
   getOpenSourcePickerTrackId() {

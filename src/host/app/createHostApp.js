@@ -667,6 +667,12 @@ export function createHostApp() {
     return result
   }
 
+  function handlePlayheadFollowModeSelected(mode) {
+    const nextMode = sessionStore.setPlayheadFollowMode(mode)
+    void bridge?.setPlayheadFollowMode?.(nextMode)
+    render('playhead-follow-mode-changed')
+  }
+
   function getMidiInputDevices() {
     if (!midiInputState.access) return []
     return [...midiInputState.access.inputs.values()].map((input) => ({
@@ -918,6 +924,7 @@ export function createHostApp() {
   function init() {
     bridge.init()
     view.init()
+    void bridge.setPlayheadFollowMode(sessionStore.getPlayheadFollowMode())
     transportCoordinator.init()
     shortcutRouter.init()
     initMidiInput()
@@ -1256,6 +1263,7 @@ export function createHostApp() {
     await new Promise((resolve) => requestAnimationFrame(resolve))
     view.notifyRuntimeLayoutChanged()
     if (alreadyAttached) {
+      await bridge.setPlayheadFollowMode(sessionStore.getPlayheadFollowMode())
       await bridge.setEditorMode(resolvedMode)
       return runtimeTransportSync.syncState(transportCoordinator.getSnapshot())
     }
@@ -1265,6 +1273,7 @@ export function createHostApp() {
     if (!preservePendingNoteDraft) {
       store.replaceVoiceSnapshot(track.id, snapshot)
     }
+    await bridge.setPlayheadFollowMode(sessionStore.getPlayheadFollowMode())
     await bridge.setEditorMode(resolvedMode)
     runtimeTransportSync.syncState(transportCoordinator.getSnapshot())
     render('runtime-track-loaded')
@@ -1370,6 +1379,7 @@ export function createHostApp() {
     onTrackSoloToggled: (trackId) => trackMonitorController.toggleTrackSolo(trackId),
     onTrackMuteToggled: (trackId) => trackMonitorController.toggleTrackMute(trackId),
     onTrackVolumeChanged: (trackId, volume, options) => trackMonitorController.setTrackVolume(trackId, volume, options),
+    onPlayheadFollowModeSelected: handlePlayheadFollowModeSelected,
     onEditorModeSelected: handleEditorModeSelected,
     onRenderTrackAsVoice: handleRenderTrackAsVoice,
     onDismissTransientUi: () => trackShellSessionController.closeSourcePicker(null, 'outside-click') && render('source-picker-dismissed'),

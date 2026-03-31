@@ -1,7 +1,10 @@
+import { computeFollowScrollLeft, normalizePlayheadFollowMode } from '../../shared/playheadFollowMode.js'
+
 export class TrackViewportController {
   constructor(refs, handlers = {}) {
     this.refs = refs
     this.handlers = handlers
+    this.playheadFollowMode = normalizePlayheadFollowMode(null)
     this._handleViewportScroll = this._handleViewportScroll.bind(this)
     this._handleWheel = this._handleWheel.bind(this)
     this._handleRulerPointerDown = this._handleRulerPointerDown.bind(this)
@@ -28,8 +31,37 @@ export class TrackViewportController {
     return this.refs.trackViewport?.scrollLeft || 0
   }
 
+  setPlayheadFollowMode(mode) {
+    this.playheadFollowMode = normalizePlayheadFollowMode(mode)
+    return this.playheadFollowMode
+  }
+
+  syncPlaybackFollow(playheadTimelineX) {
+    const viewport = this.refs.trackViewport
+    if (!viewport || !Number.isFinite(playheadTimelineX)) return false
+    const headerWidth = this._getTrackHeaderWidth()
+    const playheadContentX = headerWidth + playheadTimelineX
+    const nextScrollLeft = computeFollowScrollLeft({
+      mode: this.playheadFollowMode,
+      currentScrollLeft: viewport.scrollLeft,
+      playheadX: playheadContentX,
+      viewportWidth: viewport.clientWidth || 0,
+      contentWidth: viewport.scrollWidth || 0,
+      leadingInset: headerWidth,
+    })
+    if (Math.abs(nextScrollLeft - viewport.scrollLeft) < 0.5) return false
+    viewport.scrollLeft = nextScrollLeft
+    return true
+  }
+
   _handleViewportScroll() {
     this.syncRulerOffset()
+  }
+
+  _getTrackHeaderWidth() {
+    const rawValue = getComputedStyle(document.documentElement).getPropertyValue('--track-header-width')
+    const parsedValue = Number.parseFloat(rawValue)
+    return Number.isFinite(parsedValue) ? Math.max(0, parsedValue) : 240
   }
 
   _handleWheel(event) {
