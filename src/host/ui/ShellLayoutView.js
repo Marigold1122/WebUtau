@@ -31,11 +31,6 @@ import {
 import { WorkspaceSplitController } from './WorkspaceSplitController.js'
 
 const TRACK_HEADER_FALLBACK_WIDTH = 240
-const DEFAULT_SNAP_DIVISION = 4
-const SNAP_LABELS = {
-  4: '1/16',
-}
-
 export class ShellLayoutView {
   constructor(handlers = {}, options = {}) {
     this.handlers = handlers
@@ -275,7 +270,6 @@ export class ShellLayoutView {
     })
     this.refs.fileInput?.addEventListener('change', (event) => this.handlers.onMidiFileSelected?.(event.target.files?.[0] || null))
     this.refs.audioFileInput?.addEventListener('change', (event) => this.handlers.onAudioFileSelected?.(event.target.files?.[0] || null))
-    this.refs.btnOpenTrack?.addEventListener('click', () => this.handlers.onOpenSelectedTrack?.())
     this.refs.btnCloseEditor?.addEventListener('click', () => this.handlers.onCloseEditor?.())
     this.refs.midiInputSelect?.addEventListener('change', (event) => this.handlers.onMidiInputSelected?.(event.target.value || ''))
     this.refs.btnInspectorToggle?.addEventListener('click', () => this.setInspectorCollapsed(!this.isInspectorCollapsed()))
@@ -416,16 +410,9 @@ export class ShellLayoutView {
     this.refs.selectedTrackStatus.textContent = selectedTrack ? getTrackInspectorStatusText(selectedTrack) : '-'
     this.refs.renderBadge.textContent = renderBadgeTrack ? getTrackStatusText(renderBadgeTrack) : ''
     this.refs.renderBadge.className = `render-status ${renderBadgeTrack ? getTrackRenderClass(renderBadgeTrack) : 'idle'}`
-    this.refs.activeTrackCaption.textContent = viewState?.focusSoloTrackId && selectedTrack?.id === viewState.focusSoloTrackId
-      ? `${selectedTrack.name} · 专注监听`
-      : selectedTrack?.name || '—'
     this.refs.editorTrackName.textContent = editorTrack?.name || '—'
     const bpm = project?.tempoData?.tempos?.[0]?.bpm || 120
     this.refs.bpmDisplay.textContent = String(Math.round(bpm))
-    if (this.refs.gridSnapDisplay) {
-      const division = DEFAULT_SNAP_DIVISION
-      this.refs.gridSnapDisplay.textContent = `SNAP: ${SNAP_LABELS[division] || '1/16'}`
-    }
   }
 
   _resolveProjectViewTracks(project) {
@@ -442,7 +429,8 @@ export class ShellLayoutView {
   }
 
   _renderTracks(tracks, selectedTrackId, editorTrackId, timelineMetrics, viewState) {
-    const contentHeight = tracks.length > 0 ? tracks.length * TRACK_ROW_HEIGHT : 220
+    const rowCount = Math.max(1, tracks.length + 1)
+    const contentHeight = Math.max(220, rowCount * TRACK_ROW_HEIGHT)
     this.refs.trackTimelineContent.innerHTML = ''
     this.refs.trackTimelineContent.style.width = `calc(var(--track-header-width) + ${timelineMetrics.timelineWidth}px)`
     this.refs.trackTimelineContent.style.height = `${contentHeight}px`
@@ -450,7 +438,7 @@ export class ShellLayoutView {
     this.refs.trackTimelineContent.style.setProperty('--track-preview-width', `${timelineMetrics.timelineWidth}px`)
     this.refs.emptyHint.style.display = tracks.length === 0 ? 'flex' : 'none'
     if (tracks.length === 0) {
-      this.refs.emptyHint.textContent = '暂无轨道\n右键左侧空白区可新建轨道，右键轨道头可删除轨道'
+      this.refs.emptyHint.textContent = '暂无轨道\n点击左侧加号或右键空白区可新建轨道'
     }
 
     const fragment = document.createDocumentFragment()
@@ -465,12 +453,42 @@ export class ShellLayoutView {
         handlers: this.handlers,
       }))
     })
+    fragment.appendChild(this._buildTrackCreateRow(timelineMetrics, tracks[tracks.length - 1]?.id || null))
     const sharedGrid = buildTrackPreviewGridOverlay({
       timelineMetrics,
       contentHeight,
     })
     if (sharedGrid) fragment.appendChild(sharedGrid)
     this.refs.trackTimelineContent.appendChild(fragment)
+  }
+
+  _buildTrackCreateRow(timelineMetrics, afterTrackId = null) {
+    const row = document.createElement('div')
+    row.className = 'track-shell-row track-shell-row--adder'
+    row.style.setProperty('--track-preview-width', `${timelineMetrics.timelineWidth}px`)
+
+    const itemCell = document.createElement('div')
+    itemCell.className = 'track-item-cell track-item-cell--adder'
+
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'track-add-button'
+    button.setAttribute('aria-label', '新建轨道')
+    button.innerHTML = '<span class="track-add-button-plus">+</span><span class="track-add-button-label">新建轨道</span>'
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      this.handlers.onTrackContextCreate?.(afterTrackId)
+    })
+
+    itemCell.appendChild(button)
+
+    const preview = document.createElement('div')
+    preview.className = 'track-row track-row--adder'
+    preview.setAttribute('aria-hidden', 'true')
+
+    row.append(itemCell, preview)
+    return row
   }
 
   _renderRuler(timelineMetrics, tempoData = null) {

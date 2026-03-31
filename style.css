@@ -562,7 +562,10 @@ body {
 
 .track-empty-hint {
   position: absolute;
-  inset: 28px 0 0 0;
+  top: 28px;
+  right: 20px;
+  bottom: 0;
+  left: calc(var(--track-header-width) + 20px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -589,6 +592,15 @@ body {
   box-shadow: 2px 0 4px rgba(0,0,0,0.02);
 }
 .track-item-cell.source-picker-open { z-index: 14; }
+.track-item-cell--adder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.68) 0%, rgba(255,255,255,0.34) 100%),
+    var(--bg-1);
+}
 
 /* 单个轨道头控制区 */
 .track-item {
@@ -622,6 +634,53 @@ body {
   opacity: 0.8;
 }
 .track-item.dimmed { opacity: 0.5; }
+
+.track-add-button {
+  width: 100%;
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 0 16px;
+  border: 2px dashed rgba(59, 139, 136, 0.58);
+  border-radius: 12px;
+  background: rgba(248, 247, 244, 0.82);
+  color: var(--accent-color);
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.track-add-button:hover {
+  background: rgba(248, 247, 244, 0.96);
+  border-color: rgba(59, 139, 136, 0.78);
+  box-shadow: 0 6px 14px rgba(59, 139, 136, 0.12);
+  transform: translateY(-1px);
+}
+
+.track-add-button:focus-visible {
+  outline: 2px solid rgba(59, 139, 136, 0.32);
+  outline-offset: 2px;
+}
+
+.track-add-button-plus {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(59, 139, 136, 0.14);
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.track-add-button-label {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
 
 .track-name {
   flex: 1;
@@ -971,6 +1030,12 @@ body {
 .track-row.open {
   box-shadow: inset 3px 0 0 var(--accent-color);
 }
+.track-row--adder {
+  background:
+    linear-gradient(180deg, rgba(248,247,244,0.64) 0%, rgba(244,242,236,0.4) 100%),
+    var(--bg-3);
+  cursor: default;
+}
 .track-row.focus-solo {
   box-shadow: inset 3px 0 0 var(--orange), inset 0 0 0 1px rgba(212, 160, 53, 0.3);
 }
@@ -1205,33 +1270,13 @@ body {
   background: var(--red);
 }
 
-/* 中间工具栏条 */
-.toolbar-strip {
-  height: 32px; flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 0 12px;
-  background: var(--bg-2); border-bottom: 1px solid var(--border-light);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.6);
-}
-.tools-left, .tools-center, .tools-right { display: flex; align-items: center; gap: 8px; }
-.tools-right { margin-left: auto; }
-
-.grid-snap { color: var(--text-muted); font-family: 'Oswald', sans-serif; font-size: 11px; letter-spacing: 0.5px; }
-
-.transport-btn, .editor-close {
+.editor-close {
   border: 1px solid var(--border-color); border-radius: var(--radius-sm);
   background: linear-gradient(180deg, #FFFFFF 0%, #F0EDE5 100%);
   color: var(--text-main); font-weight: 500; font-size: 11px;
   cursor: pointer; transition: all 0.1s ease; box-shadow: 0 1px 1px rgba(0,0,0,0.05), inset 0 1px 0 #FFF;
 }
-.transport-btn:hover, .editor-close:hover { background: #E8E5DF; border-color: var(--border-light); }
-.transport-btn { min-height: 24px; padding: 0 12px; }
-.transport-btn.accent {
-  color: #FFF; border-color: #276B69; background: var(--accent-color); box-shadow: inset 0 1px 0 rgba(255,255,255,0.2);
-}
-
-.track-summary {
-  padding: 2px 8px; border-radius: var(--radius-sm); background: var(--bg-3); border: 1px solid var(--border-color);
-  color: var(--text-main); font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600;
-}
+.editor-close:hover { background: #E8E5DF; border-color: var(--border-light); }
 
 .panel-resizer {
   height: 4px; flex-shrink: 0; background: transparent; cursor: ns-resize; transition: background 0.1s;

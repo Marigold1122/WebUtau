@@ -961,6 +961,7 @@ export function createHostApp() {
     shortcutRouter.init()
     document.addEventListener('keydown', handleEditorUndoShortcut)
     initMidiInput()
+    render('host-init')
     view.setStatus('系统就绪')
     logger.info('宿主初始化完成')
   }

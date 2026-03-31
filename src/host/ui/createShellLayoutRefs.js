@@ -4,7 +4,6 @@ export function createShellLayoutRefs() {
     fileInput: document.getElementById('midi-file-input'),
     audioFileInput: document.getElementById('audio-file-input'),
     btnImport: document.getElementById('btn-import'),
-    btnOpenTrack: document.getElementById('btn-open-track'),
     btnCloseEditor: document.getElementById('btn-close-editor'),
     btnPlay: document.getElementById('btn-play'),
     btnTopPrev: document.getElementById('btn-top-prev'),
@@ -25,7 +24,6 @@ export function createShellLayoutRefs() {
     selectedTrackLength: document.getElementById('selected-track-length'),
     selectedTrackLanguage: document.getElementById('selected-track-language'),
     selectedTrackStatus: document.getElementById('selected-track-status'),
-    activeTrackCaption: document.getElementById('active-track-caption'),
     mainInspector: document.getElementById('main-inspector'),
     btnInspectorToggle: document.getElementById('btn-inspector-toggle'),
     voiceConversionSection: document.getElementById('voice-conversion-section'),
@@ -42,6 +40,5 @@ export function createShellLayoutRefs() {
     voiceRuntimeFrame: document.getElementById('voice-runtime-frame'),
     instrumentEditorRoot: document.getElementById('instrument-editor-root'),
     timeDisplay: document.getElementById('time-display'),
-    gridSnapDisplay: document.getElementById('grid-snap-display'),
   }
 }
