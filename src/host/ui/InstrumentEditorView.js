@@ -1,4 +1,5 @@
 import { PIANO_ROLL } from '../../config/constants.js'
+import { createHorizontalDragAutoScroller } from '../../shared/horizontalDragAutoScroll.js'
 import { computeFollowScrollLeft, normalizePlayheadFollowMode } from '../../shared/playheadFollowMode.js'
 import { createTimelineAxis } from '../../shared/timelineAxis.js'
 import { getTrackColorById } from './tracks/trackColorPalette.js'
@@ -12,6 +13,7 @@ const SNAP_DIVISION = 4
 const VIEWPORT_TAIL_BARS = 8
 const VIEWPORT_HORIZONTAL_CHUNK_BEATS = 12
 const VIEWPORT_VERTICAL_CHUNK_ROWS = 8
+const PLAYHEAD_HITBOX_WIDTH = 16
 
 function clampNonNegative(value, fallback = 0) {
   return Number.isFinite(value) ? Math.max(0, value) : fallback
@@ -175,6 +177,9 @@ export class InstrumentEditorView {
       marks: [],
     }
     this.playheadFollowMode = normalizePlayheadFollowMode(null)
+    this.isPlayheadDragging = false
+    this.playheadDragClientX = null
+    this.playheadDragScroller = null
     this.state = {
       trackId: null,
       trackName: '',
@@ -213,6 +218,7 @@ export class InstrumentEditorView {
     if (!this.root) return
     this.root.classList.add('instrument-editor-root')
     this._buildDom()
+    this._initPlayheadDrag()
     this._renderKeyboard()
     this._applyTrackColor()
     this._renderTrackState()
@@ -315,6 +321,9 @@ export class InstrumentEditorView {
   }
 
   clear() {
+    this.isPlayheadDragging = false
+    this.playheadDragClientX = null
+    this.playheadDragScroller?.stop?.()
     if (this.viewportRenderFrame) {
       cancelAnimationFrame(this.viewportRenderFrame)
       this.viewportRenderFrame = 0
@@ -345,10 +354,12 @@ export class InstrumentEditorView {
     this.setVisible(false)
   }
 
-  setPlaybackTime(time) {
+  setPlaybackTime(time, options = {}) {
+    const { allowDuringDrag = false } = options
+    if (this.isPlayheadDragging && !allowDuringDrag) return
     this.state.currentTime = clampNonNegative(time)
     this._renderPlayhead()
-    if (this.state.playbackActive) this._syncPlaybackFollow()
+    if (this.state.playbackActive && !this.isPlayheadDragging) this._syncPlaybackFollow()
   }
 
   setRecording(active) {
@@ -569,10 +580,22 @@ export class InstrumentEditorView {
     keyboardGuide.hidden = true
     keyboardContent.appendChild(keyboardGuide)
 
-    const playhead = document.createElement('div')
-    playhead.className = 'instrument-editor-playhead'
+    const playheadHead = document.createElement('div')
+    playheadHead.className = 'instrument-editor-playhead-head'
+    playheadHead.style.width = `${PLAYHEAD_HITBOX_WIDTH}px`
+    playheadHead.style.marginLeft = `${PLAYHEAD_HITBOX_WIDTH / -2}px`
+    playheadHead.style.pointerEvents = 'auto'
+    playheadHead.style.touchAction = 'none'
 
-    gridContent.append(gridMarks, hoverBand, notesLayer, ghostNote, playhead)
+    const playheadLine = document.createElement('div')
+    playheadLine.className = 'instrument-editor-playhead-line'
+    playheadLine.style.width = `${PLAYHEAD_HITBOX_WIDTH}px`
+    playheadLine.style.marginLeft = `${PLAYHEAD_HITBOX_WIDTH / -2}px`
+    playheadLine.style.pointerEvents = 'auto'
+    playheadLine.style.touchAction = 'none'
+
+    rulerContent.appendChild(playheadHead)
+    gridContent.append(gridMarks, hoverBand, notesLayer, ghostNote, playheadLine)
     gridViewport.appendChild(gridContent)
     stage.append(corner, rulerViewport, keyboardViewport, gridViewport)
 
@@ -598,8 +621,31 @@ export class InstrumentEditorView {
       keyboardGuide,
       notesLayer,
       ghostNote,
-      playhead,
+      playheadHead,
+      playheadLine,
     }
+  }
+
+  _initPlayheadDrag() {
+    this.playheadDragScroller = createHorizontalDragAutoScroller({
+      getViewportRect: () => this.refs.gridViewport?.getBoundingClientRect?.() || null,
+      getScrollLeft: () => this.refs.gridViewport?.scrollLeft || 0,
+      setScrollLeft: (nextScrollLeft) => {
+        if (this.refs.gridViewport) this.refs.gridViewport.scrollLeft = nextScrollLeft
+      },
+      getMaxScrollLeft: () => {
+        const viewport = this.refs.gridViewport
+        if (!viewport) return 0
+        return Math.max(0, viewport.scrollWidth - viewport.clientWidth)
+      },
+      onScroll: () => {
+        this._syncScroll()
+        this._scheduleViewportRender()
+        this._previewPlayheadDrag(this.playheadDragClientX)
+      },
+    })
+    this.refs.playheadHead?.addEventListener('mousedown', (event) => this._handlePlayheadPointerDown(event))
+    this.refs.playheadLine?.addEventListener('mousedown', (event) => this._handlePlayheadPointerDown(event))
   }
 
   _renderKeyboard() {
@@ -666,7 +712,7 @@ export class InstrumentEditorView {
     this.refs.rulerContent.style.width = `${axis?.timelineWidth || 0}px`
     if (!axis) {
       this.viewportRenderState.rulerKey = ''
-      this.refs.rulerContent.replaceChildren()
+      this.refs.rulerContent.replaceChildren(...(this.refs.playheadHead ? [this.refs.playheadHead] : []))
       return
     }
 
@@ -716,7 +762,7 @@ export class InstrumentEditorView {
       return `${point.key}${point.scale === 'minor' ? 'm' : ''}`
     })
 
-    this.refs.rulerContent.replaceChildren(fragment)
+    this.refs.rulerContent.replaceChildren(fragment, ...(this.refs.playheadHead ? [this.refs.playheadHead] : []))
   }
 
   _renderGrid(force = false) {
@@ -789,11 +835,31 @@ export class InstrumentEditorView {
   }
 
   _renderPlayhead() {
-    if (!this.refs.playhead || !this.state.axis) return
+    if ((!this.refs.playheadHead && !this.refs.playheadLine) || !this.state.axis) return
     const x = this.state.axis.timeToX(this.state.currentTime)
     if (this.playheadRenderedX != null && Math.abs(this.playheadRenderedX - x) < 0.01) return
     this.playheadRenderedX = x
-    this.refs.playhead.style.transform = `translateX(${x}px)`
+    if (this.refs.playheadHead) this.refs.playheadHead.style.transform = `translateX(${x}px)`
+    if (this.refs.playheadLine) this.refs.playheadLine.style.transform = `translateX(${x}px)`
+  }
+
+  _handlePlayheadPointerDown(event) {
+    if (event.button !== 0 || !this.state.axis) return
+    event.preventDefault()
+    event.stopPropagation()
+    this.isPlayheadDragging = true
+    this.playheadDragClientX = event.clientX
+    this.playheadDragScroller?.start(event.clientX)
+    this._previewPlayheadDrag(event.clientX)
+  }
+
+  _previewPlayheadDrag(clientX) {
+    const viewport = this.refs.gridViewport
+    if (!viewport || !this.state.axis || !Number.isFinite(clientX)) return
+    const rect = viewport.getBoundingClientRect()
+    const clampedX = Math.max(0, Math.min(clientX - rect.left, viewport.clientWidth))
+    const nextTime = this.state.axis.xToTime(clampedX + viewport.scrollLeft)
+    this.setPlaybackTime(nextTime, { allowDuringDrag: true })
   }
 
   _syncPlaybackFollow() {
@@ -877,6 +943,12 @@ export class InstrumentEditorView {
   }
 
   _handlePointerMove(event) {
+    if (this.isPlayheadDragging) {
+      this.playheadDragClientX = event.clientX
+      this.playheadDragScroller?.update(event.clientX)
+      this._previewPlayheadDrag(event.clientX)
+      return
+    }
     if (!this.state.axis) return
     if (this.state.erasing) {
       const pos = this._getLocalPointerPosition(event)
@@ -897,6 +969,13 @@ export class InstrumentEditorView {
   }
 
   _handlePointerUp() {
+    if (this.isPlayheadDragging) {
+      this.isPlayheadDragging = false
+      this.playheadDragScroller?.stop()
+      this.playheadDragClientX = null
+      this.handlers.onInstrumentEditorSeek?.(this.state.currentTime)
+      return
+    }
     if (this.state.erasing) {
       this.state.erasing = false
       this._hideGhostNote()

@@ -96,7 +96,9 @@ export function createVoiceRuntimeApp(callbacks = {}) {
 
   if (embedded) document.body.classList.add('runtime-embedded')
   pianoRoll.init(refs.pianoRollContainer)
-  playheadController.init(refs.playhead)
+  playheadController.init(refs.playhead, {
+    onViewportScrolled: () => pianoRoll.refreshViewportAfterScroll?.(),
+  })
   trackSelector.init()
   transportControl.init()
   transportControl.setLocalInputEnabled(!embedded)

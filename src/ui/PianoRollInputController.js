@@ -8,6 +8,7 @@ import phraseStore from '../core/PhraseStore.js'
 import viewport from './PianoRollViewport.js'
 import pianoRollNotes from './PianoRollNotes.js'
 import { PIANO_ROLL } from '../config/constants.js'
+import playheadController from '../modules/PlayheadController.js'
 
 const DRAG_THRESHOLD = 5
 
@@ -51,6 +52,7 @@ class PianoRollInputController {
 
   _onMouseDown(e) {
     if (e.button === 2) return
+    if (playheadController.isDraggingPlayhead?.()) return
     if (this._shouldIgnorePointerTarget(e.target)) return
     if (this._state === STATE.SINGLE_EDIT || this._state === STATE.BATCH_EDIT) return
     if (this._state === STATE.CONTEXT_MENU) {
@@ -117,6 +119,8 @@ class PianoRollInputController {
   }
 
   _onMouseMove(e) {
+    if (playheadController.isDraggingPlayhead?.()) return
+
     if (pitchEditor.isEnabled()) {
       this._onPitchMouseMove(e)
       return
@@ -190,6 +194,8 @@ class PianoRollInputController {
   }
 
   _onMouseUp(e) {
+    if (playheadController.isDraggingPlayhead?.()) return
+
     if (pitchEditor.isEnabled()) {
       void this._onPitchMouseUp(e)
       return
@@ -245,6 +251,9 @@ class PianoRollInputController {
   }
 
   _onDblClick(e) {
+    if (playheadController.isDraggingPlayhead?.()) return
+    if (this._shouldIgnorePointerTarget(e.target)) return
+
     if (pitchEditor.isEnabled()) {
       void this._onPitchDoubleClick(e)
       return
@@ -287,6 +296,7 @@ class PianoRollInputController {
 
   _onContextMenu(e) {
     e.preventDefault()
+    if (playheadController.isDraggingPlayhead?.()) return
     if (this._shouldIgnorePointerTarget(e.target)) return
 
     if (pitchEditor.isEnabled()) {
@@ -669,7 +679,7 @@ class PianoRollInputController {
   }
 
   _shouldIgnorePointerTarget(target) {
-    return Boolean(target?.closest?.('.context-menu, .lyric-dialog, .lyric-edit-input, .piano-roll-editor-toolbar'))
+    return Boolean(target?.closest?.('#playhead, .context-menu, .lyric-dialog, .lyric-edit-input, .piano-roll-editor-toolbar'))
   }
 
   _isEditableTarget(target) {

@@ -262,6 +262,11 @@ class PianoRoll {
     viewport.setPlayheadFollowMode(mode)
   }
 
+  refreshViewportAfterScroll() {
+    grid.draw()
+    notes.draw()
+  }
+
   _resize() {
     if (!this.container) return
     const canvasWidth = Math.max(0, this.container.clientWidth - PIANO_ROLL.KEYBOARD_WIDTH)
@@ -380,6 +385,7 @@ class PianoRoll {
     eventBus.on(EVENTS.PITCH_EDITOR_SELECTION_CHANGED, () => this._updateEditorToolbar())
 
     eventBus.on(EVENTS.TRANSPORT_TICK, ({ time }) => {
+      if (playheadController.isDraggingPlayhead?.()) return
       const previousScrollX = viewport.scrollX
       viewport.syncPlaybackScroll(time)
       if (previousScrollX === viewport.scrollX) return

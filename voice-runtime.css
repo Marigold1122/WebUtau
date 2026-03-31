@@ -359,20 +359,37 @@ input {
   top: 24px;
   left: 0;
   z-index: 10;
-  width: 1px;
+  width: 16px;
+  margin-left: -8px;
   height: calc(100% - 24px);
-  background: var(--nuka-red);
+  background: rgba(201, 66, 52, 0.001);
   cursor: col-resize;
+  pointer-events: auto;
+  touch-action: none;
   will-change: transform;
   transform: translateX(0);
   backface-visibility: hidden;
 }
 
+#playhead:hover {
+  background: rgba(201, 66, 52, 0.08);
+}
+
 #playhead::before {
   content: "";
   position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 8px;
+  width: 1px;
+  background: var(--nuka-red);
+}
+
+#playhead::after {
+  content: "";
+  position: absolute;
   top: -1px;
-  left: -5px;
+  left: 2px;
   width: 11px;
   height: 11px;
   background: var(--nuka-red);
@@ -380,11 +397,15 @@ input {
 }
 
 #playhead.playhead--waiting {
-  background: var(--vault-gold);
   animation: playhead-pulse 0.8s infinite;
 }
 
-#playhead.playhead--waiting::before {
+#playhead.playhead--waiting:hover {
+  background: rgba(212, 160, 53, 0.1);
+}
+
+#playhead.playhead--waiting::before,
+#playhead.playhead--waiting::after {
   background: var(--vault-gold);
 }
 

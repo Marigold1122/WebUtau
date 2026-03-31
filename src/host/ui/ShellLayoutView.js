@@ -54,6 +54,8 @@ export class ShellLayoutView {
     this.playbackToastView = new PlaybackToastView()
     this.timelinePlayheadView = new TrackTimelinePlayheadView({
       logger: this.logger,
+      getViewportElement: () => this.refs.trackViewport,
+      onSeekRequested: (timelineX) => this.handlers.onTransportSeek?.(timelineX),
     })
     this.timelinePlayheadTime = 0
     this.lastPlayheadTraceAtMs = 0
@@ -581,7 +583,7 @@ export class ShellLayoutView {
 
   _syncPlaybackFollow() {
     const axis = this.timelinePlayheadView.axis
-    if (!axis) return
+    if (!axis || this.timelinePlayheadView.isDraggingPlayhead?.()) return
     const playheadX = axis.timeToX(this.timelinePlayheadTime)
     this.trackViewportController.syncPlaybackFollow(playheadX)
   }

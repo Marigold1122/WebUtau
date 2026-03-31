@@ -65,7 +65,9 @@ function init() {
   verifyConstants()
   window._modules = { eventBus, phraseStore, audioEngine, playbackEngine, playheadController, renderCache, renderScheduler, midiImporter, midiEncoder, renderJobManager, renderPriorityStrategy, transportControl, trackSelector, renderApi, pianoRoll }
   pianoRoll.init(document.getElementById('piano-roll-container'))
-  playheadController.init(document.getElementById('playhead'))
+  playheadController.init(document.getElementById('playhead'), {
+    onViewportScrolled: () => pianoRoll.refreshViewportAfterScroll?.(),
+  })
   trackSelector.init()
   transportControl.init()
   prepareOverlay.init()
