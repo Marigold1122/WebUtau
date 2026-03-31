@@ -1,7 +1,6 @@
 import { getHostPlaybackSourceId } from './sourceCatalog.js'
 import { normalizeTrackVolume } from '../../project/trackPlaybackState.js'
 
-const LOOKAHEAD_SECONDS = 0.3
 
 function createScheduledNotes(tracks, audibleTrackIds, fromTimeSec) {
   const notes = []
@@ -25,7 +24,7 @@ function createScheduledNotes(tracks, audibleTrackIds, fromTimeSec) {
       const startSec = Number.isFinite(note?.time) ? Math.max(0, note.time) : 0
       const durationSec = Number.isFinite(note?.duration) ? Math.max(0.05, note.duration) : 0.05
       const endSec = startSec + durationSec
-      if (endSec <= fromTimeSec) return
+      if (startSec < fromTimeSec) return
       if (
         previewDirtyVocal
         && !dirtyRanges.some((range) => startSec < (range?.endTime || 0) && (range?.startTime || 0) < endSec)
@@ -107,12 +106,11 @@ export class InstrumentScheduler {
   tick(songTimeSec) {
     if (!this.active) return
 
-    const targetSongTime = songTimeSec + LOOKAHEAD_SECONDS
     const audioNow = this.samplerPool.getAudioTime()
 
     while (this.nextIndex < this.notes.length) {
       const note = this.notes[this.nextIndex]
-      if (note.startSec > targetSongTime) break
+      if (note.startSec > songTimeSec) break
 
       const remainingDuration = note.endSec - songTimeSec
       const audioDelay = Math.max(0, note.startSec - songTimeSec)
