@@ -7,10 +7,14 @@ import pitchEditor, { PITCH_POINT_SHAPES } from '../modules/PitchEditor.js'
 import phraseStore from '../core/PhraseStore.js'
 import viewport from './PianoRollViewport.js'
 import pianoRollNotes from './PianoRollNotes.js'
+import grid from './PianoRollGrid.js'
 import { PIANO_ROLL } from '../config/constants.js'
 import playheadController from '../modules/PlayheadController.js'
 
 const DRAG_THRESHOLD = 5
+const PITCH_NOTE_HIT_PADDING_X = 4
+const PITCH_NOTE_HIT_PADDING_Y = 3
+const MARQUEE_AUTO_SCROLL_MAX_STEP = 28
 
 const STATE = {
   READY: 'ready',
@@ -37,6 +41,9 @@ class PianoRollInputController {
     this._pitchDragPointId = null
     this._pitchPreviewFrame = 0
     this._queuedPitchPreview = null
+    this._marqueeAutoScrollFrame = 0
+    this._marqueeClientX = null
+    this._marqueeClientY = null
   }
 
   bindTo(container, noteCanvas) {
@@ -82,7 +89,7 @@ class PianoRollInputController {
 
     const pointHit = this._hitTestPitchPoint(pos.x, pos.y)
     const segmentHit = pointHit ? null : this._hitTestPitchSegment(pos.x, pos.y)
-    const noteHit = this._findPitchEditableNote(pos.time, pos.pitchValue)
+    const noteHit = this._findPitchEditableNote(pos.x, pos.y)
     this._downPos = pos
     this._hasDragged = false
     this._downNote = noteHit
@@ -133,15 +140,13 @@ class PianoRollInputController {
       if (pos && this._dist(pos, this._downPos) >= DRAG_THRESHOLD) {
         this._state = STATE.MARQUEE
         noteSelection.startMarquee(this._downPos.x, this._downPos.y)
+        this._updateMarqueeDrag(pos, e)
       }
     }
 
     if (this._state === STATE.MARQUEE) {
       const pos = this._canvasPos(e)
-      if (pos) {
-        noteSelection.updateMarquee(pos.x, pos.y)
-        pianoRollNotes.requestDraw()
-      }
+      this._updateMarqueeDrag(pos, e)
     }
 
     if (this._state === STATE.NOTE_PENDING) {
@@ -176,13 +181,13 @@ class PianoRollInputController {
       if (this._dist(pos, this._downPos) >= DRAG_THRESHOLD) {
         this._state = STATE.MARQUEE
         noteSelection.startMarquee(this._downPos.x, this._downPos.y)
+        this._updateMarqueeDrag(pos, e)
       }
       return
     }
 
     if (this._state === STATE.MARQUEE) {
-      noteSelection.updateMarquee(pos.x, pos.y)
-      pianoRollNotes.requestDraw()
+      this._updateMarqueeDrag(pos, e)
       return
     }
 
@@ -216,6 +221,7 @@ class PianoRollInputController {
       pianoRollNotes.requestDraw()
       this._state = STATE.READY
     }
+    this._stopMarqueeAutoScroll()
     this._downPos = null
     this._downNote = null
   }
@@ -243,6 +249,7 @@ class PianoRollInputController {
       console.error('[InputController] 音高编辑失败:', error)
     } finally {
       this._state = STATE.READY
+      this._stopMarqueeAutoScroll()
       this._downPos = null
       this._downNote = null
       this._hasDragged = false
@@ -285,7 +292,7 @@ class PianoRollInputController {
     if (!pos) return
     const pointHit = this._hitTestPitchPoint(pos.x, pos.y)
     if (pointHit) return
-    const noteHit = this._findPitchEditableNote(pos.time, pos.pitchValue)
+    const noteHit = this._findPitchEditableNote(pos.x, pos.y)
     if (!noteHit) return
     try {
       await pitchEditor.addPointForNote(noteHit.note, pos.time, pos.pitchValue)
@@ -335,7 +342,7 @@ class PianoRollInputController {
     if (!pos) return
     const pointHit = this._hitTestPitchPoint(pos.x, pos.y)
     const segmentHit = pointHit ? null : this._hitTestPitchSegment(pos.x, pos.y)
-    const noteHit = this._findPitchEditableNote(pos.time, pos.pitchValue)
+    const noteHit = this._findPitchEditableNote(pos.x, pos.y)
     const items = []
 
     if (pointHit) {
@@ -594,10 +601,14 @@ class PianoRollInputController {
   }
 
   _canvasPos(e) {
-    if (!this._noteCanvas) return null
+    return this._canvasPosFromClient(e?.clientX, e?.clientY)
+  }
+
+  _canvasPosFromClient(clientX, clientY) {
+    if (!this._noteCanvas || !Number.isFinite(clientX) || !Number.isFinite(clientY)) return null
     const rect = this._noteCanvas.getBoundingClientRect()
-    const x = e.clientX - rect.left
-    const y = e.clientY - rect.top
+    const x = clientX - rect.left
+    const y = clientY - rect.top
     return {
       x,
       y,
@@ -654,13 +665,101 @@ class PianoRollInputController {
     return canvasY + PIANO_ROLL.TIME_RULER_HEIGHT
   }
 
-  _findPitchEditableNote(time, pitchValue) {
+  _updateMarqueeDrag(pos, event) {
+    if (this._state !== STATE.MARQUEE || !pos) return
+    this._marqueeClientX = event?.clientX ?? null
+    this._marqueeClientY = event?.clientY ?? null
+    noteSelection.updateMarquee(pos.x, pos.y)
+    pianoRollNotes.requestDraw()
+    this._applyMarqueeAutoScroll()
+    this._scheduleMarqueeAutoScroll()
+  }
+
+  _scheduleMarqueeAutoScroll() {
+    if (this._marqueeAutoScrollFrame || this._state !== STATE.MARQUEE) return
+    this._marqueeAutoScrollFrame = requestAnimationFrame(() => {
+      this._marqueeAutoScrollFrame = 0
+      if (this._state !== STATE.MARQUEE) return
+      const changed = this._applyMarqueeAutoScroll()
+      if (changed) this._scheduleMarqueeAutoScroll()
+    })
+  }
+
+  _stopMarqueeAutoScroll() {
+    if (this._marqueeAutoScrollFrame) {
+      cancelAnimationFrame(this._marqueeAutoScrollFrame)
+      this._marqueeAutoScrollFrame = 0
+    }
+    this._marqueeClientX = null
+    this._marqueeClientY = null
+  }
+
+  _applyMarqueeAutoScroll() {
+    const rect = this._noteCanvas?.getBoundingClientRect?.()
+    if (!rect || !Number.isFinite(this._marqueeClientX) || !Number.isFinite(this._marqueeClientY)) return false
+    const horizontalDelta = this._computeEdgeAutoScrollStep(this._marqueeClientX, rect.left, rect.right)
+    const verticalDelta = this._computeEdgeAutoScrollStep(this._marqueeClientY, rect.top, rect.bottom)
+    if (!horizontalDelta && !verticalDelta) return false
+
+    const prevScrollX = viewport.scrollX
+    const prevScrollY = viewport.scrollY
+    if (horizontalDelta) viewport.scrollByX(horizontalDelta)
+    if (verticalDelta) viewport.scrollByY(verticalDelta)
+    const changed = Math.abs(viewport.scrollX - prevScrollX) >= 0.5 || Math.abs(viewport.scrollY - prevScrollY) >= 0.5
+    if (!changed) return false
+
+    this._refreshViewportAfterMarqueeScroll()
+    const pos = this._canvasPosFromClient(this._marqueeClientX, this._marqueeClientY)
+    if (pos) {
+      noteSelection.updateMarquee(pos.x, pos.y)
+      pianoRollNotes.requestDraw()
+    }
+    return true
+  }
+
+  _refreshViewportAfterMarqueeScroll() {
+    grid.draw()
+    pianoRollNotes.requestDraw()
+    playheadController.setPosition(playheadController.getPosition())
+  }
+
+  _computeEdgeAutoScrollStep(clientCoord, minEdge, maxEdge) {
+    if (!Number.isFinite(clientCoord) || !Number.isFinite(minEdge) || !Number.isFinite(maxEdge)) return 0
+    const edgeDistance = Math.max(1, PIANO_ROLL.AUTO_SCROLL_PADDING)
+    const leadingEdge = minEdge + edgeDistance
+    const trailingEdge = maxEdge - edgeDistance
+    if (clientCoord < leadingEdge) {
+      const ratio = Math.max(0, Math.min(1, (leadingEdge - clientCoord) / edgeDistance))
+      return -MARQUEE_AUTO_SCROLL_MAX_STEP * ratio
+    }
+    if (clientCoord > trailingEdge) {
+      const ratio = Math.max(0, Math.min(1, (clientCoord - trailingEdge) / edgeDistance))
+      return MARQUEE_AUTO_SCROLL_MAX_STEP * ratio
+    }
+    return 0
+  }
+
+  _findPitchEditableNote(pixelX, pixelY) {
     let best = null
     let bestDistance = Infinity
     for (const phrase of phraseStore.getPhrases()) {
       for (const note of phrase.notes) {
-        if (time < note.time || time > note.time + note.duration) continue
-        const distance = Math.abs(note.midi - pitchValue)
+        const x = viewport.timeToX(note.time)
+        const y = viewport.pitchToY(note.midi) + PIANO_ROLL.NOTE_VERTICAL_OFFSET
+        const width = Math.max(1, viewport.durationToWidth(note.duration))
+        const height = PIANO_ROLL.KEY_HEIGHT - PIANO_ROLL.NOTE_VERTICAL_GAP
+        const dx = pixelX < x
+          ? x - pixelX
+          : pixelX > x + width
+            ? pixelX - (x + width)
+            : 0
+        const dy = pixelY < y
+          ? y - pixelY
+          : pixelY > y + height
+            ? pixelY - (y + height)
+            : 0
+        if (dx > PITCH_NOTE_HIT_PADDING_X || dy > PITCH_NOTE_HIT_PADDING_Y) continue
+        const distance = dx * dx + dy * dy
         if (distance < bestDistance) {
           best = { note, phrase }
           bestDistance = distance
