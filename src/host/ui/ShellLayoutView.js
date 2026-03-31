@@ -438,7 +438,20 @@ export class ShellLayoutView {
     this.refs.trackTimelineContent.style.setProperty('--track-preview-width', `${timelineMetrics.timelineWidth}px`)
     this.refs.emptyHint.style.display = tracks.length === 0 ? 'flex' : 'none'
     if (tracks.length === 0) {
-      this.refs.emptyHint.textContent = '暂无轨道\n点击左侧加号或右键空白区可新建轨道'
+      this.refs.emptyHint.innerHTML = ''
+      const line1 = document.createElement('div')
+      line1.textContent = '点击左侧加号新建轨道，通过钢琴卷帘或MIDI设备进行编辑'
+      const line2 = document.createElement('div')
+      line2.className = 'track-empty-hint-import'
+      const label = document.createElement('span')
+      label.textContent = '或导入MIDI文件'
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'track-empty-hint-import-button'
+      btn.textContent = '导入'
+      btn.addEventListener('click', () => this.refs.fileInput?.click())
+      line2.append(label, btn)
+      this.refs.emptyHint.append(line1, line2)
     }
 
     const fragment = document.createDocumentFragment()

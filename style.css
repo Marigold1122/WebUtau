@@ -567,9 +567,34 @@ body {
   bottom: 0;
   left: calc(var(--track-header-width) + 20px);
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   pointer-events: none;
+}
+.track-empty-hint-import {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.track-empty-hint-import-button {
+  pointer-events: auto;
+  padding: 2px 10px;
+  border: 1px solid var(--accent-color);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--accent-color);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.track-empty-hint-import-button:hover {
+  background: var(--accent-color);
+  color: #FFF;
 }
 
 .track-shell-row {
