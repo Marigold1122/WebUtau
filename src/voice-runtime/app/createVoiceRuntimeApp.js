@@ -7,12 +7,15 @@ import midiEncoder from '../../modules/MidiEncoder.js'
 import renderJobManager from '../../modules/RenderJobManager.js'
 import noteEditManager from '../../modules/NoteEditManager.js'
 import transportControl from '../../modules/TransportControl.js'
+import lyricEditor from '../../modules/LyricEditor.js'
+import pitchEditor from '../../modules/PitchEditor.js'
 import pianoRoll from '../../ui/PianoRoll.js'
 import trackSelector from '../../ui/TrackSelector.js'
 import prepareOverlay from '../../ui/PrepareOverlay.js'
 import { DEFAULT_LANGUAGE_CODE } from '../../config/languageOptions.js'
 import { EVENTS, PLAYHEAD_STATE } from '../../config/constants.js'
 import { HOST_SHORTCUT_INTENTS, getHostShortcutIntent } from '../../shared/hostShortcutIntents.js'
+import { isKeyboardShortcutTargetEditable } from '../../shared/isKeyboardShortcutTargetEditable.js'
 import { createRuntimeEventBindings } from './createRuntimeEventBindings.js'
 import phraseRenderStateStore from './phraseRenderStateStore.js'
 import { EmbeddedPlaybackMirror } from './embeddedPlaybackMirror.js'
@@ -33,6 +36,14 @@ function getRuntimeRefs() {
 function getEmbeddedMode() {
   const query = new URLSearchParams(window.location.search)
   return query.get('embedded') === '1'
+}
+
+function isUndoShortcut(event) {
+  if (!event || event.repeat) return false
+  if (event.altKey || event.shiftKey) return false
+  if (!(event.metaKey || event.ctrlKey)) return false
+  if (event.code !== 'KeyZ') return false
+  return !isKeyboardShortcutTargetEditable(event.target)
 }
 
 function resetRuntimeState() {
@@ -140,6 +151,8 @@ export function createVoiceRuntimeApp(callbacks = {}) {
 
   async function loadTrack(snapshot) {
     resetRuntime()
+    lyricEditor.resetHistory?.()
+    pitchEditor.resetHistory?.()
     state.trackId = snapshot.trackId
     state.trackIndex = snapshot.trackIndex ?? null
     state.trackName = snapshot.trackName || '未命名轨道'
@@ -183,6 +196,8 @@ export function createVoiceRuntimeApp(callbacks = {}) {
     setStatus(`正在提交 ${state.trackName} 的音符改动...`)
     suppressDirtyNotifications += 1
     try {
+      lyricEditor.resetHistory?.()
+      pitchEditor.resetHistory?.()
       const result = await noteEditManager.applyEdits(edits)
       return {
         ...result,
@@ -238,6 +253,17 @@ export function createVoiceRuntimeApp(callbacks = {}) {
     pianoRoll.setPlayheadFollowMode?.(mode)
   }
 
+  async function undoEditor() {
+    if (pitchEditor.isEnabled?.()) {
+      const handled = await pitchEditor.undo?.()
+      if (handled) setStatus(`已撤回 ${state.trackName} 的音高编辑`)
+      return handled
+    }
+    const handled = await lyricEditor.undo?.()
+    if (handled) setStatus(`已撤回 ${state.trackName} 的歌词编辑`)
+    return handled
+  }
+
   function resetRuntime() {
     const previousTrackId = state.trackId
     resetRuntimeState()
@@ -277,6 +303,7 @@ export function createVoiceRuntimeApp(callbacks = {}) {
   }
 
   function bindEmbeddedShortcutForwarding() {
+    document.addEventListener('keydown', handleEditorUndoShortcut)
     if (!embedded) return
     document.addEventListener('keydown', handleEmbeddedShortcut)
     refs.btnPlay?.addEventListener('click', () => {
@@ -297,6 +324,16 @@ export function createVoiceRuntimeApp(callbacks = {}) {
       trackId: state.trackId,
       source: 'runtime-keyboard',
     })
+  }
+
+  function handleEditorUndoShortcut(event) {
+    if (!isUndoShortcut(event)) return
+    const canUndo = pitchEditor.isEnabled?.()
+      ? pitchEditor.canUndo?.()
+      : lyricEditor.canUndo?.()
+    if (!canUndo) return
+    event.preventDefault()
+    void undoEditor()
   }
 
   function syncHostPlaybackState(payload = {}) {
@@ -328,5 +365,6 @@ export function createVoiceRuntimeApp(callbacks = {}) {
     syncHostPlaybackState,
     syncHostPlaybackTick,
     togglePlayback,
+    undoEditor,
   }
 }

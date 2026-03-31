@@ -9,6 +9,7 @@ import { createTransportStepHandler } from './createTransportStepHandler.js'
 import { createVoiceConversionViewHandlers } from './createVoiceConversionViewHandlers.js'
 import { createWaiterRegistry } from './createWaiterRegistry.js'
 import { createTimelineAxis } from '../../shared/timelineAxis.js'
+import { isKeyboardShortcutTargetEditable } from '../../shared/isKeyboardShortcutTargetEditable.js'
 import { ImportedAudioAssetRegistry } from '../audio/ImportedAudioAssetRegistry.js'
 import { ImportedAudioTrackScheduler } from '../audio/ImportedAudioTrackScheduler.js'
 import { InstrumentScheduler } from '../audio/instruments/InstrumentScheduler.js'
@@ -102,6 +103,14 @@ function buildRecordedMidiNote(project, midi, velocity, startTime, endTime) {
 function getBaseFileName(fileName = '', fallback = 'Track') {
   const normalized = String(fileName || '').trim().replace(/\.[^.]+$/, '')
   return normalized || fallback
+}
+
+function isUndoShortcut(event) {
+  if (!event || event.repeat) return false
+  if (event.altKey || event.shiftKey) return false
+  if (!(event.metaKey || event.ctrlKey)) return false
+  if (event.code !== 'KeyZ') return false
+  return !isKeyboardShortcutTargetEditable(event.target)
 }
 
 function triggerDownload(file) {
@@ -921,12 +930,36 @@ export function createHostApp() {
       }
     }
   }
+
+  function handleEditorUndoShortcut(event) {
+    if (!isUndoShortcut(event)) return
+    const editorTrack = store.getEditorTrack()
+    if (!editorTrack || isAudioTrack(editorTrack)) return
+    const editorMode = sessionStore.getEditorMode()
+
+    if (editorMode === 'note') {
+      if (!view.canUndoInstrumentEditorEdit?.()) return
+      event.preventDefault()
+      const handled = view.undoInstrumentEditorEdit?.()
+      if (!handled) return
+      render('instrument-editor-undo')
+      view.setStatus(`已撤回 ${editorTrack.name} 的音符编辑`)
+      return
+    }
+
+    if (!isVoiceRuntimeSource(editorTrack.playbackState?.assignedSourceId)) return
+    if (!taskCoordinator.isRuntimeAttachedTo(editorTrack.id)) return
+    event.preventDefault()
+    void bridge?.undoEditor?.()
+  }
+
   function init() {
     bridge.init()
     view.init()
     void bridge.setPlayheadFollowMode(sessionStore.getPlayheadFollowMode())
     transportCoordinator.init()
     shortcutRouter.init()
+    document.addEventListener('keydown', handleEditorUndoShortcut)
     initMidiInput()
     view.setStatus('系统就绪')
     logger.info('宿主初始化完成')

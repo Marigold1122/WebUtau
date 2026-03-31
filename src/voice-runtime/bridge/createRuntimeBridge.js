@@ -28,6 +28,9 @@ function buildBridgeHandlers(app) {
       const result = await app.applyNoteEdits?.(payload.edits || [])
       postToHost(VOICE_BRIDGE_EVENTS.NOTE_EDITS_RESPONSE, result || {}, requestId)
     },
+    async [VOICE_BRIDGE_COMMANDS.UNDO_EDITOR]() {
+      await app.undoEditor?.()
+    },
     [VOICE_BRIDGE_COMMANDS.RESET_RUNTIME]() {
       app.reset()
     },

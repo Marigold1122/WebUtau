@@ -6,6 +6,7 @@ export const VOICE_BRIDGE_COMMANDS = {
   RESET_RUNTIME: 'reset-runtime',
   START_SYNTHESIS: 'start-synthesis',
   APPLY_NOTE_EDITS: 'apply-note-edits',
+  UNDO_EDITOR: 'undo-editor',
   SET_EDITOR_MODE: 'set-editor-mode',
   SET_PLAYHEAD_FOLLOW_MODE: 'set-playhead-follow-mode',
   SEEK: 'seek',

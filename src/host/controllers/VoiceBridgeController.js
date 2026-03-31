@@ -47,6 +47,11 @@ export class VoiceBridgeController {
     return payload || null
   }
 
+  async undoEditor() {
+    await this.waitUntilReady()
+    this._postMessage(VOICE_BRIDGE_COMMANDS.UNDO_EDITOR, {})
+  }
+
   async setEditorMode(mode) {
     await this.waitUntilReady()
     this._postMessage(VOICE_BRIDGE_COMMANDS.SET_EDITOR_MODE, { mode })

@@ -14,6 +14,7 @@ const VIEWPORT_TAIL_BARS = 8
 const VIEWPORT_HORIZONTAL_CHUNK_BEATS = 12
 const VIEWPORT_VERTICAL_CHUNK_ROWS = 8
 const PLAYHEAD_HITBOX_WIDTH = 16
+const UNDO_HISTORY_LIMIT = 100
 
 function clampNonNegative(value, fallback = 0) {
   return Number.isFinite(value) ? Math.max(0, value) : fallback
@@ -180,6 +181,7 @@ export class InstrumentEditorView {
     this.isPlayheadDragging = false
     this.playheadDragClientX = null
     this.playheadDragScroller = null
+    this.undoStack = []
     this.state = {
       trackId: null,
       trackName: '',
@@ -272,13 +274,14 @@ export class InstrumentEditorView {
       this.state.notes = candidateNotes
       this.state.loadedSignature = nextSignature
       this.state.sourcePreviewNotesRef = previewNotes
-      this.state.dirty = false
+      this._syncDirtyState()
       this._touchNotes()
     }
     if (isTrackChanged) {
       this.state.drawDraft = null
       this.state.hoverPreview = null
       this.state.erasing = false
+      this.undoStack = []
     }
     this.setVisible(true)
     const viewportWidth = this.refs.gridViewport?.clientWidth || this.refs.gridViewport?.getBoundingClientRect?.().width || 0
@@ -343,6 +346,7 @@ export class InstrumentEditorView {
     this.state.drawDraft = null
     this.state.hoverPreview = null
     this.state.erasing = false
+    this.undoStack = []
     this.state.trackColor = getTrackColorById(null, [])
     this.state.trackBorderColor = darkenHexColor(this.state.trackColor)
     this._invalidateAxisRenderState()
@@ -394,19 +398,17 @@ export class InstrumentEditorView {
 
   appendRecordedNote(note) {
     if (!this.state.trackId) return false
-    this.state.notes = sortNotes([...this.state.notes, createDraftNote(note, this._nextNoteId())])
-    this._touchNotes()
-    this.state.dirty = true
-    this._renderMutableState({
-      axisChanged: this._ensureAxisForDraftNotes(),
-      notesChanged: true,
-    })
+    this._pushUndoSnapshot()
+    this._applyNotesSnapshot(
+      sortNotes([...this.state.notes, createDraftNote(note, this._nextNoteId())]),
+      { allowExtendAxis: true },
+    )
     return true
   }
 
   markSaved() {
-    this.state.dirty = false
     this.state.loadedSignature = buildNoteSignature(this.state.notes)
+    this._syncDirtyState()
     this._renderControls()
     this._setMetaText('已保存')
   }
@@ -417,6 +419,26 @@ export class InstrumentEditorView {
 
   isRecording() {
     return Boolean(this.state.recording)
+  }
+
+  canUndo() {
+    return this.undoStack.length > 0
+  }
+
+  undo() {
+    if (!this.state.trackId || !this.canUndo()) return false
+    const snapshot = this.undoStack.pop()
+    if (!snapshot) return false
+    this.state.drawDraft = null
+    this.state.hoverPreview = null
+    this.state.erasing = false
+    this._hideGhostNote()
+    this._hideHoverGuide()
+    this._applyNotesSnapshot(
+      sortNotes((snapshot.notes || []).map((note) => createDraftNote(note, this._nextNoteId()))),
+      { allowExtendAxis: true },
+    )
+    return true
   }
 
   getState() {
@@ -1098,10 +1120,10 @@ export class InstrumentEditorView {
   _eraseNoteAt(pos) {
     const noteIndex = this._findNoteIndexAt(pos)
     if (noteIndex < 0) return
-    this.state.notes.splice(noteIndex, 1)
-    this._touchNotes()
-    this.state.dirty = true
-    this._renderMutableState({ notesChanged: true })
+    this._pushUndoSnapshot()
+    const nextNotes = [...this.state.notes]
+    nextNotes.splice(noteIndex, 1)
+    this._applyNotesSnapshot(nextNotes)
   }
 
   _findNoteIndexAt(pos) {
@@ -1124,13 +1146,37 @@ export class InstrumentEditorView {
         && current.midi === draftNote.midi
     })
     if (duplicate) return
-    this.state.notes = sortNotes([...this.state.notes, draftNote])
+    this._pushUndoSnapshot()
+    this._applyNotesSnapshot(sortNotes([...this.state.notes, draftNote]), { allowExtendAxis: true })
+  }
+
+  _pushUndoSnapshot() {
+    if (!this.state.trackId) return
+    const snapshot = {
+      signature: buildNoteSignature(this.state.notes),
+      notes: this.state.notes.map(exportDraftNote),
+    }
+    if (this.undoStack.length > 0 && this.undoStack[this.undoStack.length - 1].signature === snapshot.signature) {
+      return
+    }
+    this.undoStack.push(snapshot)
+    if (this.undoStack.length > UNDO_HISTORY_LIMIT) {
+      this.undoStack.splice(0, this.undoStack.length - UNDO_HISTORY_LIMIT)
+    }
+  }
+
+  _applyNotesSnapshot(notes, { allowExtendAxis = false } = {}) {
+    this.state.notes = sortNotes(Array.isArray(notes) ? notes : [])
     this._touchNotes()
-    this.state.dirty = true
+    this._syncDirtyState()
     this._renderMutableState({
-      axisChanged: this._ensureAxisForDraftNotes(),
+      axisChanged: allowExtendAxis ? this._ensureAxisForDraftNotes() : false,
       notesChanged: true,
     })
+  }
+
+  _syncDirtyState() {
+    this.state.dirty = buildNoteSignature(this.state.notes) !== this.state.loadedSignature
   }
 
   _getLocalPointerPosition(event) {

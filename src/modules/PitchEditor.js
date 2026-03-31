@@ -39,6 +39,7 @@ const SUPPORT_POINT_MIN_GAP_TICK = 20
 const SUPPORT_POINT_MAX_EXTRA = 4
 const HOLD_BOUNDARY_RATIO = 0.18
 const HOLD_BOUNDARY_MAX_TICK = 40
+const HISTORY_LIMIT = 100
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value))
@@ -139,6 +140,7 @@ class PitchEditor {
     this._nextPointId = 1
     this._pendingServerSync = null
     this._selectionEventKey = ''
+    this._undoStack = []
     this._bindEvents()
   }
 
@@ -157,6 +159,7 @@ class PitchEditor {
       this._noteKeyByRef = new WeakMap()
       this._pendingServerSync = null
       this._selectionEventKey = ''
+      this._undoStack = []
       this._emitSelectionChanged()
       eventBus.emit(EVENTS.PITCH_EDITOR_MODE_CHANGED, { mode: this._mode })
     })
@@ -226,6 +229,32 @@ class PitchEditor {
 
   hasOriginalPitch() {
     return this._originalNoteControls.length > 0
+  }
+
+  canUndo() {
+    return this._undoStack.length > 0
+  }
+
+  resetHistory() {
+    this._undoStack = []
+  }
+
+  async undo() {
+    if (!this.canEdit() || !this.canUndo()) return false
+    const snapshot = this._undoStack.pop()
+    if (!snapshot?.pitchData) return false
+    const rollbackSnapshot = this._captureCommittedSnapshot()
+    try {
+      this._previewHistorySnapshot(snapshot)
+      await this._applyHistorySnapshot(snapshot, { reason: 'undo' })
+      return true
+    } catch (error) {
+      if (rollbackSnapshot?.pitchData) {
+        this._previewHistorySnapshot(rollbackSnapshot)
+      }
+      this._pushUndoSnapshot(snapshot)
+      throw error
+    }
   }
 
   getSelectedPointId() {
@@ -561,100 +590,23 @@ class PitchEditor {
 
     const currentPitchData = this._serverPitchData || phraseStore.getPitchData()
     const compiledDeviation = this._mergeCompiledDeviationWithServer(this._noteControls, currentPitchData)
-    const requestVersion = this._previewVersion
     const payload = compiledDeviation.map((point) => ({ tick: point.tick, cent: point.cent }))
-    const optimisticAffected = this._getAffectedPhraseIndices(this._noteControls)
-    if (optimisticAffected.length === 0) {
-      console.log(`[音高编辑] 跳过空提交 ${reason} | 无受影响短语`)
-      return {
-        affectedIndices: [],
-        pitchCurve: currentPitchData?.pitchCurve || [],
-        pitchDeviation: currentPitchData?.pitchDeviation || { xs: [], ys: [] },
-        midiPpq: currentPitchData?.midiPpq || 480,
-        pitchStepTick: currentPitchData?.pitchStepTick || 5,
-      }
+    const historySnapshot = this._captureCommittedSnapshot()
+    if (
+      historySnapshot?.pitchData
+      && this._buildPitchPayloadSignature(payload) !== this._buildPitchSnapshotSignature(historySnapshot.pitchData)
+    ) {
+      this._pushUndoSnapshot(historySnapshot)
     }
-
-    const renderVersion = this._buildRenderVersion(payload)
-    const phraseHashSnapshot = phraseStore.capturePhraseHashes(optimisticAffected)
-    const cacheSnapshot = renderCache.capture(optimisticAffected)
-
-    phraseStore.applyPitchRenderVersion(optimisticAffected, renderVersion)
-    renderCache.clearIndices(optimisticAffected)
-    optimisticAffected.forEach((phraseIndex) => {
-      eventBus.emit(EVENTS.CACHE_INVALIDATED, { phraseIndex })
+    return this._applyPitchDeviationPayload({
+      jobId,
+      payload,
+      controls: this._cloneNoteControls(this._noteControls),
+      selectedPointId: this._selectedPointId,
+      selectedSegmentId: this._selectedSegmentId,
+      currentPitchData,
+      reason,
     })
-    audioEngine.cancelPhrases(optimisticAffected)
-    renderJobManager.incrementGeneration()
-    this._prioritizeDirtyPhrase()
-
-    console.log(
-      `[音高编辑] → 提交 ${reason} | 点数=${payload.length}, 版本=${requestVersion}, 受影响=[${optimisticAffected.join(',')}]`,
-    )
-
-    const task = this._commitQueue.then(async () => {
-      const response = await renderApi.applyPitchDeviation(jobId, payload)
-      const nextPitchData = this._extractPitchDataFromResponse(response)
-      const serverAffected = Array.isArray(response?.affectedIndices)
-        ? response.affectedIndices.filter((index) => Number.isInteger(index) && index >= 0)
-        : []
-      const affectedIndices = [...new Set(serverAffected.length > 0
-        ? serverAffected
-        : optimisticAffected)]
-      const isCurrentRequest = requestVersion === this._previewVersion
-
-      this._serverPitchData = this._clonePitchData(nextPitchData)
-
-      if (isCurrentRequest) {
-        const restoredIndices = optimisticAffected.filter((index) => !affectedIndices.includes(index))
-        if (restoredIndices.length > 0) {
-          phraseStore.restorePhraseHashes(phraseHashSnapshot.filter((entry) => restoredIndices.includes(entry.phraseIndex)))
-          renderCache.restore(cacheSnapshot.filter((entry) => restoredIndices.includes(entry.phraseIndex)))
-        }
-
-        const extraAffected = affectedIndices.filter((index) => !optimisticAffected.includes(index))
-        if (extraAffected.length > 0) {
-          phraseStore.applyPitchRenderVersion(extraAffected, renderVersion)
-          renderCache.clearIndices(extraAffected)
-          extraAffected.forEach((phraseIndex) => {
-            eventBus.emit(EVENTS.CACHE_INVALIDATED, { phraseIndex })
-          })
-          audioEngine.cancelPhrases(extraAffected)
-        }
-      }
-
-      if (affectedIndices.length > 0) {
-        renderJobManager.restartForEdit(phraseStore.getPhrases().length)
-        this._prioritizeDirtyPhrase()
-      }
-
-      if (requestVersion === this._previewVersion) {
-        this._serverNoteControls = this._cloneNoteControls(this._noteControls)
-        this._pendingServerSync = {
-          jobId,
-          controls: this._cloneNoteControls(this._noteControls),
-          selectedPointId: this._selectedPointId,
-          selectedSegmentId: this._selectedSegmentId,
-        }
-        phraseStore.setPitchData(nextPitchData)
-      }
-
-      console.log(`[音高编辑] ← 提交成功 ${reason} | 受影响短语=[${affectedIndices.join(',')}]`)
-      return response
-    }).catch((error) => {
-      console.error(`[音高编辑] 提交失败 ${reason}`, error)
-      if (requestVersion === this._previewVersion) {
-        phraseStore.restorePhraseHashes(phraseHashSnapshot)
-        renderCache.restore(cacheSnapshot)
-      }
-      if (requestVersion === this._previewVersion && this._serverPitchData) {
-        phraseStore.setPitchData(this._serverPitchData)
-      }
-      throw error
-    })
-
-    this._commitQueue = task.catch(() => {})
-    return task
   }
 
   getBasePitchAtTick(tick, pitchData = phraseStore.getPitchData()) {
@@ -1444,6 +1396,192 @@ class PitchEditor {
 
   _cloneNoteControls(controls) {
     return Array.isArray(controls) ? controls.map(cloneControl) : []
+  }
+
+  _captureCommittedSnapshot() {
+    const pitchData = this._clonePitchData(this._serverPitchData || phraseStore.getPitchData())
+    if (!pitchData) return null
+    return {
+      pitchData,
+      noteControls: this._cloneNoteControls(this._serverNoteControls.length > 0 ? this._serverNoteControls : this._noteControls),
+      selectedPointId: this._selectedPointId,
+      selectedSegmentId: this._selectedSegmentId,
+    }
+  }
+
+  _pushUndoSnapshot(snapshot) {
+    if (!snapshot?.pitchData) return
+    const normalized = {
+      pitchData: this._clonePitchData(snapshot.pitchData),
+      noteControls: this._cloneNoteControls(snapshot.noteControls),
+      selectedPointId: snapshot.selectedPointId || null,
+      selectedSegmentId: snapshot.selectedSegmentId || null,
+    }
+    const nextSignature = this._buildPitchSnapshotSignature(normalized.pitchData)
+    const lastSignature = this._undoStack.length > 0
+      ? this._buildPitchSnapshotSignature(this._undoStack[this._undoStack.length - 1].pitchData)
+      : null
+    if (nextSignature === lastSignature) return
+    this._undoStack.push(normalized)
+    if (this._undoStack.length > HISTORY_LIMIT) {
+      this._undoStack.splice(0, this._undoStack.length - HISTORY_LIMIT)
+    }
+  }
+
+  _buildPitchSnapshotSignature(pitchData) {
+    const xs = Array.isArray(pitchData?.pitchDeviation?.xs) ? pitchData.pitchDeviation.xs : []
+    const ys = Array.isArray(pitchData?.pitchDeviation?.ys) ? pitchData.pitchDeviation.ys : []
+    return `${xs.join(',')}|${ys.join(',')}`
+  }
+
+  _buildPitchPayloadSignature(payload) {
+    if (!Array.isArray(payload)) return '|'
+    return `${payload.map((point) => point?.tick ?? 0).join(',')}|${payload.map((point) => point?.cent ?? 0).join(',')}`
+  }
+
+  _previewHistorySnapshot(snapshot) {
+    const pitchData = this._clonePitchData(snapshot?.pitchData)
+    const controls = this._cloneNoteControls(snapshot?.noteControls)
+    if (!pitchData) return false
+    this._noteControls = controls
+    this._previewVersion += 1
+    this._selectedPointId = snapshot?.selectedPointId && this._findDisplayPoint(snapshot.selectedPointId, controls)
+      ? snapshot.selectedPointId
+      : null
+    this._selectedSegmentId = snapshot?.selectedSegmentId && this._findDisplaySegment(snapshot.selectedSegmentId, controls)
+      ? snapshot.selectedSegmentId
+      : this._resolveOutgoingSegmentId(this._selectedPointId, controls)
+    this._pendingServerSync = null
+    this._emitSelectionChanged()
+    phraseStore.previewPitchData(pitchData)
+    return true
+  }
+
+  async _applyHistorySnapshot(snapshot, { reason = 'history-restore' } = {}) {
+    const pitchData = this._clonePitchData(snapshot?.pitchData)
+    if (!pitchData) return false
+    const payload = (pitchData.pitchDeviation?.xs || []).map((tick, index) => ({
+      tick,
+      cent: pitchData.pitchDeviation?.ys?.[index] || 0,
+    }))
+    const jobId = phraseStore.getJobId()
+    if (!jobId) throw new Error('No active job')
+    return this._applyPitchDeviationPayload({
+      jobId,
+      payload,
+      controls: this._cloneNoteControls(snapshot.noteControls),
+      selectedPointId: snapshot.selectedPointId || null,
+      selectedSegmentId: snapshot.selectedSegmentId || null,
+      currentPitchData: this._serverPitchData || phraseStore.getPitchData(),
+      reason,
+    })
+  }
+
+  _applyPitchDeviationPayload({
+    jobId,
+    payload,
+    controls,
+    selectedPointId = null,
+    selectedSegmentId = null,
+    currentPitchData,
+    reason = 'pitch-edit',
+  }) {
+    const requestVersion = this._previewVersion
+    const optimisticAffected = this._getAffectedPhraseIndices(controls)
+    if (optimisticAffected.length === 0) {
+      console.log(`[音高编辑] 跳过空提交 ${reason} | 无受影响短语`)
+      return Promise.resolve({
+        affectedIndices: [],
+        pitchCurve: currentPitchData?.pitchCurve || [],
+        pitchDeviation: currentPitchData?.pitchDeviation || { xs: [], ys: [] },
+        midiPpq: currentPitchData?.midiPpq || 480,
+        pitchStepTick: currentPitchData?.pitchStepTick || 5,
+      })
+    }
+
+    const renderVersion = this._buildRenderVersion(payload)
+    const phraseHashSnapshot = phraseStore.capturePhraseHashes(optimisticAffected)
+    const cacheSnapshot = renderCache.capture(optimisticAffected)
+
+    phraseStore.applyPitchRenderVersion(optimisticAffected, renderVersion)
+    renderCache.clearIndices(optimisticAffected)
+    optimisticAffected.forEach((phraseIndex) => {
+      eventBus.emit(EVENTS.CACHE_INVALIDATED, { phraseIndex })
+    })
+    audioEngine.cancelPhrases(optimisticAffected)
+    renderJobManager.incrementGeneration()
+    this._prioritizeDirtyPhrase()
+
+    console.log(
+      `[音高编辑] → 提交 ${reason} | 点数=${payload.length}, 版本=${requestVersion}, 受影响=[${optimisticAffected.join(',')}]`,
+    )
+
+    const task = this._commitQueue.then(async () => {
+      const response = await renderApi.applyPitchDeviation(jobId, payload)
+      const nextPitchData = this._extractPitchDataFromResponse(response)
+      const serverAffected = Array.isArray(response?.affectedIndices)
+        ? response.affectedIndices.filter((index) => Number.isInteger(index) && index >= 0)
+        : []
+      const affectedIndices = [...new Set(serverAffected.length > 0
+        ? serverAffected
+        : optimisticAffected)]
+      const isCurrentRequest = requestVersion === this._previewVersion
+
+      this._serverPitchData = this._clonePitchData(nextPitchData)
+
+      if (isCurrentRequest) {
+        const restoredIndices = optimisticAffected.filter((index) => !affectedIndices.includes(index))
+        if (restoredIndices.length > 0) {
+          phraseStore.restorePhraseHashes(phraseHashSnapshot.filter((entry) => restoredIndices.includes(entry.phraseIndex)))
+          renderCache.restore(cacheSnapshot.filter((entry) => restoredIndices.includes(entry.phraseIndex)))
+        }
+
+        const extraAffected = affectedIndices.filter((index) => !optimisticAffected.includes(index))
+        if (extraAffected.length > 0) {
+          phraseStore.applyPitchRenderVersion(extraAffected, renderVersion)
+          renderCache.clearIndices(extraAffected)
+          extraAffected.forEach((phraseIndex) => {
+            eventBus.emit(EVENTS.CACHE_INVALIDATED, { phraseIndex })
+          })
+          audioEngine.cancelPhrases(extraAffected)
+        }
+      }
+
+      if (affectedIndices.length > 0) {
+        renderJobManager.restartForEdit(phraseStore.getPhrases().length)
+        this._prioritizeDirtyPhrase()
+      }
+
+      if (requestVersion === this._previewVersion) {
+        this._noteControls = this._cloneNoteControls(controls)
+        this._selectedPointId = selectedPointId
+        this._selectedSegmentId = selectedSegmentId
+        this._serverNoteControls = this._cloneNoteControls(controls)
+        this._pendingServerSync = {
+          jobId,
+          controls: this._cloneNoteControls(controls),
+          selectedPointId,
+          selectedSegmentId,
+        }
+        phraseStore.setPitchData(nextPitchData)
+      }
+
+      console.log(`[音高编辑] ← 提交成功 ${reason} | 受影响短语=[${affectedIndices.join(',')}]`)
+      return response
+    }).catch((error) => {
+      console.error(`[音高编辑] 提交失败 ${reason}`, error)
+      if (requestVersion === this._previewVersion) {
+        phraseStore.restorePhraseHashes(phraseHashSnapshot)
+        renderCache.restore(cacheSnapshot)
+      }
+      if (requestVersion === this._previewVersion && this._serverPitchData) {
+        phraseStore.setPitchData(this._serverPitchData)
+      }
+      throw error
+    })
+
+    this._commitQueue = task.catch(() => {})
+    return task
   }
 
   _createPointId() {

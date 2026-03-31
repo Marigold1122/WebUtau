@@ -240,6 +240,14 @@ export class ShellLayoutView {
     return this.instrumentEditorView.appendRecordedNote(note)
   }
 
+  canUndoInstrumentEditorEdit() {
+    return this.instrumentEditorView.canUndo()
+  }
+
+  undoInstrumentEditorEdit() {
+    return this.instrumentEditorView.undo()
+  }
+
   getEditorMode() {
     if (this.btnEditorPitchMode?.classList.contains('active')) return 'pitch'
     if (this.btnEditorLyricMode?.classList.contains('active')) return 'lyric'

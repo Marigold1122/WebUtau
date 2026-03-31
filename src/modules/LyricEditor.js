@@ -7,14 +7,40 @@ import eventBus from '../core/EventBus.js'
 import { EVENTS } from '../config/constants.js'
 
 const M = '[歌词编辑]'
+const HISTORY_LIMIT = 100
 
 class LyricEditor {
   constructor() {
     this._editQueue = Promise.resolve()
+    this._undoStack = []
+    this._optimisticVersion = 0
+    eventBus.on(EVENTS.JOB_SUBMITTED, () => this.resetHistory())
   }
 
   canEdit() {
     return phraseStore.getJobId() != null && renderJobManager.isRebuilt()
+  }
+
+  canUndo() {
+    return this._undoStack.length > 0
+  }
+
+  resetHistory() {
+    this._undoStack = []
+    this._optimisticVersion = 0
+  }
+
+  async undo() {
+    if (!this.canEdit() || !this.canUndo()) return false
+    const snapshot = this._undoStack.pop()
+    if (!Array.isArray(snapshot) || snapshot.length === 0) return false
+    try {
+      await this.restoreSnapshot(snapshot, { recordHistory: false, reason: 'undo' })
+      return true
+    } catch (error) {
+      this._pushUndoSnapshot(snapshot)
+      throw error
+    }
   }
 
   editNoteLyric(noteIdentity, newLyric, phraseIndex, noteRef) {
@@ -22,15 +48,8 @@ class LyricEditor {
     const rollbackSnapshot = this._snapshotPhrases()
 
     if (phraseIndex != null) {
-      renderCache.clearIndices([phraseIndex])
-      audioEngine.cancelPhrases([phraseIndex])
-      eventBus.emit(EVENTS.CACHE_INVALIDATED, { phraseIndex })
-      renderJobManager.incrementGeneration()
-
-      // 乐观更新歌词：同步修改本地 note.lyric，让 UI 立刻显示
-      if (noteRef) noteRef.lyric = newLyric
-      eventBus.emit(EVENTS.PHRASES_EDITED, { phrases: phraseStore.getPhrases() })
-
+      this._markPhrasesDirty([phraseIndex])
+      if (noteRef) this._applyOptimisticLyricMap(new Map([[this._buildNoteIdentity(noteRef), newLyric]]))
       console.log(`${M} 乐观失效+歌词预更新 | 第${phraseIndex}句: 缓存已清除, 世代已递增, UI已刷新`)
     }
 
@@ -42,9 +61,8 @@ class LyricEditor {
       lyric: newLyric,
     }]
 
-    const result = this._editQueue.then(() => this._processEdit(edits, rollbackSnapshot))
-    this._editQueue = result.catch(() => {})
-    return result
+    this._pushUndoSnapshot(rollbackSnapshot)
+    return this._enqueueEdit(edits, rollbackSnapshot)
   }
 
   editBatchLyrics(noteEntries, lyrics) {
@@ -60,21 +78,13 @@ class LyricEditor {
       console.log(`${M}   音符${i}: time=${entry.note.time.toFixed(3)}s, midi=${entry.note.midi}, pos480=${pos}, dur480=${dur}, 当前lyric="${entry.note.lyric}", 新lyric="${lyrics[i] || 'a'}"`)
     })
 
-    renderCache.clearIndices(affectedPhrases)
-    audioEngine.cancelPhrases(affectedPhrases)
-    affectedPhrases.forEach((phraseIndex) => {
-      eventBus.emit(EVENTS.CACHE_INVALIDATED, { phraseIndex })
-    })
-    renderJobManager.incrementGeneration()
+    this._markPhrasesDirty(affectedPhrases)
 
     // 乐观更新歌词：同步修改本地 note.lyric，让 UI 立刻显示新歌词
     // 后端响应后 rebuildFromEdit 会用后端权威数据覆盖
-    noteEntries.forEach((entry, i) => {
-      entry.note.lyric = lyrics[i] || 'a'
-    })
-
-    // 触发重绘，让音符上的文字立刻更新
-    eventBus.emit(EVENTS.PHRASES_EDITED, { phrases: phraseStore.getPhrases() })
+    this._applyOptimisticLyricMap(new Map(
+      noteEntries.map((entry, i) => [this._buildNoteIdentity(entry.note), lyrics[i] || 'a']),
+    ))
 
     console.log(`${M} 乐观失效+歌词预更新 | phrase=[${affectedPhrases}]: 缓存已清除, 世代已递增, UI已刷新`)
 
@@ -88,12 +98,27 @@ class LyricEditor {
 
     console.log(`${M} 构建edits | ${JSON.stringify(edits)}`)
 
-    const result = this._editQueue.then(() => this._processEdit(edits, rollbackSnapshot))
-    this._editQueue = result.catch(() => {})
-    return result
+    this._pushUndoSnapshot(rollbackSnapshot)
+    return this._enqueueEdit(edits, rollbackSnapshot)
   }
 
-  async _processEdit(edits, rollbackSnapshot) {
+  restoreSnapshot(targetSnapshot, { recordHistory = false, reason = 'restore' } = {}) {
+    if (!Array.isArray(targetSnapshot) || targetSnapshot.length === 0) return Promise.resolve(false)
+    const rollbackSnapshot = this._snapshotPhrases()
+    const { edits, affectedPhrases, lyricMap } = this._buildRestorePlan(targetSnapshot)
+    if (edits.length === 0) return Promise.resolve(false)
+
+    this._markPhrasesDirty(affectedPhrases)
+    this._applyOptimisticLyricMap(lyricMap)
+    console.log(`${M} ← 执行撤回快照 | reason=${reason}, edits=${edits.length}, affected=[${affectedPhrases.join(',')}]`)
+
+    if (recordHistory) {
+      this._pushUndoSnapshot(rollbackSnapshot)
+    }
+    return this._enqueueEdit(edits, rollbackSnapshot)
+  }
+
+  async _processEdit(edits, rollbackSnapshot, requestVersion) {
     const jobId = phraseStore.getJobId()
     if (!jobId) throw new Error('No active job')
 
@@ -104,7 +129,9 @@ class LyricEditor {
       response = await renderApi.editNotes(jobId, edits)
       this._assertLyricOnlyResponse(edits, response?.phrases, rollbackSnapshot)
     } catch (error) {
-      this._restorePhrases(rollbackSnapshot)
+      if (requestVersion === this._optimisticVersion) {
+        this._restorePhrases(rollbackSnapshot)
+      }
       console.error(`${M} 编辑失败，已回滚本地状态`, error)
       throw error
     }
@@ -122,6 +149,11 @@ class LyricEditor {
           console.log(`${M} 后端phrase ${idx} notes: ${bp.notes.map(n => `(pos=${n.position},tone=${n.tone},lyric="${n.lyric}")`).join(', ')}`)
         }
       }
+    }
+
+    if (requestVersion !== this._optimisticVersion) {
+      console.log(`${M} 跳过过期响应 | version=${requestVersion}, latest=${this._optimisticVersion}`)
+      return response
     }
 
     if (Array.isArray(affectedIndices) && affectedIndices.length > 0) {
@@ -148,10 +180,109 @@ class LyricEditor {
     }))
   }
 
+  _enqueueEdit(edits, rollbackSnapshot) {
+    const requestVersion = ++this._optimisticVersion
+    const result = this._editQueue.then(() => this._processEdit(edits, rollbackSnapshot, requestVersion))
+    this._editQueue = result.catch(() => {})
+    return result
+  }
+
   _restorePhrases(phrases) {
     if (!Array.isArray(phrases) || phrases.length === 0) return
     phraseStore.setPhrases(phrases)
     eventBus.emit(EVENTS.PHRASES_EDITED, { phrases })
+  }
+
+  _markPhrasesDirty(phraseIndices) {
+    const indices = [...new Set((Array.isArray(phraseIndices) ? phraseIndices : []).filter((index) => Number.isInteger(index) && index >= 0))]
+    if (indices.length === 0) return
+    renderCache.clearIndices(indices)
+    audioEngine.cancelPhrases(indices)
+    indices.forEach((phraseIndex) => {
+      eventBus.emit(EVENTS.CACHE_INVALIDATED, { phraseIndex })
+    })
+    renderJobManager.incrementGeneration()
+  }
+
+  _applyOptimisticLyricMap(lyricMap) {
+    if (!(lyricMap instanceof Map) || lyricMap.size === 0) return
+    phraseStore.getPhrases().forEach((phrase) => {
+      ;(phrase.notes || []).forEach((note) => {
+        const nextLyric = lyricMap.get(this._buildNoteIdentity(note))
+        if (typeof nextLyric === 'string' && nextLyric.length > 0) {
+          note.lyric = nextLyric
+        }
+      })
+    })
+    eventBus.emit(EVENTS.PHRASES_EDITED, { phrases: phraseStore.getPhrases() })
+  }
+
+  _buildRestorePlan(targetSnapshot) {
+    const bpm = phraseStore.getBpm()
+    const targetLyricMap = new Map()
+    targetSnapshot.forEach((phrase) => {
+      ;(phrase?.notes || []).forEach((note) => {
+        targetLyricMap.set(this._buildNoteIdentity(note, bpm), note?.lyric || 'a')
+      })
+    })
+
+    const edits = []
+    const affectedPhrases = new Set()
+    phraseStore.getPhrases().forEach((phrase) => {
+      ;(phrase?.notes || []).forEach((note) => {
+        const identity = this._buildNoteIdentity(note, bpm)
+        if (!targetLyricMap.has(identity)) return
+        const nextLyric = targetLyricMap.get(identity) || 'a'
+        if ((note?.lyric || 'a') === nextLyric) return
+        affectedPhrases.add(phrase.index)
+        edits.push({
+          action: 'lyric',
+          position: Math.round((note.time * 480 * bpm) / 60),
+          duration: Math.round((note.duration * 480 * bpm) / 60),
+          tone: note.midi,
+          lyric: nextLyric,
+        })
+      })
+    })
+
+    return {
+      edits,
+      affectedPhrases: [...affectedPhrases].sort((left, right) => left - right),
+      lyricMap: targetLyricMap,
+    }
+  }
+
+  _buildNoteIdentity(note, bpm = phraseStore.getBpm()) {
+    const safeBpm = Number.isFinite(bpm) && bpm > 0 ? bpm : 120
+    const position = Math.round((Number(note?.time || 0) * 480 * safeBpm) / 60)
+    const duration = Math.round((Number(note?.duration || 0) * 480 * safeBpm) / 60)
+    const tone = Number.isFinite(note?.midi) ? Math.round(note.midi) : 60
+    return `${position}:${duration}:${tone}`
+  }
+
+  _pushUndoSnapshot(snapshot) {
+    if (!Array.isArray(snapshot) || snapshot.length === 0) return
+    const normalized = snapshot.map((phrase) => ({
+      ...phrase,
+      notes: (phrase.notes || []).map((note) => ({ ...note })),
+    }))
+    const nextSignature = this._buildSnapshotSignature(normalized)
+    const lastSignature = this._undoStack.length > 0
+      ? this._buildSnapshotSignature(this._undoStack[this._undoStack.length - 1])
+      : null
+    if (nextSignature === lastSignature) return
+    this._undoStack.push(normalized)
+    if (this._undoStack.length > HISTORY_LIMIT) {
+      this._undoStack.splice(0, this._undoStack.length - HISTORY_LIMIT)
+    }
+  }
+
+  _buildSnapshotSignature(snapshot) {
+    return snapshot
+      .map((phrase) => (phrase?.notes || [])
+        .map((note) => `${note.time}:${note.duration}:${note.midi}:${note.lyric || 'a'}`)
+        .join('|'))
+      .join('||')
   }
 
   _assertLyricOnlyResponse(edits, backendPhrases, rollbackSnapshot) {
