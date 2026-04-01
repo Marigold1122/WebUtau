@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build"
+    "build": "vite build",
+    "check:max-lines": "node ./scripts/check-max-lines.mjs"
   },
   "devDependencies": {
     "vite": "6.4.1"
