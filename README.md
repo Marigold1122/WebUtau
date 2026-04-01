@@ -218,3 +218,5 @@ melody-singer/
 - 后端依赖：OpenUtau Core / Plugin.Builtin（源码子集已随仓库提供）
 - 音色转换：Python + PyTorch + SeedVC
 - 音频：Web Audio API + Tone.js
+
+- 2026-04-01：新增混响面板双语标签与预设风格中文注释。

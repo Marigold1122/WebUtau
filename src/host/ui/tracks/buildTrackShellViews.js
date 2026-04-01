@@ -1,5 +1,5 @@
 import { isAudioTrack } from '../../project/trackContentType.js'
-import { normalizeTrackVolume } from '../../project/trackPlaybackState.js'
+import { normalizeTrackReverbConfig, normalizeTrackReverbSend, normalizeTrackVolume } from '../../project/trackPlaybackState.js'
 import { renderTrackPreviewCanvas } from '../renderTrackPreviewCanvas.js'
 import { createTrackMonitorBadge } from './TrackMonitorBadge.js'
 import { getTrackColor } from './trackColorPalette.js'
@@ -331,9 +331,17 @@ function createTrackItem({ track, index, selectedTrackId, viewState, handlers })
 
   const bottom = document.createElement('div')
   bottom.className = 'track-item-footer'
+  const openReverbTrackIds = Array.isArray(viewState?.openReverbTrackIds) ? viewState.openReverbTrackIds : []
+  const reverbConfig = normalizeTrackReverbConfig(track.playbackState?.reverbConfig)
   bottom.appendChild(createTrackMonitorBadge(track, {
     onToggleSolo: handlers.onTrackSoloToggled,
     onToggleMute: handlers.onTrackMuteToggled,
+    onToggleFx: handlers.onTrackFxToggled,
+    fxOpen: Boolean(viewState?.reverbDockOpen) && openReverbTrackIds.includes(track.id),
+    fxEnabled: (
+      normalizeTrackReverbSend(track.playbackState?.reverbSend) > 0.0001
+      && Number(reverbConfig?.returnGain || 0) > 0.0001
+    ),
   }))
   bottom.appendChild(createTrackVolumeControl(track, trackColor, handlers))
   item.append(top, bottom)
