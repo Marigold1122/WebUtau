@@ -103,6 +103,9 @@ public class SynthesisController : ControllerBase {
         if (!System.IO.File.Exists(phrase.OutputPath))
             return NotFound(new { error = "Phrase file not found." });
 
+        Response.Headers["Cache-Control"] = "no-store, no-cache, max-age=0";
+        Response.Headers["Pragma"] = "no-cache";
+        Response.Headers["Expires"] = "0";
         var stream = System.IO.File.OpenRead(phrase.OutputPath);
         return File(stream, "audio/wav");
     }

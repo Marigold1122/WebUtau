@@ -1502,6 +1502,7 @@ class PitchEditor {
     const renderVersion = this._buildRenderVersion(payload)
     const phraseHashSnapshot = phraseStore.capturePhraseHashes(optimisticAffected)
     const cacheSnapshot = renderCache.capture(optimisticAffected)
+    const interactiveEditToken = renderJobManager.beginInteractiveEdit(optimisticAffected)
 
     phraseStore.applyPitchRenderVersion(optimisticAffected, renderVersion)
     renderCache.clearIndices(optimisticAffected)
@@ -1551,6 +1552,7 @@ class PitchEditor {
         renderJobManager.restartForEdit(phraseStore.getPhrases().length)
         this._prioritizeDirtyPhrase()
       }
+      renderJobManager.endInteractiveEdit(interactiveEditToken)
 
       if (requestVersion === this._previewVersion) {
         this._noteControls = this._cloneNoteControls(controls)
@@ -1574,6 +1576,7 @@ class PitchEditor {
         phraseStore.restorePhraseHashes(phraseHashSnapshot)
         renderCache.restore(cacheSnapshot)
       }
+      renderJobManager.endInteractiveEdit(interactiveEditToken)
       if (requestVersion === this._previewVersion && this._serverPitchData) {
         phraseStore.setPitchData(this._serverPitchData)
       }

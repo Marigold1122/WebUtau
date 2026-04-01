@@ -7,6 +7,14 @@ function _getAudioContext() {
   return _audioCtx
 }
 
+function _buildPhraseDownloadUrl(jobId, phraseIndex, versionKey = null) {
+  const url = new URL(buildRenderApiUrl(`/api/jobs/${jobId}/phrases/${phraseIndex}`), window.location.origin)
+  if (typeof versionKey === 'string' && versionKey) {
+    url.searchParams.set('v', versionKey)
+  }
+  return url.toString()
+}
+
 const renderApi = {
   async submitJob(midiFile, singerId, language) {
     const formData = new FormData()
@@ -24,8 +32,11 @@ const renderApi = {
     const response = await fetch(buildRenderApiUrl(`/api/jobs/${jobId}`))
     return response.json()
   },
-  async downloadPhrase(jobId, phraseIndex) {
-    const response = await fetch(buildRenderApiUrl(`/api/jobs/${jobId}/phrases/${phraseIndex}`))
+  async downloadPhrase(jobId, phraseIndex, versionKey = null) {
+    const response = await fetch(_buildPhraseDownloadUrl(jobId, phraseIndex, versionKey), {
+      cache: 'no-store',
+    })
+    if (!response.ok) throw new Error(`downloadPhrase failed: ${response.status}`)
     const arrayBuffer = await response.arrayBuffer()
     const audioContext = _getAudioContext()
     return audioContext.decodeAudioData(arrayBuffer)

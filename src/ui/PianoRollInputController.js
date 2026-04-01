@@ -227,21 +227,28 @@ class PianoRollInputController {
   }
 
   async _onPitchMouseUp(_e) {
+    const completedState = this._state
+    const completedNote = this._downNote
+
+    if (completedState === STATE.PITCH_POINT_DRAG) {
+      this._flushPitchPreview()
+      this._downPos = null
+    }
+
     try {
-      if (this._state === STATE.PITCH_POINT_DRAG) {
-        this._flushPitchPreview()
+      if (completedState === STATE.PITCH_POINT_DRAG) {
         await pitchEditor.commitPreview('move-point')
-      } else if (this._state === STATE.NOTE_PENDING) {
-        if (this._downNote) {
-          noteSelection.replaceWithNote(this._downNote.note, this._downNote.phrase)
+      } else if (completedState === STATE.NOTE_PENDING) {
+        if (completedNote) {
+          noteSelection.replaceWithNote(completedNote.note, completedNote.phrase)
         } else {
           pitchEditor.clearSelection()
         }
         pianoRollNotes.requestDraw()
-      } else if (this._state === STATE.BLANK_PENDING) {
+      } else if (completedState === STATE.BLANK_PENDING) {
         noteSelection.clear()
         pianoRollNotes.requestDraw()
-      } else if (this._state === STATE.MARQUEE) {
+      } else if (completedState === STATE.MARQUEE) {
         noteSelection.commitMarquee(phraseStore.getPhrases(), viewport)
         pianoRollNotes.requestDraw()
       }

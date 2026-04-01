@@ -32,8 +32,9 @@ function summarizeManifest(manifest) {
   }
 }
 
-function normalizeProgressStatus(nextStatus, existingStatus) {
-  if (existingStatus === 'available') return 'available'
+function normalizeProgressStatus(nextStatus, existingStatus, options = {}) {
+  const hashChanged = options.hashChanged === true
+  if (!hashChanged && existingStatus === 'available') return 'available'
   if (nextStatus === 'available') return 'available'
   if (nextStatus === 'failed') return 'failed'
   if (nextStatus === 'completed' || nextStatus === 'rendering' || nextStatus === 'preparing' || nextStatus === 'queued') {
@@ -117,10 +118,12 @@ export function applyManifestSync(manifest, payload = {}) {
     ? payload.phraseStates.map((phraseState, index) => {
       const phraseIndex = Number.isInteger(phraseState?.phraseIndex) ? phraseState.phraseIndex : index
       const previous = previousMap.get(phraseIndex)
+      const nextInputHash = phraseState?.inputHash || previous?.inputHash || null
+      const hashChanged = (previous?.inputHash || null) !== nextInputHash
       return {
         phraseIndex,
-        inputHash: phraseState?.inputHash || previous?.inputHash || null,
-        status: normalizeProgressStatus(phraseState?.status, previous?.status),
+        inputHash: nextInputHash,
+        status: normalizeProgressStatus(phraseState?.status, previous?.status, { hashChanged }),
         startMs: Number.isFinite(phraseState?.startMs) ? phraseState.startMs : previous?.startMs ?? null,
         durationMs: Number.isFinite(phraseState?.durationMs) ? phraseState.durationMs : previous?.durationMs ?? null,
       }

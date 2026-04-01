@@ -10,8 +10,18 @@ function buildAssetKey(ref = {}) {
   ].join(':')
 }
 
-async function fetchPhraseBuffer(jobId, phraseIndex) {
-  const response = await fetch(buildRenderApiUrl(`/api/jobs/${jobId}/phrases/${phraseIndex}`))
+function buildPhraseDownloadUrl(jobId, phraseIndex, versionKey = null) {
+  const url = new URL(buildRenderApiUrl(`/api/jobs/${jobId}/phrases/${phraseIndex}`), window.location.origin)
+  if (typeof versionKey === 'string' && versionKey) {
+    url.searchParams.set('v', versionKey)
+  }
+  return url.toString()
+}
+
+async function fetchPhraseBuffer(jobId, phraseIndex, versionKey = null) {
+  const response = await fetch(buildPhraseDownloadUrl(jobId, phraseIndex, versionKey), {
+    cache: 'no-store',
+  })
   if (!response.ok) {
     throw new Error(`phrase download failed: ${response.status}`)
   }
@@ -58,7 +68,7 @@ export class HostVocalAssetRegistry {
       promise: null,
     }
 
-    entry.promise = fetchPhraseBuffer(ref.jobId, entry.phraseIndex)
+    entry.promise = fetchPhraseBuffer(ref.jobId, entry.phraseIndex, entry.inputHash || entry.key)
       .then((buffer) => {
         entry.buffer = buffer
         entry.promise = null
