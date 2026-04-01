@@ -4,6 +4,7 @@ import { PLAYHEAD_FOLLOW_MODE_LABELS, PLAYHEAD_FOLLOW_MODES, normalizePlayheadFo
 import { InspectorVoiceConversionSection } from './InspectorVoiceConversionSection.js'
 import { MenubarTransportView } from './MenubarTransportView.js'
 import { PlaybackToastView } from './PlaybackToastView.js'
+import { ReverbDockView } from './ReverbDockView.js'
 import { isAudioTrack } from '../project/trackContentType.js'
 import { getTrackSourceInspectorText } from '../project/trackSourceAssignment.js'
 import { isVoiceRuntimeSource } from '../project/trackSourceAssignment.js'
@@ -60,7 +61,9 @@ export class ShellLayoutView {
     this.voiceConversionSection = new InspectorVoiceConversionSection(this.refs.voiceConversionSection, handlers)
     this.trackViewportController = new TrackViewportController(this.refs, handlers)
     this.instrumentEditorView = new InstrumentEditorView(this.refs.instrumentEditorRoot, handlers)
+    this.reverbDockView = new ReverbDockView(this.refs, handlers)
     this.workspaceSplitController = new WorkspaceSplitController(this.refs)
+    this.reverbDockVisible = false
     this.fileMenu = this._createFileMenu()
     this.trackContextMenu = this._createTrackContextMenu()
     this.trackContextTrackId = null
@@ -91,6 +94,7 @@ export class ShellLayoutView {
     this.voiceConversionSection.setHandlers(handlers)
     this.trackViewportController.setHandlers(handlers)
     this.instrumentEditorView.setHandlers(handlers)
+    this.reverbDockView.setHandlers(handlers)
   }
 
   init() {
@@ -100,6 +104,7 @@ export class ShellLayoutView {
     this.playbackToastView.init()
     this.voiceConversionSection.init()
     this.instrumentEditorView.init()
+    this.reverbDockView.init()
     this._bindEvents()
     this.trackViewportController.init()
     this._updateInspectorToggleButton(false)
@@ -143,6 +148,15 @@ export class ShellLayoutView {
     this._setEditorVisible(Boolean(editorTrack))
     this._renderEditorModeControls(editorTrack, viewState)
     this._syncEditorSurface(project, editorTrack, viewState)
+    const reverbDockVisible = this.reverbDockView.render({
+      project,
+      tracks,
+      viewState,
+    })
+    if (this.reverbDockVisible !== reverbDockVisible) {
+      this.reverbDockVisible = reverbDockVisible
+      this.notifyRuntimeLayoutChanged()
+    }
     this.setMidiRecordingEnabled(Boolean(editorTrack) && !isAudioTrack(editorTrack) && viewState?.editorMode === 'note')
   }
 

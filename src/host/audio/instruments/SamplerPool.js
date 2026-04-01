@@ -1,11 +1,5 @@
 import { getInstrumentSourceConfig, resolveInstrumentPlaybackParams } from './sourceCatalog.js'
 import { loadToneRuntime } from './toneRuntime.js'
-import { resolveTrackPlaybackGain } from '../../project/trackPlaybackState.js'
-
-function clampUnit(value, fallback = 0.8) {
-  if (!Number.isFinite(value)) return fallback
-  return Math.max(0, Math.min(1, value))
-}
 
 function midiToNoteName(midi) {
   const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
@@ -19,7 +13,11 @@ function buildViolinLayerSamples(config, layer) {
   )
 }
 
-function createSamplerEntry(Tone, config, urls, volume = 0) {
+function buildSamplerKey(trackId, sourceId) {
+  return `${trackId || 'global'}::${sourceId || 'unknown'}`
+}
+
+function createSamplerEntry(Tone, config, urls, destination = null, volume = 0) {
   const entry = {
     ready: false,
     sampler: null,
@@ -36,30 +34,44 @@ function createSamplerEntry(Tone, config, urls, volume = 0) {
         entry.ready = true
         resolve(entry)
       },
-    }).toDestination()
+    })
+    if (destination) {
+      entry.sampler.connect(destination)
+    } else {
+      entry.sampler.toDestination()
+    }
   })
 
   return entry
 }
 
 export class SamplerPool {
-  constructor() {
+  constructor({ audioGraph = null } = {}) {
+    this.audioGraph = audioGraph
     this.entries = new Map()
     this.tone = null
   }
 
-  async prepareSources(sourceIds = []) {
-    const uniqueSourceIds = [...new Set(sourceIds)].filter(Boolean)
-    if (uniqueSourceIds.length === 0) return []
+  async prepareTrackSources(trackSourceRefs = []) {
+    const uniqueRefs = this._normalizeTrackSourceRefs(trackSourceRefs)
+    if (uniqueRefs.length === 0) return []
     this.tone ||= await loadToneRuntime()
     const Tone = this.tone
     await Tone.start()
-    await Promise.all(uniqueSourceIds.map((sourceId) => this._prepareSource(sourceId)))
-    return uniqueSourceIds
+    await this.audioGraph?.ensureReady?.()
+    await Promise.all(uniqueRefs.map((ref) => this._prepareTrackSource(ref)))
+    return uniqueRefs
   }
 
-  triggerAttackRelease(sourceId, midi, durationSec, audioTimeSec, playbackOptions = 0.8) {
-    const entry = this.entries.get(sourceId)
+  async prepareSources(sourceIds = []) {
+    return this.prepareTrackSources((Array.isArray(sourceIds) ? sourceIds : []).map((sourceId) => ({
+      trackId: `source:${sourceId}`,
+      sourceId,
+    })))
+  }
+
+  triggerAttackRelease(trackId, sourceId, midi, durationSec, audioTimeSec, playbackOptions = 0.8) {
+    const entry = this.entries.get(buildSamplerKey(trackId, sourceId))
     if (!entry) return false
 
     const playback = this._resolvePlayback(sourceId, playbackOptions, durationSec)
@@ -75,8 +87,8 @@ export class SamplerPool {
     return true
   }
 
-  triggerAttack(sourceId, midi, audioTimeSec, playbackOptions = 0.8) {
-    const entry = this.entries.get(sourceId)
+  triggerAttack(trackId, sourceId, midi, audioTimeSec, playbackOptions = 0.8) {
+    const entry = this.entries.get(buildSamplerKey(trackId, sourceId))
     if (!entry) return null
 
     const playback = this._resolvePlayback(sourceId, playbackOptions)
@@ -108,8 +120,39 @@ export class SamplerPool {
     })
   }
 
+  releaseTrack(trackId) {
+    if (!trackId) return false
+    const keysToDelete = [...this.entries.keys()].filter((key) => key.startsWith(`${trackId}::`))
+    keysToDelete.forEach((key) => {
+      const entry = this.entries.get(key)
+      if (entry?.type === 'layered') {
+        entry.layers.forEach((layer) => layer.sampler?.dispose?.())
+      } else {
+        entry?.single?.sampler?.dispose?.()
+      }
+      this.entries.delete(key)
+    })
+    return keysToDelete.length > 0
+  }
+
   getAudioTime() {
     return this.tone?.now?.() || 0
+  }
+
+  setTrackVolume(trackId, volume) {
+    return this.audioGraph?.setTrackVolume?.(trackId, volume) || false
+  }
+
+  setTrackReverbSend(trackId, reverbSend) {
+    return (
+      this.audioGraph?.setTrackReverbSend?.(trackId, reverbSend)
+      || this.audioGraph?.setTrackSendAmount?.(trackId, reverbSend)
+      || false
+    )
+  }
+
+  setTrackReverbConfig(trackId, reverbConfig) {
+    return this.audioGraph?.setTrackReverbConfig?.(trackId, reverbConfig) || false
   }
 
   _resolvePlayback(sourceId, playbackOptions, durationSec = null) {
@@ -119,21 +162,14 @@ export class SamplerPool {
         velocity: playbackOptions,
         durationSec,
         preview: false,
-        trackVolume: 1,
       }
-    const resolvedPlayback = resolveInstrumentPlaybackParams(sourceId, {
+    return resolveInstrumentPlaybackParams(sourceId, {
       velocity: options.velocity,
       durationSec: Number.isFinite(options.durationSec)
         ? options.durationSec
         : durationSec,
       preview: options.preview === true,
     })
-    const trackVolume = Math.max(0, resolveTrackPlaybackGain(options.trackVolume))
-    return {
-      ...resolvedPlayback,
-      outputVelocity: Math.max(0, resolvedPlayback.outputVelocity * trackVolume),
-      trackVolume,
-    }
   }
 
   _resolveSampler(entry, velocity) {
@@ -148,31 +184,68 @@ export class SamplerPool {
     return fallbackLayer?.sampler || null
   }
 
-  async _prepareSource(sourceId) {
-    if (this.entries.has(sourceId)) {
-      return this._waitUntilReady(this.entries.get(sourceId))
+  _normalizeTrackSourceRefs(trackSourceRefs = []) {
+    const deduped = new Map()
+    ;(Array.isArray(trackSourceRefs) ? trackSourceRefs : []).forEach((ref) => {
+      const sourceId = typeof ref === 'string' ? ref : ref?.sourceId
+      const trackId = typeof ref === 'object' && ref ? ref.trackId || null : null
+      if (!sourceId || !trackId) return
+      const key = buildSamplerKey(trackId, sourceId)
+      if (!deduped.has(key)) {
+        deduped.set(key, {
+          trackId,
+          sourceId,
+          volume: ref?.volume,
+          reverbSend: ref?.reverbSend ?? ref?.sendAmount,
+          reverbConfig: ref?.reverbConfig,
+        })
+      }
+    })
+    return [...deduped.values()]
+  }
+
+  async _prepareTrackSource(ref) {
+    const key = buildSamplerKey(ref.trackId, ref.sourceId)
+    if (this.entries.has(key)) {
+      this.audioGraph?.syncTrackState?.(ref.trackId, {
+        volume: ref.volume,
+        reverbSend: ref.reverbSend,
+        reverbConfig: ref.reverbConfig,
+      })
+      return this._waitUntilReady(this.entries.get(key))
     }
 
-    const config = getInstrumentSourceConfig(sourceId)
+    const config = getInstrumentSourceConfig(ref.sourceId)
     if (!config) return null
     const Tone = this.tone
     if (!Tone) return null
+    const destination = this.audioGraph?.getTrackInput?.(ref.trackId, {
+      volume: ref.volume,
+      reverbSend: ref.reverbSend,
+      reverbConfig: ref.reverbConfig,
+    }) || null
 
     if (Array.isArray(config.velocityLayers) && config.velocityLayers.length > 0) {
       const layers = config.velocityLayers.map((layer) => {
-        const entry = createSamplerEntry(Tone, config, buildViolinLayerSamples(config, layer), layer.volume || 0)
+        const entry = createSamplerEntry(
+          Tone,
+          config,
+          buildViolinLayerSamples(config, layer),
+          destination,
+          layer.volume || 0,
+        )
         entry.maxVelocity = layer.maxVelocity
         return entry
       })
       const layeredEntry = { type: 'layered', layers }
-      this.entries.set(sourceId, layeredEntry)
+      this.entries.set(key, layeredEntry)
       await this._waitUntilReady(layeredEntry)
       return layeredEntry
     }
 
-    const single = createSamplerEntry(Tone, config, config.samples, config.volume || 0)
+    const single = createSamplerEntry(Tone, config, config.samples, destination, config.volume || 0)
     const singleEntry = { type: 'single', single }
-    this.entries.set(sourceId, singleEntry)
+    this.entries.set(key, singleEntry)
     await this._waitUntilReady(singleEntry)
     return singleEntry
   }

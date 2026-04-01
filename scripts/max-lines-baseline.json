@@ -1,0 +1,19 @@
+{
+  "src/modules/PitchEditor.js": 1468,
+  "src/host/app/createHostApp.js": 1458,
+  "src/host/ui/InstrumentEditorView.js": 1233,
+  "src/main.js": 1101,
+  "src/ui/PianoRollInputController.js": 697,
+  "src/host/ui/ShellLayoutView.js": 681,
+  "src/host/ui/tracks/buildTrackShellViews.js": 593,
+  "src/host/transport/ProjectTransportCoordinator.js": 530,
+  "src/host/project/ProjectDocumentStore.js": 488,
+  "src/host/controllers/TrackVoiceConversionController.js": 424,
+  "src/ui/PianoRoll.js": 389,
+  "src/host/project/pendingVoiceNoteEdit.js": 375,
+  "src/shared/timelineAxis.js": 366,
+  "src/core/PhraseStore.js": 360,
+  "src/ui/PianoRollNotes.js": 339,
+  "src/voice-runtime/app/createVoiceRuntimeApp.js": 326,
+  "src/modules/AudioEngine.js": 319
+}

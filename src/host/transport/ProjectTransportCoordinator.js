@@ -1,6 +1,7 @@
 import { resolveAudibleTrackIds } from '../monitor/TrackAudibilityResolver.js'
 import { normalizeTrackVolume } from '../project/trackPlaybackState.js'
 import { getProjectDuration } from '../services/PreviewProjector.js'
+import { TrackFxDispatchRouter } from './TrackFxDispatchRouter.js'
 
 const HOST_PROJECT_DRIVER = 'host-project'
 const HOST_RECORD_DRIVER = 'host-record'
@@ -18,6 +19,7 @@ export class ProjectTransportCoordinator {
     projectStore,
     sessionStore,
     transportStore,
+    audioGraph = null,
     instrumentScheduler,
     importedAudioScheduler = null,
     vocalScheduler,
@@ -29,10 +31,18 @@ export class ProjectTransportCoordinator {
     this.projectStore = projectStore
     this.sessionStore = sessionStore
     this.transportStore = transportStore
+    this.audioGraph = audioGraph
     this.instrumentScheduler = instrumentScheduler
     this.importedAudioScheduler = importedAudioScheduler
     this.vocalScheduler = vocalScheduler
     this.convertedVocalScheduler = convertedVocalScheduler
+    this.trackFxDispatchRouter = new TrackFxDispatchRouter({
+      projectStore,
+      instrumentScheduler,
+      importedAudioScheduler,
+      vocalScheduler,
+      convertedVocalScheduler,
+    })
     this.runtimeTransportSync = runtimeTransportSync
     this.view = view
     this.logger = logger
@@ -95,11 +105,15 @@ export class ProjectTransportCoordinator {
 
   setTrackVolume(trackId, volume) {
     const nextVolume = normalizeTrackVolume(volume)
-    this.instrumentScheduler?.setTrackVolume?.(trackId, nextVolume)
-    this.importedAudioScheduler?.setTrackVolume?.(trackId, nextVolume)
-    this.vocalScheduler?.setTrackVolume?.(trackId, nextVolume)
-    this.convertedVocalScheduler?.setTrackVolume?.(trackId, nextVolume)
-    return true
+    return this.trackFxDispatchRouter.dispatch(trackId, 'setTrackVolume', nextVolume)
+  }
+
+  setTrackReverbSend(trackId, reverbSend) {
+    return this.trackFxDispatchRouter.dispatch(trackId, 'setTrackReverbSend', reverbSend)
+  }
+
+  setTrackReverbConfig(trackId, reverbConfig) {
+    return this.trackFxDispatchRouter.dispatch(trackId, 'setTrackReverbConfig', reverbConfig)
   }
 
   pause() {

@@ -2,6 +2,7 @@ import { createHostBridgeHandlers } from './createHostBridgeHandlers.js'
 import { createHostRender } from './createHostRender.js'
 import { createPhraseMissHandler } from './createPhraseMissHandler.js'
 import { createProjectImportHandler } from './createProjectImportHandler.js'
+import { createHostReverbController } from './createHostReverbController.js'
 import { createRuntimeTransportSync } from './createRuntimeTransportSync.js'
 import { createTrackSourceAssignmentHandler } from './createTrackSourceAssignmentHandler.js'
 import { createTransportSeekHandler } from './createTransportSeekHandler.js'
@@ -12,11 +13,13 @@ import { createTimelineAxis } from '../../shared/timelineAxis.js'
 import { isKeyboardShortcutTargetEditable } from '../../shared/isKeyboardShortcutTargetEditable.js'
 import { ImportedAudioAssetRegistry } from '../audio/ImportedAudioAssetRegistry.js'
 import { ImportedAudioTrackScheduler } from '../audio/ImportedAudioTrackScheduler.js'
+import { ProjectAudioGraph } from '../audio/ProjectAudioGraph.js'
 import { InstrumentScheduler } from '../audio/instruments/InstrumentScheduler.js'
 import { SamplerPool } from '../audio/instruments/SamplerPool.js'
 import { getHostPlaybackSourceId } from '../audio/instruments/sourceCatalog.js'
 import { EditorSessionController } from '../controllers/EditorSessionController.js'
 import { FocusSoloController } from '../controllers/FocusSoloController.js'
+import { ProjectMixController } from '../controllers/ProjectMixController.js'
 import { TrackPredictionGateController } from '../controllers/TrackPredictionGateController.js'
 import { TrackShellSessionController } from '../controllers/TrackShellSessionController.js'
 import { TrackVoiceConversionController } from '../controllers/TrackVoiceConversionController.js'
@@ -24,6 +27,7 @@ import { VocalManifestController } from '../controllers/VocalManifestController.
 import { VoiceBridgeController } from '../controllers/VoiceBridgeController.js'
 import { createHostLogger } from '../logging/createHostLogger.js'
 import { TrackMonitorController } from '../monitor/TrackMonitorController.js'
+import { ProjectAudioMixPersistence } from '../project/ProjectAudioMixPersistence.js'
 import { isAudioTrack } from '../project/trackContentType.js'
 import { ProjectDocumentStore } from '../project/ProjectDocumentStore.js'
 import { isVoiceRuntimeSource } from '../project/trackSourceAssignment.js'
@@ -179,8 +183,16 @@ export function createHostApp() {
   const taskRemoteGateway = new TrackTaskRemoteGateway()
   const taskCoordinator = new TrackTaskCoordinator(store, taskRemoteGateway)
   const playbackMode = new PlaybackMode()
+  const projectAudioGraph = new ProjectAudioGraph({ logger })
+  const projectAudioMixPersistence = new ProjectAudioMixPersistence({ logger })
   const editorSessionController = new EditorSessionController(taskCoordinator)
   const focusSoloController = new FocusSoloController(sessionStore, logger)
+  const projectMixController = new ProjectMixController({
+    store,
+    audioGraph: projectAudioGraph,
+    logger,
+    persistence: projectAudioMixPersistence,
+  })
   const trackShellSessionController = new TrackShellSessionController(store, sessionStore, logger)
   const view = new ShellLayoutView({}, { logger })
   const render = createHostRender({
@@ -190,22 +202,30 @@ export function createHostApp() {
     view,
     getVoiceConversionState: (trackId) => voiceConversionController?.buildInspectorState(trackId) || { visible: false },
   })
-  const instrumentScheduler = new InstrumentScheduler(new SamplerPool())
+  const instrumentScheduler = new InstrumentScheduler(new SamplerPool({ audioGraph: projectAudioGraph }))
   const importedAudioAssetRegistry = new ImportedAudioAssetRegistry({ logger })
-  const importedAudioScheduler = new ImportedAudioTrackScheduler(importedAudioAssetRegistry, { logger })
+  const importedAudioScheduler = new ImportedAudioTrackScheduler(importedAudioAssetRegistry, {
+    logger,
+    audioGraph: projectAudioGraph,
+  })
   const vocalAssetRegistry = new HostVocalAssetRegistry({ logger })
   const convertedVocalAssetRegistry = new ConvertedVocalAssetRegistry({ logger })
-  const convertedVocalScheduler = new ConvertedVocalScheduler(convertedVocalAssetRegistry, { logger })
+  const convertedVocalScheduler = new ConvertedVocalScheduler(convertedVocalAssetRegistry, {
+    logger,
+    audioGraph: projectAudioGraph,
+  })
   const vocalManifestController = new VocalManifestController({ store, assetRegistry: vocalAssetRegistry, logger })
   const vocalScheduler = new HostVocalScheduler(vocalAssetRegistry, {
     logger,
     onPhraseMiss: (entry) => phraseMissHandler(entry),
+    audioGraph: projectAudioGraph,
   })
   const runtimeTransportSync = createRuntimeTransportSync({ store, taskCoordinator, getBridge: () => bridge })
   const transportCoordinator = new ProjectTransportCoordinator({
     projectStore: store,
     sessionStore,
     transportStore,
+    audioGraph: projectAudioGraph,
     instrumentScheduler,
     importedAudioScheduler,
     vocalScheduler,
@@ -234,10 +254,20 @@ export function createHostApp() {
     sessionStore,
     focusSoloController,
     transportCoordinator,
+    persistence: projectAudioMixPersistence,
     refreshProjectPlayback: (reason) => refreshProjectPlaybackWithModeSync(reason),
     render,
     view,
     logger,
+  })
+  const reverbController = createHostReverbController({
+    store,
+    sessionStore,
+    trackShellSessionController,
+    projectMixController,
+    trackMonitorController,
+    render,
+    view,
   })
   const shortcutRouter = new HostShortcutRouter({
     onTogglePlayback: handlePlay,
@@ -292,6 +322,9 @@ export function createHostApp() {
   const handleFileSelected = createProjectImportHandler({
     view,
     transportCoordinator,
+    projectMixController,
+    projectAudioMixPersistence,
+    sessionStore,
     vocalManifestController,
     voiceConversionController,
     resetImportedAudioAssets: () => importedAudioAssetRegistry.reset(),
@@ -367,6 +400,7 @@ export function createHostApp() {
         waveformPeaks: asset.waveformPeaks,
       })
       importedAudioAssetRegistry.bindTrack(asset.assetId, track.id)
+      projectAudioMixPersistence.saveProject(store.getProject())
       render('audio-track-imported')
       if (transportCoordinator.isProjectPlaybackActive()) {
         await refreshProjectPlaybackWithModeSync('audio-track-imported')
@@ -437,7 +471,13 @@ export function createHostApp() {
     const sourceId = getNoteEditorMonitorSourceId(track)
     if (!sourceId) return null
     try {
-      await instrumentScheduler.samplerPool.prepareSources([sourceId])
+      await instrumentScheduler.samplerPool.prepareTrackSources([{
+        trackId: track.id,
+        sourceId,
+        volume: track.playbackState?.volume,
+        reverbSend: track.playbackState?.reverbSend,
+        reverbConfig: track.playbackState?.reverbConfig,
+      }])
       return sourceId
     } catch (error) {
       logger.info('Instrument MIDI monitor source prepare failed', {
@@ -478,13 +518,13 @@ export function createHostApp() {
     if (preparedSourceId !== sourceId) return false
 
     const token = instrumentScheduler.samplerPool.triggerAttack(
+      track.id,
       sourceId,
       midi,
       instrumentScheduler.samplerPool.getAudioTime(),
       {
         velocity,
         preview: true,
-        trackVolume: track.playbackState?.volume,
       },
     )
     if (!token) return false
@@ -1008,7 +1048,10 @@ export function createHostApp() {
     }
     removePendingMidiNotesForTrack(trackId)
     importedAudioAssetRegistry.releaseTrack(trackId)
+    instrumentScheduler.samplerPool.releaseTrack(trackId)
+    projectAudioGraph.releaseTrack(trackId)
     focusSoloController.clearCurrentTrack(trackId)
+    sessionStore.closeReverbTrack?.(trackId)
     trackShellSessionController.closeSourcePicker(trackId, 'track-deleted')
     const removedTrack = store.removeTrack(trackId)
     if (!removedTrack) return
@@ -1380,18 +1423,24 @@ export function createHostApp() {
       reason,
     })
   }
-
   view.setHandlers({
     onMidiFileSelected: handleFileSelected,
     onAudioFileSelected: handleAudioFileSelected,
     onExportMidi: handleExportMidi,
     canExportMidi,
+    getProjectReverbPresets: reverbController.getProjectReverbPresets,
+    getProjectReverbPresetTags: reverbController.getProjectReverbPresetTags,
+    onToggleReverbDock: reverbController.toggleReverbDock,
+    onToggleProjectReverbEnabled: reverbController.toggleProjectReverbEnabled,
+    onProjectReverbPresetSelected: reverbController.handleProjectReverbPresetSelected,
+    onProjectReverbConfigChanged: reverbController.handleProjectReverbConfigChanged,
     onTrackSelected: handleTrackSelected,
     onTrackContextCreate: handleTrackContextCreate,
     onTrackContextDelete: handleTrackContextDelete,
     canDeleteTrack: (trackId) => Boolean(trackId && store.getTrack(trackId)),
     onTrackOpened: openTrackById,
     onTrackClipMoved: handleTrackClipMoved,
+    onTrackFxToggled: reverbController.toggleTrackFxPanel,
     onTrackSourcePickerToggled: handleTrackSourcePickerToggled,
     onTrackSourceAssigned: async (trackId, sourceId) => {
       await sourceAssignmentHandler?.(trackId, sourceId)
@@ -1440,6 +1489,10 @@ export function createHostApp() {
       }
     },
     onPlayheadFollowModeSelected: handlePlayheadFollowModeSelected,
+    onTrackReverbSendChanged: (trackId, sendAmount, options) => trackMonitorController.setTrackReverbSend(trackId, sendAmount, options),
+    onTrackReverbConfigChanged: (trackId, config, options) => reverbController.handleTrackReverbConfigChanged(trackId, config, options),
+    onTrackReverbPresetSelected: (trackId, presetId) => reverbController.handleTrackReverbPresetSelected(trackId, presetId),
+    onToggleTrackReverbEnabled: reverbController.toggleTrackReverbEnabled,
     onEditorModeSelected: handleEditorModeSelected,
     onQuickLyricOpen: async () => {
       if (view.quickLyricPanel.isOpen()) {
