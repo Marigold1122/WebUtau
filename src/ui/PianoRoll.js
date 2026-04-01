@@ -269,25 +269,31 @@ class PianoRoll {
 
   _resize() {
     if (!this.container) return
+    const dpr = window.devicePixelRatio || 1
     const canvasWidth = Math.max(0, this.container.clientWidth - PIANO_ROLL.KEYBOARD_WIDTH)
     const canvasHeight = this.container.clientHeight
     const noteAreaHeight = Math.max(0, canvasHeight - PIANO_ROLL.TIME_RULER_HEIGHT)
     const totalHeight = (PIANO_ROLL.PITCH_MAX - PIANO_ROLL.PITCH_MIN + 1) * PIANO_ROLL.KEY_HEIGHT
-    this.keyboardCanvas.width = PIANO_ROLL.KEYBOARD_WIDTH
-    this.keyboardCanvas.height = noteAreaHeight
+    this._scaleCanvas(this.keyboardCanvas, PIANO_ROLL.KEYBOARD_WIDTH, noteAreaHeight, dpr)
     this.keyboardCanvas.style.marginTop = `${PIANO_ROLL.TIME_RULER_HEIGHT}px`
-    this.timeRulerCanvas.width = canvasWidth
-    this.timeRulerCanvas.height = PIANO_ROLL.TIME_RULER_HEIGHT
-    this.gridCanvas.width = canvasWidth
-    this.gridCanvas.height = noteAreaHeight
-    this.noteCanvas.width = canvasWidth
-    this.noteCanvas.height = noteAreaHeight
+    this._scaleCanvas(this.timeRulerCanvas, canvasWidth, PIANO_ROLL.TIME_RULER_HEIGHT, dpr)
+    this._scaleCanvas(this.gridCanvas, canvasWidth, noteAreaHeight, dpr)
+    this._scaleCanvas(this.noteCanvas, canvasWidth, noteAreaHeight, dpr)
     viewport.setSize(canvasWidth, noteAreaHeight)
     if (!this.isInitialized) viewport.scrollY = Math.max(0, totalHeight - noteAreaHeight)
     if (!this.isInitialized) return
     grid.draw()
     notes.draw()
     playheadController.setPosition(playheadController.getPosition())
+  }
+
+  _scaleCanvas(canvas, cssWidth, cssHeight, dpr) {
+    canvas.width = cssWidth * dpr
+    canvas.height = cssHeight * dpr
+    canvas.style.width = `${cssWidth}px`
+    canvas.style.height = `${cssHeight}px`
+    const ctx = canvas.getContext('2d')
+    ctx.scale(dpr, dpr)
   }
 
   _onWheel(event) {

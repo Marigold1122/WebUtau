@@ -75,7 +75,7 @@ class PianoRollGrid {
     let lastLabelRight = -Infinity
     for (const beat of beats) {
       const x = viewport.timeToX(beat.time)
-      const top = beat.isBar ? 0 : this.timeRulerCanvas.height * 0.5
+      const top = beat.isBar ? 0 : PIANO_ROLL.TIME_RULER_HEIGHT * 0.5
       this.timeRulerCtx.lineWidth = beat.isBar ? PIANO_ROLL.BAR_LINE_WIDTH : 1
       this.timeRulerCtx.beginPath()
       this.timeRulerCtx.moveTo(x, top)
@@ -159,7 +159,7 @@ class PianoRollGrid {
       this.keyboardCtx.fillRect(0, y, this.keyboardCanvas.width, PIANO_ROLL.KEY_HEIGHT)
       if (this._isBlackKey(midiPitch)) {
         this.keyboardCtx.fillStyle = PIANO_ROLL.BLACK_KEY_COLOR
-        this.keyboardCtx.fillRect(0, y, this.keyboardCanvas.width * PIANO_ROLL.KEYBOARD_BLACK_WIDTH_RATIO, PIANO_ROLL.KEY_HEIGHT)
+        this.keyboardCtx.fillRect(0, y, PIANO_ROLL.KEYBOARD_WIDTH * PIANO_ROLL.KEYBOARD_BLACK_WIDTH_RATIO, PIANO_ROLL.KEY_HEIGHT)
       } else {
         this.keyboardCtx.strokeStyle = PIANO_ROLL.KEY_BORDER_COLOR
         this.keyboardCtx.beginPath()
@@ -169,7 +169,7 @@ class PianoRollGrid {
       }
       if (!this._isC(midiPitch)) continue
       this.keyboardCtx.fillStyle = PIANO_ROLL.KEY_LABEL_COLOR
-      this.keyboardCtx.fillText(this._getNoteName(midiPitch), this.keyboardCanvas.width / 2, y + PIANO_ROLL.KEY_HEIGHT / 2)
+      this.keyboardCtx.fillText(this._getNoteName(midiPitch), PIANO_ROLL.KEYBOARD_WIDTH / 2, y + PIANO_ROLL.KEY_HEIGHT / 2)
     }
   }
 
