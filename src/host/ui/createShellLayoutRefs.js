@@ -1,9 +1,44 @@
+function ensureReverbDockToggleButton() {
+  let button = document.getElementById('btn-toggle-reverb-dock')
+  if (button) return button
+
+  const toolsCenter = document.querySelector('.tools-center')
+  const anchor = document.getElementById('btn-open-track')
+  if (!toolsCenter || !anchor) return null
+
+  button = document.createElement('button')
+  button.type = 'button'
+  button.className = anchor.className
+  button.id = 'btn-toggle-reverb-dock'
+  button.textContent = '混响 Reverb'
+  toolsCenter.appendChild(button)
+  return button
+}
+
+function ensureReverbDockPanel() {
+  let panel = document.getElementById('reverb-dock')
+  if (panel) return panel
+
+  const workspace = document.getElementById('workspace')
+  const editorPanel = document.getElementById('editor-panel')
+  if (!workspace || !editorPanel) return null
+
+  panel = document.createElement('section')
+  panel.id = 'reverb-dock'
+  panel.className = 'bottom-fx-panel hidden'
+  panel.setAttribute('aria-label', '混响面板 Reverb panel')
+  editorPanel.insertAdjacentElement('afterend', panel)
+  return panel
+}
+
 export function createShellLayoutRefs() {
   return {
     workspace: document.getElementById('workspace'),
     fileInput: document.getElementById('midi-file-input'),
     audioFileInput: document.getElementById('audio-file-input'),
     btnImport: document.getElementById('btn-import'),
+    btnOpenTrack: document.getElementById('btn-open-track'),
+    btnToggleReverbDock: ensureReverbDockToggleButton(),
     btnCloseEditor: document.getElementById('btn-close-editor'),
     btnPlay: document.getElementById('btn-play'),
     btnTopPrev: document.getElementById('btn-top-prev'),
@@ -40,6 +75,7 @@ export function createShellLayoutRefs() {
     trackRulerInner: document.getElementById('track-ruler-inner'),
     voiceRuntimeFrame: document.getElementById('voice-runtime-frame'),
     instrumentEditorRoot: document.getElementById('instrument-editor-root'),
+    reverbDock: ensureReverbDockPanel(),
     timeDisplay: document.getElementById('time-display'),
   }
 }
