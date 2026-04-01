@@ -44,6 +44,7 @@ export class VoiceBridgeController {
   async applyNoteEdits(edits = []) {
     await this.waitUntilReady()
     const payload = await this._sendRequest(VOICE_BRIDGE_COMMANDS.APPLY_NOTE_EDITS, { edits })
+    if (payload?.error) throw new Error(payload.error)
     return payload || null
   }
 

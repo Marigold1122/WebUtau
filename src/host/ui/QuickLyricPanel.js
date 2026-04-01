@@ -23,13 +23,15 @@ export class QuickLyricPanel {
     /** @type {((edits: Array) => void) | null} */
     this._onSave = null
     this._btnFix = null
+    this._languageCode = null
   }
 
   /** 打开面板并填充当前歌词 */
-  open(snapshot, container, { onSave, onClose }) {
+  open(snapshot, container, { onSave, onClose, languageCode }) {
     this.close()
     this._snapshot = snapshot
     this._onSave = onSave
+    this._languageCode = languageCode || null
     this._parsedLyrics = null
     this._build(container, onClose)
     this._fillCurrentLyrics()
@@ -126,15 +128,41 @@ export class QuickLyricPanel {
     this._setStatus(`共 ${totalNotes} 个音符`, 'info')
   }
 
-  /** 解析用户输入：去空白 → 按字拆 → 验数量 → 重排分句换行 */
-  _handleParse() {
+  /** 解析用户输入：去空白 → (日语时汉字→假名) → 按字拆 → 验数量 → 重排分句换行 */
+  async _handleParse() {
     const phrases = this._snapshot?.phrases || []
     const noteCounts = phrases.map((p) => (p.notes?.length || 0))
     const totalNotes = noteCounts.reduce((a, b) => a + b, 0)
 
-    // 去除所有空白字符，按字拆分
-    const raw = this._textarea.value.replace(/\s/g, '')
-    const chars = [...raw] // 支持 Unicode 代理对
+    // 去除所有空白字符
+    let raw = this._textarea.value.replace(/\s/g, '')
+
+    // 日语时自动将汉字转换为假名
+    if (this._isJapanese() && /[\u4e00-\u9fff]/.test(raw)) {
+      this._setStatus('正在转换汉字为假名…', 'info')
+      this._btnParse.disabled = true
+      try {
+        const { convertKanjiToKana } = await import('../util/kanjiToKana.js')
+        raw = await convertKanjiToKana(raw)
+        raw = raw.replace(/\s/g, '')
+      } catch (error) {
+        this._setStatus(`汉字转换失败: ${error?.message || '未知错误'}`, 'error')
+        this._btnParse.disabled = false
+        return
+      }
+      this._btnParse.disabled = false
+    }
+
+    // 日语按拍（モーラ）拆分：拗音小假名（ゃゅょ等）与前一假名合为一个音符单位，
+    // 使拍数与音符数对齐，避免独立小假名触发后端音素化器重分句。
+    // 其他语言仍按字符拆分。
+    let chars
+    if (this._isJapanese()) {
+      const { splitMorae } = await import('../util/kanjiToKana.js')
+      chars = splitMorae(raw)
+    } else {
+      chars = [...raw] // 支持 Unicode 代理对
+    }
     if (chars.length === 0) {
       this._setStatus('歌词为空', 'error')
       return
@@ -171,7 +199,7 @@ export class QuickLyricPanel {
   }
 
   /** 构建 lyric edits 并提交 */
-  _handleSave() {
+  async _handleSave() {
     if (!this._parsedLyrics || !this._snapshot) return
     const phrases = this._snapshot.phrases || []
     const bpm = this._snapshot.bpm || 120
@@ -196,7 +224,19 @@ export class QuickLyricPanel {
       this._setStatus('歌词没有变化', 'info')
       return
     }
-    // 保存前同步 snapshot，使后续编辑的 diff 基准为最新状态
+
+    this._btnSave.disabled = true
+    this._setStatus(`正在保存 ${edits.length} 处修改…`, 'info')
+
+    try {
+      await this._onSave?.(edits)
+    } catch (error) {
+      this._setStatus(`保存失败: ${error?.message || '未知错误'}`, 'error')
+      this._btnSave.disabled = false
+      return
+    }
+
+    // 保存成功后同步 snapshot，使后续编辑的 diff 基准为最新状态
     charIndex = 0
     for (const phrase of phrases) {
       for (const note of (phrase.notes || [])) {
@@ -204,9 +244,7 @@ export class QuickLyricPanel {
         charIndex++
       }
     }
-    this._onSave?.(edits)
     this._setStatus(`已保存 ${edits.length} 处修改`, 'success')
-    this._btnSave.disabled = true
     this._parsedLyrics = null
   }
 
@@ -241,6 +279,10 @@ export class QuickLyricPanel {
     this._hideFix()
     // 自动触发一次解析
     this._handleParse()
+  }
+
+  _isJapanese() {
+    return this._languageCode?.toUpperCase() === 'JA'
   }
 
   _setStatus(text, type = '') {

@@ -25,8 +25,12 @@ function buildBridgeHandlers(app) {
       postToHost(VOICE_BRIDGE_EVENTS.SNAPSHOT_RESPONSE, { snapshot: app.requestSnapshot() }, requestId)
     },
     async [VOICE_BRIDGE_COMMANDS.APPLY_NOTE_EDITS](payload, requestId) {
-      const result = await app.applyNoteEdits?.(payload.edits || [])
-      postToHost(VOICE_BRIDGE_EVENTS.NOTE_EDITS_RESPONSE, result || {}, requestId)
+      try {
+        const result = await app.applyNoteEdits?.(payload.edits || [])
+        postToHost(VOICE_BRIDGE_EVENTS.NOTE_EDITS_RESPONSE, result || {}, requestId)
+      } catch (error) {
+        postToHost(VOICE_BRIDGE_EVENTS.NOTE_EDITS_RESPONSE, { error: toErrorMessage(error) }, requestId)
+      }
     },
     async [VOICE_BRIDGE_COMMANDS.UNDO_EDITOR]() {
       await app.undoEditor?.()

@@ -4,13 +4,17 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build"
+    "build": "vite build",
+    "build:dict": "node scripts/build-reading-dict.mjs",
+    "test": "node --test test/*.test.mjs"
   },
   "devDependencies": {
     "vite": "6.4.1"
   },
   "dependencies": {
+    "@sglkc/kuromoji": "^1.1.0",
     "@tonejs/midi": "^2.0.28",
-    "tone": "^14.7.77"
+    "tone": "^14.7.77",
+    "wanakana": "^5.3.1"
   }
 }

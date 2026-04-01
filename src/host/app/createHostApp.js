@@ -1455,18 +1455,15 @@ export function createHostApp() {
           return
         }
         view.openQuickLyricPanel(snapshot, {
+          languageCode: editorTrack.languageCode,
           async onSave(edits) {
             if (!edits?.length) return
-            try {
-              const result = await bridge.applyNoteEdits(edits)
-              const affectedIndices = Array.isArray(result?.affectedIndices) ? result.affectedIndices : []
-              if (result?.snapshot) {
-                applyRuntimeNoteEditSnapshot(editorTrack.id, result.snapshot, affectedIndices)
-              }
-              view.setStatus(`已更新 ${editorTrack.name} 的歌词`)
-            } catch (error) {
-              view.setStatus(`歌词保存失败: ${error?.message || '未知错误'}`)
+            const result = await bridge.applyNoteEdits(edits)
+            const affectedIndices = Array.isArray(result?.affectedIndices) ? result.affectedIndices : []
+            if (result?.snapshot) {
+              applyRuntimeNoteEditSnapshot(editorTrack.id, result.snapshot, affectedIndices)
             }
+            view.setStatus(`已更新 ${editorTrack.name} 的歌词`)
           },
         })
       } catch (error) {

@@ -298,11 +298,11 @@ class LyricEditor {
     const backendNoteKeys = new Set()
     for (const phrase of backendPhrases) {
       for (const note of (phrase.notes || [])) {
-        backendNoteKeys.add(`${note.position}-${note.tone}`)
+        backendNoteKeys.add(`${note.position}:${note.duration}:${note.tone}`)
       }
     }
 
-    const missingEditedNotes = edits.filter((edit) => !backendNoteKeys.has(`${edit.position}-${edit.tone}`))
+    const missingEditedNotes = edits.filter((edit) => !backendNoteKeys.has(`${edit.position}:${edit.duration}:${edit.tone}`))
     if (missingEditedNotes.length > 0) {
       throw new Error('歌词编辑响应缺少被编辑音符，已拒绝应用')
     }

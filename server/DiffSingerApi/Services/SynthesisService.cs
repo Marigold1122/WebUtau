@@ -1340,13 +1340,13 @@ public class SynthesisService : IHostedService {
 
     private static HashSet<string> BuildEditNoteKeys(IEnumerable<NoteEdit> edits) {
         return edits
-            .Select(edit => $"{edit.Position}:{edit.Tone}")
+            .Select(edit => $"{edit.Position}:{edit.Duration}:{edit.Tone}")
             .ToHashSet(StringComparer.Ordinal);
     }
 
     private static HashSet<string> BuildPhraseNoteKeys(IEnumerable<RenderPhrase> phrases) {
         return phrases
-            .SelectMany(phrase => phrase.notes.Select(note => $"{phrase.position + note.position}:{note.tone}"))
+            .SelectMany(phrase => phrase.notes.Select(note => $"{phrase.position + note.position}:{note.duration}:{note.tone}"))
             .ToHashSet(StringComparer.Ordinal);
     }
 
