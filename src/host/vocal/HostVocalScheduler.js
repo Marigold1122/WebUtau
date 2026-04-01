@@ -105,11 +105,6 @@ export class HostVocalScheduler {
       if (entry.startSec > windowEnd) return
       if (this.activeSources.has(entry.key)) return
 
-      if (entry.status !== 'available') {
-        this._requestPhrase(entry)
-        return
-      }
-
       const asset = this.assetRegistry.getAsset(entry)
       if (!asset?.buffer) {
         this._requestPhrase(entry)
