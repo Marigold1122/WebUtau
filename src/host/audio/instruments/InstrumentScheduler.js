@@ -4,11 +4,13 @@ import { normalizeTrackVolume } from '../../project/trackPlaybackState.js'
 
 function createScheduledNotes(tracks, audibleTrackIds, fromTimeSec) {
   const notes = []
-  const trackVolumes = new Map()
+  const trackSourceRefs = []
+  const preparedTrackKeys = new Set()
   const sourceIds = new Set()
 
   tracks.forEach((track) => {
     if (!audibleTrackIds.has(track.id)) return
+
     const dirtyRanges = Array.isArray(track?.pendingVoiceEditState?.dirtyRanges)
       ? track.pendingVoiceEditState.dirtyRanges
       : []
@@ -17,8 +19,19 @@ function createScheduledNotes(tracks, audibleTrackIds, fromTimeSec) {
       ? 'piano'
       : getHostPlaybackSourceId(track.playbackState?.assignedSourceId)
     if (!sourceId) return
-    trackVolumes.set(track.id, normalizeTrackVolume(track.playbackState?.volume))
+
     sourceIds.add(sourceId)
+    const trackKey = `${track.id}::${sourceId}`
+    if (!preparedTrackKeys.has(trackKey)) {
+      preparedTrackKeys.add(trackKey)
+      trackSourceRefs.push({
+        trackId: track.id,
+        sourceId,
+        volume: normalizeTrackVolume(track.playbackState?.volume),
+        reverbSend: track.playbackState?.reverbSend,
+        reverbConfig: track.playbackState?.reverbConfig,
+      })
+    }
 
     ;(track.previewNotes || []).forEach((note) => {
       const startSec = Number.isFinite(note?.time) ? Math.max(0, note.time) : 0
@@ -46,8 +59,8 @@ function createScheduledNotes(tracks, audibleTrackIds, fromTimeSec) {
   notes.sort((left, right) => left.startSec - right.startSec)
   return {
     notes,
+    trackSourceRefs,
     sourceIds: [...sourceIds],
-    trackVolumes,
   }
 }
 
@@ -67,12 +80,11 @@ export class InstrumentScheduler {
     this.duration = 0
     this.active = false
     this.prepareToken = 0
-    this.trackVolumes = new Map()
   }
 
   async prepare({ tracks, audibleTrackIds, fromTimeSec = 0 }) {
     const token = ++this.prepareToken
-    const { notes, sourceIds, trackVolumes } = createScheduledNotes(
+    const { notes, sourceIds, trackSourceRefs } = createScheduledNotes(
       tracks || [],
       audibleTrackIds || new Set(),
       fromTimeSec,
@@ -81,7 +93,7 @@ export class InstrumentScheduler {
     const duration = notes.reduce((maxValue, note) => Math.max(maxValue, note.endSec), 0)
     this._clearState()
 
-    await this.samplerPool.prepareSources(sourceIds)
+    await this.samplerPool.prepareTrackSources(trackSourceRefs)
     if (token !== this.prepareToken) {
       return {
         hasPlayableNotes: false,
@@ -94,7 +106,6 @@ export class InstrumentScheduler {
     this.nextIndex = nextIndex
     this.duration = duration
     this.active = notes.length > 0
-    this.trackVolumes = trackVolumes
 
     return {
       hasPlayableNotes: notes.length > 0,
@@ -117,10 +128,10 @@ export class InstrumentScheduler {
       const playbackDuration = note.startSec >= songTimeSec
         ? note.endSec - note.startSec
         : remainingDuration
-      const trackVolume = this.trackVolumes.get(note.trackId) ?? 1
 
       if (playbackDuration > 0.05) {
         this.samplerPool.triggerAttackRelease(
+          note.trackId,
           note.sourceId,
           note.midi,
           playbackDuration,
@@ -128,7 +139,6 @@ export class InstrumentScheduler {
           {
             velocity: note.velocity,
             durationSec: playbackDuration,
-            trackVolume,
           },
         )
       }
@@ -143,9 +153,15 @@ export class InstrumentScheduler {
   }
 
   setTrackVolume(trackId, volume) {
-    if (!trackId) return false
-    this.trackVolumes.set(trackId, normalizeTrackVolume(volume))
-    return true
+    return this.samplerPool.setTrackVolume(trackId, normalizeTrackVolume(volume))
+  }
+
+  setTrackReverbSend(trackId, reverbSend) {
+    return this.samplerPool.setTrackReverbSend(trackId, reverbSend)
+  }
+
+  setTrackReverbConfig(trackId, reverbConfig) {
+    return this.samplerPool.setTrackReverbConfig(trackId, reverbConfig)
   }
 
   _clearState() {
@@ -153,7 +169,6 @@ export class InstrumentScheduler {
     this.notes = []
     this.nextIndex = 0
     this.duration = 0
-    this.trackVolumes = new Map()
     this.samplerPool.releaseAll()
   }
 }

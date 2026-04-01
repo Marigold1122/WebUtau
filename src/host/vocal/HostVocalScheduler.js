@@ -1,5 +1,10 @@
 import { startToneAudio } from '../audio/instruments/toneRuntime.js'
-import { normalizeTrackVolume, resolveTrackPlaybackGain } from '../project/trackPlaybackState.js'
+import {
+  normalizeTrackReverbConfig,
+  normalizeTrackReverbSend,
+  normalizeTrackVolume,
+  resolveTrackPlaybackGain,
+} from '../project/trackPlaybackState.js'
 import { isVoiceRuntimeSource } from '../project/trackSourceAssignment.js'
 
 const LOOKAHEAD_SECONDS = 0.3
@@ -50,6 +55,8 @@ function buildPhraseEntries(tracks, audibleTrackIds, excludedTrackIds = new Set(
         startSec,
         endSec: startSec + durationSec,
         volume: normalizeTrackVolume(track.playbackState?.volume),
+        reverbSend: track.playbackState?.reverbSend,
+        reverbConfig: track.playbackState?.reverbConfig,
       })
       trackIds.add(track.id)
     })
@@ -63,10 +70,11 @@ function buildPhraseEntries(tracks, audibleTrackIds, excludedTrackIds = new Set(
 }
 
 export class HostVocalScheduler {
-  constructor(assetRegistry, { logger = null, onPhraseMiss = null } = {}) {
+  constructor(assetRegistry, { logger = null, onPhraseMiss = null, audioGraph = null } = {}) {
     this.assetRegistry = assetRegistry
     this.logger = logger
     this.onPhraseMiss = onPhraseMiss
+    this.audioGraph = audioGraph
     this.rawContext = null
     this.entries = []
     this.activeSources = new Map()
@@ -80,7 +88,9 @@ export class HostVocalScheduler {
     this.entries = entries
     this.active = entries.length > 0
     if (this.active) {
-      this.rawContext = await startToneAudio()
+      this.rawContext = this.audioGraph
+        ? await this.audioGraph.ensureReady()
+        : await startToneAudio()
     }
 
     return {
@@ -140,9 +150,45 @@ export class HostVocalScheduler {
       entry.volume = nextVolume
       updated = true
     })
+    if (this.audioGraph?.setTrackVolume?.(trackId, nextVolume)) {
+      updated = true
+    }
     for (const [, activeSource] of this.activeSources) {
       if (activeSource.trackId !== trackId || !activeSource.gainNode) continue
       applyGainValue(activeSource.gainNode, nextVolume, this.rawContext?.currentTime)
+      updated = true
+    }
+    return updated
+  }
+
+  setTrackReverbSend(trackId, sendAmount) {
+    if (!trackId) return false
+    const nextSendAmount = normalizeTrackReverbSend(sendAmount)
+    let updated = false
+    this.entries.forEach((entry) => {
+      if (entry.trackId !== trackId) return
+      entry.reverbSend = nextSendAmount
+      updated = true
+    })
+    if (
+      this.audioGraph?.setTrackReverbSend?.(trackId, nextSendAmount)
+      || this.audioGraph?.setTrackSendAmount?.(trackId, nextSendAmount)
+    ) {
+      updated = true
+    }
+    return updated
+  }
+
+  setTrackReverbConfig(trackId, reverbConfig) {
+    if (!trackId) return false
+    const nextConfig = normalizeTrackReverbConfig(reverbConfig)
+    let updated = false
+    this.entries.forEach((entry) => {
+      if (entry.trackId !== trackId) return
+      entry.reverbConfig = nextConfig
+      updated = true
+    })
+    if (this.audioGraph?.setTrackReverbConfig?.(trackId, nextConfig)) {
       updated = true
     }
     return updated
@@ -166,11 +212,21 @@ export class HostVocalScheduler {
     if (offset >= audioBuffer.duration) return
 
     const source = this.rawContext.createBufferSource()
-    const gainNode = this.rawContext.createGain()
+    let gainNode = null
     source.buffer = audioBuffer
-    applyGainValue(gainNode, entry.volume)
-    source.connect(gainNode)
-    gainNode.connect(this.rawContext.destination)
+    const trackInput = this.audioGraph?.getTrackInput?.(entry.trackId, {
+      volume: entry.volume,
+      reverbSend: entry.reverbSend,
+      reverbConfig: entry.reverbConfig,
+    }) || null
+    if (trackInput) {
+      source.connect(trackInput)
+    } else {
+      gainNode = this.rawContext.createGain()
+      applyGainValue(gainNode, entry.volume)
+      source.connect(gainNode)
+      gainNode.connect(this.rawContext.destination)
+    }
 
     const contextNow = this.rawContext.currentTime
     if (delayFromNow >= 0) {
@@ -181,7 +237,7 @@ export class HostVocalScheduler {
 
     source.onended = () => {
       source.disconnect()
-      gainNode.disconnect()
+      gainNode?.disconnect()
       this.activeSources.delete(entry.key)
     }
 

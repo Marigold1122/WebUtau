@@ -3,7 +3,9 @@ import { createTimelineAxis } from '../../shared/timelineAxis.js'
 import { createPhraseDocuments } from '../../shared/phraseDocument.js'
 import { buildPreviewProjection } from '../services/PreviewProjector.js'
 import { createTrackDocument } from './createTrackDocument.js'
-import { mergeTrackPlaybackState } from './trackPlaybackState.js'
+import { createProjectMixState, mergeProjectMixState } from './projectMixState.js'
+import { migrateProjectReverbState } from './migrations/reverbStateMigration.js'
+import { createTrackPlaybackState, mergeTrackPlaybackState } from './trackPlaybackState.js'
 import { isAudioTrack, normalizeAudioClip, normalizeTrackContentType, TRACK_CONTENT_TYPES } from './trackContentType.js'
 
 function cloneValue(value, fallback) {
@@ -61,6 +63,10 @@ function buildPreviewStats(previewNotes = []) {
     durationTicks: 0,
   })
 }
+
+function buildTrackPlaybackDefaults(mixState = null) { const defaultConfig = mixState?.reverb || null; return {
+  reverbPresetId: mixState?.reverbPresetId, reverbConfig: defaultConfig, reverb: { presetId: mixState?.reverbPresetId, send: 0, enabled: Number(defaultConfig?.returnGain || 0) > 0.0001, config: defaultConfig },
+} }
 
 function buildSourcePhrasesFromPreviewNotes(previewNotes = []) {
   if (!Array.isArray(previewNotes) || previewNotes.length === 0) return []
@@ -123,14 +129,21 @@ export class ProjectDocumentStore {
   }
 
   setProject(project) {
-    const tracks = Array.isArray(project?.tracks) ? project.tracks : []
+    const sourceProject = migrateProjectReverbState(project)?.project || project
+    const mixState = createProjectMixState(sourceProject?.mixState)
+    const playbackDefaults = buildTrackPlaybackDefaults(mixState)
+    const tracks = (Array.isArray(sourceProject?.tracks) ? sourceProject.tracks : []).map((track) => ({
+      ...track,
+      playbackState: createTrackPlaybackState(track?.playbackState, playbackDefaults),
+    }))
     this._project = {
-      fileName: project?.fileName || '',
-      ppq: Number.isFinite(project?.ppq) && project.ppq > 0 ? project.ppq : DEFAULT_PPQ,
-      tempoData: createTempoDocument(project?.tempoData),
+      fileName: sourceProject?.fileName || '',
+      ppq: Number.isFinite(sourceProject?.ppq) && sourceProject.ppq > 0 ? sourceProject.ppq : DEFAULT_PPQ,
+      tempoData: createTempoDocument(sourceProject?.tempoData),
+      mixState,
       tracks,
-      selectedTrackId: project?.selectedTrackId ?? tracks[0]?.id ?? null,
-      editorTrackId: project?.editorTrackId ?? null,
+      selectedTrackId: sourceProject?.selectedTrackId ?? tracks[0]?.id ?? null,
+      editorTrackId: sourceProject?.editorTrackId ?? null,
     }
   }
 
@@ -140,6 +153,7 @@ export class ProjectDocumentStore {
       fileName: seed.fileName || '',
       ppq: Number.isFinite(seed.ppq) && seed.ppq > 0 ? seed.ppq : DEFAULT_PPQ,
       tempoData: seed.tempoData || null,
+      mixState: seed.mixState || null,
       tracks: [],
       selectedTrackId: null,
       editorTrackId: null,
@@ -185,6 +199,7 @@ export class ProjectDocumentStore {
   createTrack({ name = null, languageCode = null, afterTrackId = null } = {}) {
     const project = this.ensureProject()
     const nextTrackIndex = this._getNextTrackIndex()
+    const playbackDefaults = buildTrackPlaybackDefaults(project.mixState)
     const track = createTrackDocument({
       index: nextTrackIndex,
       name: name || `Track ${project.tracks.length + 1}`,
@@ -193,7 +208,7 @@ export class ProjectDocumentStore {
       durationTicks: 0,
       noteCount: 0,
       previewNotes: [],
-    }, [], languageCode)
+    }, [], languageCode, playbackDefaults)
     const insertIndex = this._getTrackInsertIndex(afterTrackId)
     project.tracks.splice(insertIndex, 0, track)
     project.selectedTrackId = track.id
@@ -212,6 +227,7 @@ export class ProjectDocumentStore {
   } = {}) {
     const project = this.ensureProject()
     const nextTrackIndex = this._getNextTrackIndex()
+    const playbackDefaults = buildTrackPlaybackDefaults(project.mixState)
     const axis = createTimelineAxis({
       tempoData: project.tempoData,
       ppq: project.ppq,
@@ -238,7 +254,7 @@ export class ProjectDocumentStore {
         duration: safeDuration,
         waveformPeaks,
       },
-    }, [], null)
+    }, [], null, playbackDefaults)
     const insertIndex = this._getTrackInsertIndex(afterTrackId)
     project.tracks.splice(insertIndex, 0, track)
     project.selectedTrackId = track.id
@@ -415,8 +431,19 @@ export class ProjectDocumentStore {
   updateTrackPlaybackState(trackId, playbackState) {
     const track = this.getTrack(trackId)
     if (!track) return null
-    track.playbackState = mergeTrackPlaybackState(track.playbackState, playbackState)
+    track.playbackState = mergeTrackPlaybackState(
+      track.playbackState,
+      playbackState,
+      buildTrackPlaybackDefaults(this._project?.mixState),
+    )
     return track
+  }
+
+  updateProjectMixState(mixState) {
+    const project = this._project
+    if (!project) return null
+    project.mixState = mergeProjectMixState(project.mixState, mixState)
+    return project.mixState
   }
 
   replaceTrackVocalManifest(trackId, vocalManifest) {

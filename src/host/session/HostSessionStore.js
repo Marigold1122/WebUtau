@@ -7,6 +7,8 @@ export class HostSessionStore {
     this._openSourcePickerTrackId = null
     this._editorMode = 'note'
     this._playheadFollowMode = normalizePlayheadFollowMode(null)
+    this._reverbDockOpen = false
+    this._openReverbTrackIds = []
   }
 
   getSnapshot() {
@@ -16,6 +18,8 @@ export class HostSessionStore {
       openSourcePickerTrackId: this._openSourcePickerTrackId,
       editorMode: this._editorMode,
       playheadFollowMode: this._playheadFollowMode,
+      reverbDockOpen: this._reverbDockOpen,
+      openReverbTrackIds: [...this._openReverbTrackIds],
     }
   }
 
@@ -82,5 +86,57 @@ export class HostSessionStore {
   shouldClearFocusSoloOnEditorClose(trackId = null) {
     if (!this.hasFocusSoloTrack(trackId)) return false
     return !this._monitorDirtySinceFocus
+  }
+
+  isReverbDockOpen() {
+    return this._reverbDockOpen
+  }
+
+  setReverbDockOpen(open) {
+    this._reverbDockOpen = Boolean(open)
+    return this._reverbDockOpen
+  }
+
+  toggleReverbDock() {
+    this._reverbDockOpen = !this._reverbDockOpen
+    return this._reverbDockOpen
+  }
+
+  getOpenReverbTrackIds() {
+    return [...this._openReverbTrackIds]
+  }
+
+  isReverbTrackOpen(trackId) {
+    return Boolean(trackId) && this._openReverbTrackIds.includes(trackId)
+  }
+
+  setOpenReverbTrackIds(trackIds = []) {
+    const nextTrackIds = Array.isArray(trackIds)
+      ? [...new Set(trackIds.filter((trackId) => typeof trackId === 'string' && trackId))]
+      : []
+    this._openReverbTrackIds = nextTrackIds
+    return this.getOpenReverbTrackIds()
+  }
+
+  openReverbTrack(trackId) {
+    if (!trackId || this.isReverbTrackOpen(trackId)) return this.getOpenReverbTrackIds()
+    this._openReverbTrackIds = [...this._openReverbTrackIds, trackId]
+    return this.getOpenReverbTrackIds()
+  }
+
+  closeReverbTrack(trackId) {
+    if (!trackId || !this.isReverbTrackOpen(trackId)) return this.getOpenReverbTrackIds()
+    this._openReverbTrackIds = this._openReverbTrackIds.filter((openTrackId) => openTrackId !== trackId)
+    return this.getOpenReverbTrackIds()
+  }
+
+  toggleReverbTrack(trackId) {
+    if (!trackId) return false
+    if (this.isReverbTrackOpen(trackId)) {
+      this.closeReverbTrack(trackId)
+      return false
+    }
+    this.openReverbTrack(trackId)
+    return true
   }
 }
