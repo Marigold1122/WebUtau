@@ -52,12 +52,13 @@ export class TrackPredictionGateController {
     const track = this.store.getTrack(trackId)
     if (!track || !isVoiceRuntimeSource(track.playbackState?.assignedSourceId)) return false
 
-    const languageCode = await this._promptTrackLanguage(track, intent)
-    if (!languageCode) {
+    const gateResult = await this._promptTrackLanguage(track, intent)
+    if (!gateResult) {
       this.view.setStatus(intent === 'play' ? '未选择语言，已取消播放前准备' : `已取消打开 ${track.name}`)
       this.render('prediction-gate-cancelled')
       return false
     }
+    const { languageCode, singerId } = gateResult
 
     await this._prepareRuntime(track.id, intent)
     const preparedTrack = this.store.getTrack(track.id)
@@ -79,7 +80,7 @@ export class TrackPredictionGateController {
       this.store.updateTrackRenderState(preparedTrack.id, { status: 'queued', completed: 0, total: 0, error: null })
       this.render('prediction-gate-runtime-loaded')
       this.view.updateTrackSynthesisOverlay(buildPredictionOverlayText(12), 0.12)
-      await this.bridge.startSynthesis({ languageCode })
+      await this.bridge.startSynthesis({ languageCode, singerId })
       const result = await prepPromise
       if (!result?.ok) return false
 
@@ -112,28 +113,32 @@ export class TrackPredictionGateController {
   }
 
   async _promptTrackLanguage(track, intent) {
-    const selectedCode = await this.view.promptTrackLanguage(track.name, track.languageCode, {
+    const result = await this.view.promptTrackLanguage(track.name, track.languageCode, {
       title: `为 ${track.name} 选择语言`,
       hint: intent === 'play'
         ? '开始播放前，必须先确认语言并完成音高预测。'
         : '进入人声编辑器前，必须先确认语言并完成音高预测。',
       actionLabel: intent === 'play' ? '预测后播放' : '预测并打开',
+      singerId: track.singerId,
     })
-    const languageCode = normalizeOptionalLanguageCode(selectedCode)
+    if (!result) return null
+    const languageCode = normalizeOptionalLanguageCode(result.languageCode)
     if (!languageCode) return null
+    const singerId = result.singerId || null
 
     const languageChanged = normalizeOptionalLanguageCode(track.languageCode) !== languageCode
-    this.store.updateTrack(track.id, { languageCode })
+    const singerChanged = track.singerId !== singerId
+    this.store.updateTrack(track.id, { languageCode, singerId })
     if (!hasTracksRequiringVoiceLanguageSelection(this.store.getProject()?.tracks || [])) {
       this.view.hidePlaybackToast(VOICE_LANGUAGE_TOAST_ID)
     }
-    if (languageChanged) {
+    if (languageChanged || singerChanged) {
       this.taskCoordinator.resetTrackTask(track.id)
       this.store.updateTrackPrepState(track.id, { status: 'idle', progress: 0, error: null })
       this.store.updateTrackRenderState(track.id, { status: 'idle', completed: 0, total: 0, error: null })
       this.onTrackPreparationInvalidated?.(track.id)
     }
     this.render('track-language-updated')
-    return languageCode
+    return { languageCode, singerId }
   }
 }

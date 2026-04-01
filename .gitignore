@@ -56,6 +56,10 @@ research/
 handoff/
 backups/
 
+# Tauri
+src-tauri/target/
+src-tauri/binaries/
+
 # System files
 .DS_Store
 Thumbs.db

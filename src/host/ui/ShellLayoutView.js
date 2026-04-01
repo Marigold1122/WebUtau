@@ -1,3 +1,4 @@
+import { fetchVoicebanks } from '../../api/VoicebankApi.js'
 import { getLanguageLabel } from '../../config/languageOptions.js'
 import { PLAYHEAD_FOLLOW_MODE_LABELS, PLAYHEAD_FOLLOW_MODES, normalizePlayheadFollowMode } from '../../shared/playheadFollowMode.js'
 import { InspectorVoiceConversionSection } from './InspectorVoiceConversionSection.js'
@@ -106,6 +107,7 @@ export class ShellLayoutView {
     this.setMidiRecordingActive(false)
     this.setMidiRecordingEnabled(false)
     this.refs.statusBar?.classList.add('is-empty')
+    this._loadInspectorVoicebanks()
     this.workspaceSplitController.init()
     if (!this.fileMenu.isConnected) {
       document.body.appendChild(this.fileMenu)
@@ -272,6 +274,9 @@ export class ShellLayoutView {
     this.refs.audioFileInput?.addEventListener('change', (event) => this.handlers.onAudioFileSelected?.(event.target.files?.[0] || null))
     this.refs.btnCloseEditor?.addEventListener('click', () => this.handlers.onCloseEditor?.())
     this.refs.midiInputSelect?.addEventListener('change', (event) => this.handlers.onMidiInputSelected?.(event.target.value || ''))
+    this.refs.selectedTrackVoicebank?.addEventListener('change', (event) => {
+      this.handlers.onVoicebankChanged?.(event.target.value || null)
+    })
     this.refs.btnInspectorToggle?.addEventListener('click', () => this.setInspectorCollapsed(!this.isInspectorCollapsed()))
     this.refs.trackViewport?.addEventListener('contextmenu', (event) => this._handleTrackViewportContextMenu(event))
     this.refs.mainInspector?.addEventListener('transitionend', (event) => {
@@ -388,6 +393,23 @@ export class ShellLayoutView {
     }
   }
 
+  async _loadInspectorVoicebanks() {
+    const select = this.refs.selectedTrackVoicebank
+    if (!select) return
+    try {
+      const voicebanks = await fetchVoicebanks()
+      select.innerHTML = ''
+      voicebanks.forEach((vb) => {
+        const option = document.createElement('option')
+        option.value = vb.id
+        option.textContent = vb.name || vb.id
+        select.appendChild(option)
+      })
+    } catch {
+      select.innerHTML = '<option value="">无法加载声库</option>'
+    }
+  }
+
   _renderProjectMeta(project, selectedTrack, editorTrack, renderBadgeTrack, viewState) {
     this.setPlayheadFollowMode(viewState?.playheadFollowMode)
     this.refs.projectFileName.textContent = project?.fileName || '—'
@@ -407,6 +429,14 @@ export class ShellLayoutView {
     this.refs.selectedTrackLanguage.textContent = selectedTrack
       ? (isAudioTrack(selectedTrack) ? '—' : getLanguageLabel(selectedTrack.languageCode))
       : '未设置'
+    if (this.refs.selectedTrackVoicebank) {
+      const voicebankSelect = this.refs.selectedTrackVoicebank
+      const isVoiceTrack = selectedTrack && !isAudioTrack(selectedTrack)
+      voicebankSelect.disabled = !isVoiceTrack
+      if (isVoiceTrack && selectedTrack.singerId) {
+        voicebankSelect.value = selectedTrack.singerId
+      }
+    }
     this.refs.selectedTrackStatus.textContent = selectedTrack ? getTrackInspectorStatusText(selectedTrack) : '-'
     this.refs.renderBadge.textContent = renderBadgeTrack ? getTrackStatusText(renderBadgeTrack) : ''
     this.refs.renderBadge.className = `render-status ${renderBadgeTrack ? getTrackRenderClass(renderBadgeTrack) : 'idle'}`

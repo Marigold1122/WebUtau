@@ -2,24 +2,12 @@ import midiImporter from '../../modules/MidiImporter.js'
 import midiEncoder from '../../modules/MidiEncoder.js'
 import trackSelector from '../../ui/TrackSelector.js'
 import { DEFAULT_LANGUAGE_CODE } from '../../config/languageOptions.js'
-import { buildRenderApiUrl } from '../../config/serviceEndpoints.js'
+import { fetchVoicebanks, getDefaultSingerId } from '../../api/VoicebankApi.js'
 import { cloneSnapshot } from './runtimeSnapshot.js'
-
-function assertVoicebankResponse(response) {
-  if (!response.ok) throw new Error('获取声库失败: HTTP ' + response.status)
-  return response.json()
-}
-
-async function fetchVoicebanks() {
-  return fetch(buildRenderApiUrl('/api/voicebanks')).then(assertVoicebankResponse)
-}
 
 export async function resolveSingerId() {
   const voicebanks = await fetchVoicebanks()
-  if (!Array.isArray(voicebanks) || voicebanks.length === 0) {
-    throw new Error('后端没有可用声库')
-  }
-  const singerId = voicebanks[0]?.id
+  const singerId = getDefaultSingerId(voicebanks)
   if (!singerId) throw new Error('声库缺少 id')
   return singerId
 }

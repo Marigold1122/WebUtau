@@ -1413,6 +1413,32 @@ export function createHostApp() {
     onTrackSoloToggled: (trackId) => trackMonitorController.toggleTrackSolo(trackId),
     onTrackMuteToggled: (trackId) => trackMonitorController.toggleTrackMute(trackId),
     onTrackVolumeChanged: (trackId, volume, options) => trackMonitorController.setTrackVolume(trackId, volume, options),
+    onVoicebankChanged: async (singerId) => {
+      const selectedTrack = store.getSelectedTrack()
+      if (!selectedTrack || isAudioTrack(selectedTrack) || !singerId) return
+      const singerChanged = selectedTrack.singerId !== singerId
+      if (!singerChanged) return
+      store.updateTrack(selectedTrack.id, { singerId })
+      render('voicebank-changed')
+      if (
+        store.getEditorTrack()?.id === selectedTrack.id
+        && isVoiceRuntimeSource(selectedTrack.playbackState?.assignedSourceId)
+        && isTrackPrepReady(selectedTrack)
+        && selectedTrack.languageCode
+      ) {
+        taskCoordinator.resetTrackTask(selectedTrack.id)
+        store.updateTrackPrepState(selectedTrack.id, { status: 'queued', progress: 8, error: null })
+        store.updateTrackRenderState(selectedTrack.id, { status: 'queued', completed: 0, total: 0, error: null })
+        vocalManifestController.resetTrackFromSnapshot(selectedTrack.id)
+        invalidateVoiceConversion(selectedTrack.id, '声库已切换，需要重新转换')
+        view.setStatus(`正在使用新声库重新合成 ${selectedTrack.name}...`)
+        try {
+          await bridge.startSynthesis({ languageCode: selectedTrack.languageCode, singerId })
+        } catch (error) {
+          view.setStatus(`重新合成失败: ${error?.message || '未知错误'}`)
+        }
+      }
+    },
     onPlayheadFollowModeSelected: handlePlayheadFollowModeSelected,
     onEditorModeSelected: handleEditorModeSelected,
     onRenderTrackAsVoice: handleRenderTrackAsVoice,

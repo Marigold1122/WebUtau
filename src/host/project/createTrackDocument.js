@@ -37,6 +37,7 @@ export function createTrackDocument(trackSummary, sourcePhrases = [], languageCo
       : getRoleForAssignedSource(playbackState.assignedSourceId)),
     contentType,
     languageCode: normalizeOptionalLanguageCode(languageCode),
+    singerId: null,
     duration: trackSummary.duration || 0,
     durationTicks: trackSummary.durationTicks || 0,
     noteCount: trackSummary.noteCount || 0,

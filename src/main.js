@@ -16,7 +16,7 @@ import pianoRoll from './ui/PianoRoll.js'
 import trackSelector from './ui/TrackSelector.js'
 import prepareOverlay from './ui/PrepareOverlay.js'
 import { DEFAULT_LANGUAGE_CODE } from './config/languageOptions.js'
-import { buildRenderApiUrl } from './config/serviceEndpoints.js'
+import { fetchVoicebanks, getDefaultSingerId } from './api/VoicebankApi.js'
 import { EVENTS, JOB_STATUS, PHRASE_STATUS, PLAYHEAD_STATE, RENDER_PRIORITY } from './config/constants.js'
 
 function verifyModules() {
@@ -76,18 +76,9 @@ function init() {
   const btnImport = document.getElementById('btn-import')
   const fileInput = document.getElementById('midi-file-input')
 
-  const fetchVoicebanks = async () => {
-    const response = await fetch(buildRenderApiUrl('/api/voicebanks'))
-    if (!response.ok) throw new Error('获取声库失败: HTTP ' + response.status)
-    return response.json()
-  }
-
   const resolveSingerId = async () => {
     const voicebanks = await fetchVoicebanks()
-    if (!Array.isArray(voicebanks) || voicebanks.length === 0) {
-      throw new Error('后端没有可用声库')
-    }
-    const singerId = voicebanks[0]?.id
+    const singerId = getDefaultSingerId(voicebanks)
     if (!singerId) throw new Error('声库缺少 id')
     return singerId
   }

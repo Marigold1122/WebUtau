@@ -23,6 +23,7 @@ export function createShellLayoutRefs() {
     selectedTrackStats: document.getElementById('selected-track-stats'),
     selectedTrackLength: document.getElementById('selected-track-length'),
     selectedTrackLanguage: document.getElementById('selected-track-language'),
+    selectedTrackVoicebank: document.getElementById('selected-track-voicebank'),
     selectedTrackStatus: document.getElementById('selected-track-status'),
     mainInspector: document.getElementById('main-inspector'),
     btnInspectorToggle: document.getElementById('btn-inspector-toggle'),

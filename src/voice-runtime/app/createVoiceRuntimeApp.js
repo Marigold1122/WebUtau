@@ -182,7 +182,7 @@ export function createVoiceRuntimeApp(callbacks = {}) {
     phraseStore.setMidiFile(encodedMidi)
     state.languageCode = languageCode
     setStatus(`已提交 ${state.trackName} 的合成任务`)
-    const singerId = await resolveSingerId()
+    const singerId = options.singerId || await resolveSingerId()
     await renderJobManager.submitMidi(encodedMidi, singerId, languageCode)
   }
 
