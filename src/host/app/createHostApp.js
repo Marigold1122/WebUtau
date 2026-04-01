@@ -1441,6 +1441,38 @@ export function createHostApp() {
     },
     onPlayheadFollowModeSelected: handlePlayheadFollowModeSelected,
     onEditorModeSelected: handleEditorModeSelected,
+    onQuickLyricOpen: async () => {
+      if (view.quickLyricPanel.isOpen()) {
+        view.closeQuickLyricPanel()
+        return
+      }
+      const editorTrack = store.getEditorTrack()
+      if (!editorTrack || isAudioTrack(editorTrack) || !isVoiceRuntimeSource(editorTrack.playbackState?.assignedSourceId)) return
+      try {
+        const snapshot = await bridge.requestSnapshot()
+        if (!snapshot?.phrases?.length) {
+          view.setStatus('当前轨道没有可编辑的歌词')
+          return
+        }
+        view.openQuickLyricPanel(snapshot, {
+          async onSave(edits) {
+            if (!edits?.length) return
+            try {
+              const result = await bridge.applyNoteEdits(edits)
+              const affectedIndices = Array.isArray(result?.affectedIndices) ? result.affectedIndices : []
+              if (result?.snapshot) {
+                applyRuntimeNoteEditSnapshot(editorTrack.id, result.snapshot, affectedIndices)
+              }
+              view.setStatus(`已更新 ${editorTrack.name} 的歌词`)
+            } catch (error) {
+              view.setStatus(`歌词保存失败: ${error?.message || '未知错误'}`)
+            }
+          },
+        })
+      } catch (error) {
+        view.setStatus(`获取歌词失败: ${error?.message || '未知错误'}`)
+      }
+    },
     onRenderTrackAsVoice: handleRenderTrackAsVoice,
     onDismissTransientUi: () => trackShellSessionController.closeSourcePicker(null, 'outside-click') && render('source-picker-dismissed'),
     onOpenSelectedTrack: async () => store.getSelectedTrack()?.id && openTrackById(store.getSelectedTrack().id),

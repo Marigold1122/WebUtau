@@ -9,6 +9,7 @@ import { getTrackSourceInspectorText } from '../project/trackSourceAssignment.js
 import { isVoiceRuntimeSource } from '../project/trackSourceAssignment.js'
 import { InstrumentEditorView } from './InstrumentEditorView.js'
 import { ProjectTimingImportModal } from './ProjectTimingImportModal.js'
+import { QuickLyricPanel } from './QuickLyricPanel.js'
 import { TrackLanguageModal } from './TrackLanguageModal.js'
 import { TrackTimelinePlayheadView } from './TrackTimelinePlayheadView.js'
 import { TrackSynthesisOverlay } from './TrackSynthesisOverlay.js'
@@ -71,6 +72,8 @@ export class ShellLayoutView {
     this.btnEditorNoteMode = null
     this.btnEditorLyricMode = null
     this.btnEditorPitchMode = null
+    this.btnQuickLyric = null
+    this.quickLyricPanel = new QuickLyricPanel()
     this.btnRenderTrackAsVoice = null
     this._handleDocumentPointerDown = (event) => {
       if (event.target?.closest?.('.file-menu')) return
@@ -255,6 +258,21 @@ export class ShellLayoutView {
     this.instrumentEditorView.markSaved()
   }
 
+  openQuickLyricPanel(snapshot, { onSave }) {
+    const container = this.refs.editorRuntimeTools || this.refs.editorPanel
+    if (!container) return
+    this.quickLyricPanel.open(snapshot, container, {
+      onSave,
+      onClose: () => this.btnQuickLyric?.classList.remove('active'),
+    })
+    this.btnQuickLyric?.classList.add('active')
+  }
+
+  closeQuickLyricPanel() {
+    this.quickLyricPanel.close()
+    this.btnQuickLyric?.classList.remove('active')
+  }
+
   promptTrackLanguage(trackName, languageCode, options = {}) { return this.trackLanguageModal.prompt(trackName, languageCode, options) }
   promptProjectTimingImport(options = {}) { return this.projectTimingImportModal.prompt(options) }
   showTrackSynthesisOverlay(trackName, text, options = {}) { this.trackSynthesisOverlay.show(trackName, text, options) }
@@ -348,6 +366,13 @@ export class ShellLayoutView {
     const actions = document.createElement('div')
     actions.className = 'piano-roll-editor-control-group host-editor-action-group'
 
+    this.btnQuickLyric = document.createElement('button')
+    this.btnQuickLyric.type = 'button'
+    this.btnQuickLyric.className = 'piano-roll-editor-btn piano-roll-editor-btn--secondary'
+    this.btnQuickLyric.textContent = '快速填词'
+    this.btnQuickLyric.addEventListener('click', () => this.handlers.onQuickLyricOpen?.())
+    actions.appendChild(this.btnQuickLyric)
+
     this.btnRenderTrackAsVoice = document.createElement('button')
     this.btnRenderTrackAsVoice.type = 'button'
     this.btnRenderTrackAsVoice.className = 'piano-roll-editor-btn piano-roll-editor-btn--secondary'
@@ -386,6 +411,13 @@ export class ShellLayoutView {
     if (this.btnEditorPitchMode) {
       this.btnEditorPitchMode.disabled = !(isMidiTrack && isVocalTrack)
       this.btnEditorPitchMode.classList.toggle('active', isVocalTrack && mode === 'pitch')
+    }
+    if (this.btnQuickLyric) {
+      this.btnQuickLyric.disabled = !(isMidiTrack && isVocalTrack)
+      this.btnQuickLyric.hidden = !isMidiTrack
+      if (this.btnQuickLyric.disabled && this.quickLyricPanel.isOpen()) {
+        this.quickLyricPanel.close()
+      }
     }
     if (this.btnRenderTrackAsVoice) {
       this.btnRenderTrackAsVoice.disabled = !(isMidiTrack && !isVocalTrack)
