@@ -1,6 +1,11 @@
 import { startToneAudio } from './instruments/toneRuntime.js'
 import { isAudioTrack } from '../project/trackContentType.js'
-import { normalizeTrackVolume, resolveTrackPlaybackGain } from '../project/trackPlaybackState.js'
+import {
+  normalizeTrackReverbConfig,
+  normalizeTrackReverbSend,
+  normalizeTrackVolume,
+  resolveTrackPlaybackGain,
+} from '../project/trackPlaybackState.js'
 
 function applyGainValue(gainNode, volume, contextTime = null) {
   if (!gainNode) return
@@ -14,9 +19,10 @@ function applyGainValue(gainNode, volume, contextTime = null) {
 }
 
 export class ImportedAudioTrackScheduler {
-  constructor(assetRegistry, { logger = null } = {}) {
+  constructor(assetRegistry, { logger = null, audioGraph = null } = {}) {
     this.assetRegistry = assetRegistry
     this.logger = logger
+    this.audioGraph = audioGraph
     this.rawContext = null
     this.entries = []
     this.activeSources = new Map()
@@ -44,6 +50,8 @@ export class ImportedAudioTrackScheduler {
           duration,
           endSec: startSec + duration,
           volume: normalizeTrackVolume(track.playbackState?.volume),
+          reverbSend: track.playbackState?.reverbSend,
+          reverbConfig: track.playbackState?.reverbConfig,
         }
       })
       .filter(Boolean)
@@ -51,7 +59,9 @@ export class ImportedAudioTrackScheduler {
     this.entries = readyEntries
     this.active = readyEntries.length > 0
     if (this.active) {
-      this.rawContext = await startToneAudio()
+      this.rawContext = this.audioGraph
+        ? await this.audioGraph.ensureReady()
+        : await startToneAudio()
     }
 
     return {
@@ -100,9 +110,45 @@ export class ImportedAudioTrackScheduler {
       entry.volume = nextVolume
       updated = true
     })
+    if (this.audioGraph?.setTrackVolume?.(trackId, nextVolume)) {
+      updated = true
+    }
     const activeSource = this.activeSources.get(trackId)
     if (activeSource?.gainNode) {
       applyGainValue(activeSource.gainNode, nextVolume, this.rawContext?.currentTime)
+      updated = true
+    }
+    return updated
+  }
+
+  setTrackReverbSend(trackId, sendAmount) {
+    if (!trackId) return false
+    const nextSendAmount = normalizeTrackReverbSend(sendAmount)
+    let updated = false
+    this.entries.forEach((entry) => {
+      if (entry.trackId !== trackId) return
+      entry.reverbSend = nextSendAmount
+      updated = true
+    })
+    if (
+      this.audioGraph?.setTrackReverbSend?.(trackId, nextSendAmount)
+      || this.audioGraph?.setTrackSendAmount?.(trackId, nextSendAmount)
+    ) {
+      updated = true
+    }
+    return updated
+  }
+
+  setTrackReverbConfig(trackId, reverbConfig) {
+    if (!trackId) return false
+    const nextConfig = normalizeTrackReverbConfig(reverbConfig)
+    let updated = false
+    this.entries.forEach((entry) => {
+      if (entry.trackId !== trackId) return
+      entry.reverbConfig = nextConfig
+      updated = true
+    })
+    if (this.audioGraph?.setTrackReverbConfig?.(trackId, nextConfig)) {
       updated = true
     }
     return updated
@@ -114,18 +160,28 @@ export class ImportedAudioTrackScheduler {
     if (songTimeSec >= entry.endSec) return
 
     const source = this.rawContext.createBufferSource()
-    const gainNode = this.rawContext.createGain()
+    let gainNode = null
     source.buffer = buffer
-    applyGainValue(gainNode, entry.volume)
-    source.connect(gainNode)
-    gainNode.connect(this.rawContext.destination)
+    const trackInput = this.audioGraph?.getTrackInput?.(entry.trackId, {
+      volume: entry.volume,
+      reverbSend: entry.reverbSend,
+      reverbConfig: entry.reverbConfig,
+    }) || null
+    if (trackInput) {
+      source.connect(trackInput)
+    } else {
+      gainNode = this.rawContext.createGain()
+      applyGainValue(gainNode, entry.volume)
+      source.connect(gainNode)
+      gainNode.connect(this.rawContext.destination)
+    }
 
     const startDelay = Math.max(0, entry.startSec - songTimeSec)
     const offset = Math.max(0, songTimeSec - entry.startSec)
     source.start(this.rawContext.currentTime + startDelay, offset)
     source.onended = () => {
       source.disconnect()
-      gainNode.disconnect()
+      gainNode?.disconnect()
       this.activeSources.delete(entry.trackId)
     }
 

@@ -1,6 +1,9 @@
 export function createProjectImportHandler({
   view,
   transportCoordinator,
+  projectMixController = null,
+  projectAudioMixPersistence = null,
+  sessionStore = null,
   vocalManifestController,
   voiceConversionController,
   resetImportedAudioAssets = null,
@@ -73,9 +76,14 @@ export function createProjectImportHandler({
       bridge.resetRuntime()
       taskCoordinator.clearRuntimeTrack()
       focusSoloController.clearCurrentTrack()
+      sessionStore?.setReverbDockOpen?.(false)
+      sessionStore?.setOpenReverbTrackIds?.([])
       trackShellSessionController.closeSourcePicker(null, 'project-import')
 
-      store.setProject(nextProject)
+      const restoredProject = projectAudioMixPersistence?.restoreProject?.(nextProject) || nextProject
+      store.setProject(restoredProject)
+      projectAudioMixPersistence?.saveProject?.(store.getProject())
+      projectMixController?.syncProjectState?.(store.getProject())
       render('project-imported')
       view.setStatus(`已导入 ${nextProject.tracks.length} 条轨道，点击左侧 + 选择声源`)
     } catch (error) {

@@ -22,8 +22,8 @@ function createRenderState() {
   }
 }
 
-export function createTrackDocument(trackSummary, sourcePhrases = [], languageCode = null) {
-  const playbackState = createTrackPlaybackState()
+export function createTrackDocument(trackSummary, sourcePhrases = [], languageCode = null, playbackDefaults = null) {
+  const playbackState = createTrackPlaybackState(trackSummary?.playbackState, playbackDefaults || {})
   const phrases = createPhraseDocuments(sourcePhrases)
   const contentType = normalizeTrackContentType(trackSummary?.contentType)
   const audioClip = normalizeAudioClip(trackSummary?.audioClip)
