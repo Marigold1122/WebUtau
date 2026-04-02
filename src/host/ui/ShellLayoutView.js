@@ -707,6 +707,10 @@ export class ShellLayoutView {
   _syncFileMenuState(project) {
     if (!this.fileMenuExportButton) return
     this.fileMenuExportButton.disabled = !(this.handlers.canExportMidi?.(project) ?? false)
+    const hasProject = Boolean(project?.tracks?.length)
+    if (this.fileMenuExportAudioButton) {
+      this.fileMenuExportAudioButton.disabled = !hasProject
+    }
   }
 
   _createFileMenu() {
@@ -741,8 +745,19 @@ export class ShellLayoutView {
       this.handlers.onExportMidi?.()
     })
 
-    menu.append(importMidiButton, importAudioButton, exportMidiButton)
+    const exportAudioButton = document.createElement('button')
+    exportAudioButton.type = 'button'
+    exportAudioButton.className = 'track-context-menu-item'
+    exportAudioButton.textContent = '导出音频'
+    exportAudioButton.disabled = true
+    exportAudioButton.addEventListener('click', () => {
+      this._hideFileMenu()
+      this.handlers.onExportAudio?.()
+    })
+
+    menu.append(importMidiButton, importAudioButton, exportMidiButton, exportAudioButton)
     this.fileMenuExportButton = exportMidiButton
+    this.fileMenuExportAudioButton = exportAudioButton
     return menu
   }
 

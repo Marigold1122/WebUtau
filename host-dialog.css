@@ -81,4 +81,15 @@
 .modal-progress-bar { height: 6px; overflow: hidden; border-radius: 3px; background: #CCC5B7; box-shadow: inset 0 1px 2px rgba(0,0,0,0.1);}
 .modal-progress-fill { width: 18%; height: 100%; border-radius: 3px; background: #3B8B88; transition: width 0.2s ease; }
 
+.export-progress-text { margin-top: 6px; font-size: 11px; color: #7A7468; min-height: 16px; }
+.export-progress-section { margin-top: 8px; }
+.export-warning-text { font-size: 11px; color: #C0392B; min-height: 0; display: none; margin-top: 10px; }
+.export-warning-text.visible { display: block; }
+
+.export-actions { flex-wrap: wrap; }
+.export-actions .modal-btn { min-width: 0; flex: 1 1 auto; }
+.export-actions #btn-export-audio-cancel { flex: 0 0 auto; min-width: 56px; }
+
+.modal-overlay#export-audio-modal.visible { display: flex; }
+
 body.modal-open .app-container, body.modal-open .menubar, body.modal-open #status-bar { user-select: none; }

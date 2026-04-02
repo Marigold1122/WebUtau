@@ -48,6 +48,8 @@ import { ConvertedVocalAssetRegistry } from '../vocal/ConvertedVocalAssetRegistr
 import { ConvertedVocalScheduler } from '../vocal/ConvertedVocalScheduler.js'
 import { HostVocalAssetRegistry } from '../vocal/HostVocalAssetRegistry.js'
 import { HostVocalScheduler } from '../vocal/HostVocalScheduler.js'
+import { OfflineAudioExporter } from '../audio/export/OfflineAudioExporter.js'
+import { ExportAudioModal } from '../audio/export/ExportAudioModal.js'
 
 const MIDI_RECORD_MIN_DURATION_SEC = 0.05
 const MIDI_RECORD_MIN_DURATION_TICKS = 1
@@ -425,6 +427,78 @@ export function createHostApp() {
     triggerDownload(file)
     view.setStatus(`已导出 MIDI：${file.name}`)
     return true
+  }
+
+  const exportAudioModal = new ExportAudioModal()
+  const offlineAudioExporter = new OfflineAudioExporter({
+    projectStore: store,
+    sessionStore,
+    audioGraph: projectAudioGraph,
+    vocalAssetRegistry: vocalAssetRegistry,
+    importedAudioAssetRegistry,
+    convertedVocalAssetRegistry,
+    logger,
+  })
+
+  function checkVocalRenderBlocked(project) {
+    const tracks = project?.tracks || []
+    const vocalTracks = tracks.filter((t) => isVoiceRuntimeSource(t?.playbackState?.assignedSourceId))
+    if (vocalTracks.length === 0) return null
+    const incomplete = vocalTracks.filter((t) => {
+      const rs = t?.renderState?.status
+      return rs !== 'completed'
+    })
+    if (incomplete.length === 0) return null
+    const names = incomplete.map((t) => t.name || t.id).join('、')
+    return `人声轨 ${names} 渲染尚未完成，无法导出`
+  }
+
+  async function handleExportAudio() {
+    await persistEditorSnapshot()
+    const project = store.getProject()
+    if (!project?.tracks?.length) {
+      view.setStatus('当前没有可导出的项目')
+      return false
+    }
+
+    const selectedTrack = store.getSelectedTrack()
+    const blockedReason = checkVocalRenderBlocked(project)
+    let settings
+    try {
+      settings = await exportAudioModal.open({
+        blocked: Boolean(blockedReason),
+        blockedReason: blockedReason || '',
+        selectedTrackName: selectedTrack?.name || '',
+      })
+    } catch (_error) {
+      return false
+    }
+
+    const trackIds = settings.mode === 'selected' && selectedTrack
+      ? [selectedTrack.id]
+      : null
+    const label = trackIds ? `轨道 ${selectedTrack.name}` : '项目'
+    view.setStatus(`正在导出${label}音频...`)
+    try {
+      const file = await offlineAudioExporter.exportWav({
+        sampleRate: settings.sampleRate,
+        bitDepth: settings.bitDepth,
+        channels: settings.channels,
+        trackIds,
+        onProgress: (progress) => exportAudioModal.setProgress(progress),
+      })
+      triggerDownload(file)
+      exportAudioModal.setProgress({ message: `导出完成：${file.name}`, percent: 100 })
+      view.setStatus(`已导出音频：${file.name}`)
+      setTimeout(() => exportAudioModal.close(), 1500)
+      return true
+    } catch (error) {
+      const message = error?.message || '音频导出失败'
+      exportAudioModal.setProgress({ message: `导出失败：${message}`, percent: 0 })
+      view.setStatus(`音频导出失败：${message}`)
+      logger.error('Audio export failed', { error: message })
+      return false
+    }
   }
 
   function setEditorTrackState(trackId) {
@@ -996,6 +1070,7 @@ export function createHostApp() {
   function init() {
     bridge.init()
     view.init()
+    exportAudioModal.init()
     void bridge.setPlayheadFollowMode(sessionStore.getPlayheadFollowMode())
     transportCoordinator.init()
     shortcutRouter.init()
@@ -1427,6 +1502,7 @@ export function createHostApp() {
     onMidiFileSelected: handleFileSelected,
     onAudioFileSelected: handleAudioFileSelected,
     onExportMidi: handleExportMidi,
+    onExportAudio: handleExportAudio,
     canExportMidi,
     getProjectReverbPresets: reverbController.getProjectReverbPresets,
     getProjectReverbPresetTags: reverbController.getProjectReverbPresetTags,

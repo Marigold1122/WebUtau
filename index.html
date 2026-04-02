@@ -256,6 +256,39 @@
       </div>
     </div>
 
+    <div class="modal-overlay" id="export-audio-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="export-audio-title">
+      <div class="modal-dialog">
+        <div class="modal-title" id="export-audio-title">导出音频</div>
+        <div class="modal-hint">将当前项目按播放效果混合导出为 WAV 文件</div>
+        <div class="modal-field">
+          <label class="modal-label" for="export-sample-rate">采样率</label>
+          <select class="modal-select" id="export-sample-rate"></select>
+        </div>
+        <div class="modal-field">
+          <label class="modal-label" for="export-bit-depth">位深度</label>
+          <select class="modal-select" id="export-bit-depth"></select>
+        </div>
+        <div class="modal-field">
+          <label class="modal-label" for="export-channels">声道</label>
+          <select class="modal-select" id="export-channels"></select>
+        </div>
+        <div class="modal-field export-progress-section" id="export-progress-section">
+          <div class="modal-progress">
+            <div class="modal-progress-bar">
+              <div class="modal-progress-fill" id="export-progress-fill"></div>
+            </div>
+          </div>
+          <div class="export-progress-text" id="export-progress-text"></div>
+        </div>
+        <div class="export-warning-text" id="export-warning-text"></div>
+        <div class="modal-actions export-actions">
+          <button type="button" class="modal-btn secondary" id="btn-export-audio-cancel">取消</button>
+          <button type="button" class="modal-btn secondary" id="btn-export-audio-selected" disabled>导出所选轨道</button>
+          <button type="button" class="modal-btn primary" id="btn-export-audio-confirm">整体导出</button>
+        </div>
+      </div>
+    </div>
+
     <script type="module" src="/src/host/main.js"></script>
   </body>
 </html>
