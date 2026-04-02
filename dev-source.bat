@@ -14,11 +14,11 @@ if not exist "%BACKEND_PROJECT%" (
 )
 
 echo [1/2] 启动后端源码工程 (DiffSingerApi, port 5000)...
-start "Backend-Source" /d "%BACKEND_SOURCE_DIR%" cmd /k dotnet run
+start "Backend-Source" /d "%BACKEND_SOURCE_DIR%" dotnet run
 
 echo [2/2] 启动前端 (Vite, port 3000)...
 timeout /t 2 /nobreak >nul
-start "Frontend" /d "%ROOT%" cmd /k npm run dev
+start "Frontend" /d "%ROOT%" npm run dev
 
 echo.
 echo 后端源码: %BACKEND_SOURCE_DIR%
