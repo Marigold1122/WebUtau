@@ -60,6 +60,14 @@ backups/
 src-tauri/target/
 src-tauri/binaries/
 
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Demo MIDI files in public (configured via .env)
+public/*.mid
+
 # System files
 .DS_Store
 Thumbs.db

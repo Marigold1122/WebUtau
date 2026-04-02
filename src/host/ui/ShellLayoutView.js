@@ -34,6 +34,16 @@ import {
 import { WorkspaceSplitController } from './WorkspaceSplitController.js'
 
 const TRACK_HEADER_FALLBACK_WIDTH = 240
+
+function _parseDemoMidiFiles() {
+  try {
+    const raw = import.meta.env.VITE_DEMO_MIDI_FILES
+    if (!raw) return []
+    const list = JSON.parse(raw)
+    if (!Array.isArray(list)) return []
+    return list.filter((item) => item && typeof item.label === 'string' && typeof item.file === 'string')
+  } catch { return [] }
+}
 export class ShellLayoutView {
   constructor(handlers = {}, options = {}) {
     this.handlers = handlers
@@ -532,7 +542,39 @@ export class ShellLayoutView {
       btn.textContent = '导入'
       btn.addEventListener('click', () => this.refs.fileInput?.click())
       line2.append(label, btn)
-      this.refs.emptyHint.append(line1, line2)
+      const demoFiles = _parseDemoMidiFiles()
+      if (demoFiles.length > 0) {
+        const line3 = document.createElement('div')
+        line3.className = 'track-empty-hint-import'
+        const demoLabel = document.createElement('span')
+        demoLabel.textContent = '也可加载示例midi快速体验'
+        const loadDemo = (button, url, fileName) => {
+          button.disabled = true
+          button.textContent = '加载中…'
+          fetch(url)
+            .then((res) => res.blob())
+            .then((blob) => {
+              const file = new File([blob], fileName, { type: 'audio/midi' })
+              this.handlers.onMidiFileSelected?.(file)
+            })
+            .catch(() => {
+              button.textContent = '失败'
+              button.disabled = false
+            })
+        }
+        for (const demo of demoFiles) {
+          const demoBtn = document.createElement('button')
+          demoBtn.type = 'button'
+          demoBtn.className = 'track-empty-hint-import-button'
+          demoBtn.textContent = demo.label
+          demoBtn.addEventListener('click', () => loadDemo(demoBtn, demo.file, demo.file))
+          line3.appendChild(demoBtn)
+        }
+        line3.prepend(demoLabel)
+        this.refs.emptyHint.append(line1, line2, line3)
+      } else {
+        this.refs.emptyHint.append(line1, line2)
+      }
     }
 
     const fragment = document.createDocumentFragment()
