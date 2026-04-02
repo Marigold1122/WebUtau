@@ -1085,6 +1085,8 @@ export function createHostApp() {
   }
 
   function handleTrackContextCreate(afterTrackId = null) {
+    const project = store.getProject()
+    const wasBlank = !(project?.tracks?.length > 0)
     const anchorTrack = afterTrackId ? store.getTrack(afterTrackId) : store.getSelectedTrack()
     const createdTrack = store.createTrack({
       afterTrackId,
@@ -1093,6 +1095,9 @@ export function createHostApp() {
     if (!createdTrack) return
     trackShellSessionController.closeSourcePicker(null, 'track-created')
     render('track-created')
+    if (wasBlank) {
+      view.showEditorPlaceholder()
+    }
     view.setStatus(`已新建轨道 ${createdTrack.name}`)
   }
 

@@ -74,6 +74,8 @@ export class ShellLayoutView {
     this.reverbDockView = new ReverbDockView(this.refs, handlers)
     this.workspaceSplitController = new WorkspaceSplitController(this.refs)
     this.reverbDockVisible = false
+    this.editorPlaceholderActive = false
+    this._editorPlaceholderEl = null
     this.fileMenu = this._createFileMenu()
     this.trackContextMenu = this._createTrackContextMenu()
     this.trackContextTrackId = null
@@ -308,6 +310,41 @@ export class ShellLayoutView {
   hidePlaybackToast(toastId = null) { this.playbackToastView.hide(toastId) }
   notifyRuntimeLayoutChanged() { this.workspaceSplitController.scheduleRuntimeResize() }
 
+  showEditorPlaceholder() {
+    this.editorPlaceholderActive = true
+    this._ensureEditorPlaceholder()
+    this._editorPlaceholderEl.hidden = false
+    this.refs.editorPanel.classList.remove('hidden')
+    const workspace = this.refs.workspace
+    if (workspace) {
+      const half = Math.round(workspace.getBoundingClientRect().height / 2)
+      workspace.style.setProperty('--track-view-open-height', `${half}px`)
+    }
+    this.workspaceSplitController.setEditorVisible(true)
+    if (this.refs.voiceRuntimeFrame) this.refs.voiceRuntimeFrame.hidden = true
+    if (this.refs.instrumentEditorRoot) this.refs.instrumentEditorRoot.hidden = true
+    this.instrumentEditorView.clear()
+    this.refs.editorTrackName.textContent = '—'
+  }
+
+  hideEditorPlaceholder() {
+    if (!this.editorPlaceholderActive) return
+    this.editorPlaceholderActive = false
+    if (this._editorPlaceholderEl) this._editorPlaceholderEl.hidden = true
+  }
+
+  _ensureEditorPlaceholder() {
+    if (this._editorPlaceholderEl) return this._editorPlaceholderEl
+    const el = document.createElement('div')
+    el.className = 'editor-placeholder'
+    el.textContent = '请双击音轨开始编辑'
+    el.hidden = true
+    const editorBody = this.refs.editorPanel?.querySelector('.editor-body')
+    if (editorBody) editorBody.appendChild(el)
+    this._editorPlaceholderEl = el
+    return el
+  }
+
   _bindEvents() {
     this.refs.btnImport?.addEventListener('click', (event) => {
       event.preventDefault()
@@ -316,7 +353,14 @@ export class ShellLayoutView {
     })
     this.refs.fileInput?.addEventListener('change', (event) => this.handlers.onMidiFileSelected?.(event.target.files?.[0] || null))
     this.refs.audioFileInput?.addEventListener('change', (event) => this.handlers.onAudioFileSelected?.(event.target.files?.[0] || null))
-    this.refs.btnCloseEditor?.addEventListener('click', () => this.handlers.onCloseEditor?.())
+    this.refs.btnCloseEditor?.addEventListener('click', () => {
+      if (this.editorPlaceholderActive) {
+        this.hideEditorPlaceholder()
+        this._setEditorVisible(false)
+        return
+      }
+      this.handlers.onCloseEditor?.()
+    })
     this.refs.midiInputSelect?.addEventListener('change', (event) => this.handlers.onMidiInputSelected?.(event.target.value || ''))
     this.refs.selectedTrackVoicebank?.addEventListener('change', (event) => {
       this.handlers.onVoicebankChanged?.(event.target.value || null)
@@ -686,6 +730,10 @@ export class ShellLayoutView {
   _syncEditorSurface(project, editorTrack, viewState = {}) {
     const voiceFrame = this.refs.voiceRuntimeFrame
     const instrumentRoot = this.refs.instrumentEditorRoot
+    if (editorTrack && this.editorPlaceholderActive) {
+      this.hideEditorPlaceholder()
+    }
+    if (this.editorPlaceholderActive) return
     if (!editorTrack) {
       if (voiceFrame) voiceFrame.hidden = true
       if (instrumentRoot) instrumentRoot.hidden = true
@@ -718,6 +766,7 @@ export class ShellLayoutView {
   }
 
   _setEditorVisible(visible) {
+    if (!visible && this.editorPlaceholderActive) return
     this.refs.editorPanel.classList.toggle('hidden', !visible)
     this.workspaceSplitController.setEditorVisible(visible)
   }

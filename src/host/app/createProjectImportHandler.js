@@ -34,6 +34,7 @@ export function createProjectImportHandler({
       view.hidePlaybackToast('voice-language-reminder')
 
       const previousProject = store.getProject()
+      const wasBlankState = !(previousProject?.tracks?.length > 0)
       const hasCurrentProject = hasExistingProjectContext(previousProject)
       const importedProject = await importService.importFile(file)
       const hasImportedTiming = Boolean(
@@ -85,6 +86,9 @@ export function createProjectImportHandler({
       projectAudioMixPersistence?.saveProject?.(store.getProject())
       projectMixController?.syncProjectState?.(store.getProject())
       render('project-imported')
+      if (wasBlankState) {
+        view.showEditorPlaceholder()
+      }
       view.setStatus(`已导入 ${nextProject.tracks.length} 条轨道，点击左侧 + 选择声源`)
     } catch (error) {
       console.error('MIDI 导入失败:', error)
