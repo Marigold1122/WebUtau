@@ -103,25 +103,31 @@ body {
   content: "web utau";
   display: inline-flex;
   align-items: center;
+  height: 28px;
   margin-right: 12px;
   color: var(--text-main);
   font-family: 'Oswald', sans-serif;
   font-size: 16px;
   font-weight: 500;
+  line-height: 1;
   letter-spacing: 0.5px;
 }
 
 .menu-items {
   position: relative;
   z-index: 1;
-  display: flex;
+  display: inline-flex;
+  align-items: center;
   gap: 4px;
 }
 
 /* 物理质感菜单按钮 */
 .menu-item {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
   border: 1px solid transparent;
-  padding: 4px 10px;
+  padding: 0 10px;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-muted);

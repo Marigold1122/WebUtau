@@ -367,6 +367,59 @@ async function applyReverbChain(config, sendChannels, sampleRate, numChannels) {
   return ctx.startRendering()
 }
 
+// ── 前瞻式限幅器 ──────────────────────────────────
+// 纯线性增益变化，在峰值到来前平滑降低增益，峰值过后平滑恢复，
+// 不引入任何谐波失真。低于阈值的信号完全不受影响。
+
+function applyLookaheadLimiter(channels, numCh, totalSamples, sampleRate) {
+  const threshold = 0.95
+  const lookaheadSamples = Math.round(0.005 * sampleRate)
+  const releaseCoeff = Math.exp(-1000 / (100 * sampleRate))
+  const decayPerSample = Math.exp(-1 / lookaheadSamples)
+
+  // 1. 计算各通道合并的逐采样峰值
+  const env = new Float32Array(totalSamples)
+  for (let ch = 0; ch < numCh; ch++) {
+    const data = channels[ch]
+    for (let i = 0; i < totalSamples; i++) {
+      const v = data[i] > 0 ? data[i] : -data[i]
+      if (v > env[i]) env[i] = v
+    }
+  }
+
+  // 快速检查是否需要限幅
+  let maxPeak = 0
+  for (let i = 0; i < totalSamples; i++) {
+    if (env[i] > maxPeak) maxPeak = env[i]
+  }
+  if (maxPeak <= threshold) return
+
+  // 2. 反向扫描：将峰值信息向前传播（模拟前瞻窗口）
+  let runMax = 0
+  for (let i = totalSamples - 1; i >= 0; i--) {
+    runMax = env[i] > runMax ? env[i] : runMax * decayPerSample
+    env[i] = runMax > threshold ? threshold / runMax : 1
+  }
+
+  // 3. 正向平滑：瞬时启动 + 平滑释放，避免增益跳变
+  let gain = 1
+  for (let i = 0; i < totalSamples; i++) {
+    const target = env[i]
+    if (target < gain) {
+      gain = target
+    } else {
+      gain = gain * releaseCoeff + target * (1 - releaseCoeff)
+    }
+    env[i] = gain
+  }
+
+  // 4. 应用增益
+  for (let ch = 0; ch < numCh; ch++) {
+    const data = channels[ch]
+    for (let i = 0; i < totalSamples; i++) data[i] *= env[i]
+  }
+}
+
 // ── 尾部静音裁剪 ──────────────────────────────────
 
 function findTrimLength(channels, numChannels, totalSamples, minSamples, sampleRate) {
@@ -547,7 +600,11 @@ export class OfflineAudioExporter {
       group.channels = null
     }
 
-    // ── 9. 裁剪尾部静音 ──
+    // ── 9. 前瞻式限幅器（纯线性增益变化，不引入谐波失真）──
+
+    applyLookaheadLimiter(dryMix, numCh, totalSamples, sampleRate)
+
+    // ── 10. 裁剪尾部静音 ──
 
     onProgress?.({ phase: 'encode', message: '正在裁剪并编码...', percent: 88 })
     const trimLength = findTrimLength(dryMix, numCh, totalSamples, Math.ceil(baseDuration * sampleRate), sampleRate)
