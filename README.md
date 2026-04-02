@@ -1,222 +1,90 @@
 # Melody Singer
 
-基于 DiffSinger 的浏览器端 AI 歌声合成工作站。
+**浏览器端虚拟歌姬工作站** — 导入 MIDI，填写歌词，让虚拟歌姬为你演唱！
 
-导入 MIDI、填写歌词，即可通过 AI 合成歌声。项目同时支持多轨编辑、乐器伴奏，以及可选的 SeedVC 音色转换。
+![Melody Singer 界面预览](docs/screenshot.png)
 
-## 功能
+## 功能亮点
 
-- MIDI 导入与钢琴卷帘编辑
-- 中文 / 日语歌词编辑
-- AI 歌声合成（DiffSinger）
-- AI 音色转换（SeedVC，可选）
-- 钢琴、小提琴、鼓等乐器轨道
-- 多轨播放与导出
+### 虚拟歌姬演唱
+基于 [OpenUtau](https://github.com/stakira/OpenUtau) 歌声合成引擎，支持加载 UTAU 主流声库，在浏览器中即可驱动虚拟歌姬声库演唱你编写的旋律与歌词。
 
-## 架构
+### 音色转换
+集成 [SeedVC](https://github.com/Plachtaa/seed-vc) 音色转换技术，可将歌姬的演唱转换为目标音色，拓展声音表现力。
 
-项目由三部分组成：
+### 钢琴卷帘编辑器
+直观的钢琴卷帘界面，支持 MIDI 导入与手动编辑，提供音高、时值的精细控制。
 
-| 组件 | 端口 | 说明 |
-| --- | --- | --- |
-| 前端（Vite） | 3000 | 浏览器界面，仓库自带 |
-| DiffSinger 后端运行时 | 5000 | 预编译包可从 Releases 下载，也可由仓库内源码构建 |
-| SeedVC 服务 | 5001 | 音色转换服务，源码在仓库内，运行环境需手动搭建 |
+### 歌词编辑
+支持中文与日语歌词输入，提供快速填词面板，可批量填写并自动匹配音符。
 
-仓库当前同时包含以下源码：
+### 多轨乐器伴奏
+内置钢琴、小提琴、鼓组等多种乐器音色，支持多轨编排与混音，为歌声配上完整伴奏。
 
-- 前端源码：`src/`
-- DiffSinger 后端源码：`server/DiffSingerApi/`
-- 后端依赖的 OpenUtau 源码子集：`OpenUtau/OpenUtau.Core/`、`OpenUtau/OpenUtau.Plugin.Builtin/`
-- SeedVC 本地服务源码：`scripts/seedvc_service/`
-
-说明：
-
-- 仓库跟踪的是后端源码，不跟踪大体积运行时文件、声库、输出缓存。
-- 运行 `start-server.bat` / `dev.bat` 时，仍然需要根目录下存在可执行运行时 `server/DiffSingerApi.exe`。
-- 这个运行时可以从 Releases 下载，也可以由仓库内源码自行生成。
-
-## 环境要求
-
-| 依赖 | 版本 | 用途 |
-| --- | --- | --- |
-| [Node.js](https://nodejs.org/) | LTS | 前端开发服务器 |
-| [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) | 8.0+ | 构建 / 调试 DiffSinger 后端 |
-| [Python](https://www.python.org/downloads/release/python-31011/) | 3.10 | SeedVC 服务（可选） |
-| [Git](https://git-scm.com/) | - | 克隆仓库 |
-| NVIDIA GPU | GTX 1060+ | SeedVC 推理加速（强烈建议） |
-
-> DiffSinger 后端可在 CPU 上运行。SeedVC 也支持 CPU，但推理速度通常较慢。
+### 混音与效果
+轨道级混响、音量控制，多种预设效果风格，让作品更具表现力。
 
 ## 快速开始
 
-### 1. 克隆仓库
+### 环境要求
+
+- [Node.js](https://nodejs.org/) LTS
+- [Git](https://git-scm.com/)
+
+### 安装与启动
 
 ```bash
 git clone https://github.com/Marigold1122/melody-singer.git
 cd melody-singer
-```
-
-> 建议项目路径使用纯英文且不含空格。
-
-### 2. 安装前端依赖
-
-```bash
 npm install
 ```
 
-国内用户如遇下载缓慢，可切换镜像源：
+从 [Releases](https://github.com/Marigold1122/melody-singer/releases) 下载最新后端运行时，解压到 `server/` 目录，确保 `server/DiffSingerApi.exe` 存在。
 
-```bash
-npm config set registry https://registry.npmmirror.com
-```
-
-### 3. 准备 DiffSinger 后端运行时
-
-你可以任选一种方式：
-
-#### 方式 A：下载预编译运行时
-
-1. 前往 [Releases](https://github.com/Marigold1122/melody-singer/releases) 下载最新版后端压缩包
-2. 解压到项目根目录下的 `server/` 文件夹
-3. 确认 `server/DiffSingerApi.exe` 存在
-
-> 如果解压后出现 `server/server/` 嵌套目录，请将内容上移一层。
-
-#### 方式 B：从仓库源码构建运行时
-
-仓库已包含后端源码和其所需的 OpenUtau 源码子集，可直接构建：
-
-```bash
-dotnet publish server/DiffSingerApi/DiffSingerApi.csproj -c Release -o server
-```
-
-构建完成后，根目录下应出现：
-
-```text
-server/
-  DiffSingerApi.exe
-  DiffSingerApi.dll
-  DiffSingerApi.runtimeconfig.json
-  ...
-```
-
-### 4. 放置歌手模型（声库）
-
-将 DiffSinger 声库放入 `server/voicebanks/` 下，每个歌手为独立子文件夹：
-
-```text
-server/voicebanks/
-  kiritan/
-    character.yaml
-    dsconfig.yaml
-    *.onnx
-    dsdur/
-    dspitch/
-    dsvariance/
-    dsvocoder/
-```
-
-注意事项：
-
-- 保持歌手文件夹的完整结构，不要打散文件
-- 不要放入 `server/Singers/` 或 `public/samples/`
-
-### 5. 启动服务
-
-#### 运行预编译后端
-
-```bash
-# 终端 1
-start-server.bat
-
-# 终端 2
-npm run dev
-```
-
-#### 调试后端源码
-
-```bash
-dev-source.bat
-```
-
-这个脚本会直接从 `server/DiffSingerApi/` 运行 `dotnet run`，同时启动前端开发服务器。
-
-#### 一键启动预编译运行时
+将声库放入 `server/voicebanks/` 下（每个歌手为独立子文件夹）。
 
 ```bash
 dev.bat
 ```
 
-### 6. 验证
+打开浏览器访问 http://localhost:3000 即可使用。
 
-- 前端：<http://localhost:3000>
-- 后端：<http://localhost:5000/api/voicebanks>
-- SeedVC：<http://localhost:5001/health>
+<details>
+<summary><strong>从源码构建后端</strong></summary>
 
-## SeedVC 音色转换（可选）
-
-如需音色转换功能，按以下步骤搭建 SeedVC 环境。
+需要 [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)：
 
 ```bash
-# 克隆 Seed-VC
+dotnet publish server/DiffSingerApi/DiffSingerApi.csproj -c Release -o server
+```
+
+使用 `dev-source.bat` 可直接从源码启动后端与前端开发服务器。
+
+</details>
+
+<details>
+<summary><strong>SeedVC 音色转换（可选）</strong></summary>
+
+需要 [Python 3.10](https://www.python.org/downloads/release/python-31011/)，建议配备 NVIDIA GPU（GTX 1060+）。
+
+```bash
 git clone https://github.com/Plachtaa/seed-vc.git external/seed-vc
 cd external/seed-vc
-
-# 创建虚拟环境
 python -m venv .venv
-
-# 激活虚拟环境
-# CMD:
 .venv\Scripts\activate
-# PowerShell:
-.venv\Scripts\Activate.ps1
-
-# 安装 PyTorch（NVIDIA GPU）
 pip install torch==2.4.1+cu124 torchvision==0.19.1+cu124 torchaudio==2.4.1+cu124 --index-url https://download.pytorch.org/whl/cu124
-
-# 安装依赖
 pip install -r requirements.txt
 pip install fastapi uvicorn python-multipart
-
-# 回到项目根目录启动服务
 cd ../..
 scripts\start-seedvc-service.bat
 ```
 
-> 无 NVIDIA GPU 的环境可将 PyTorch 安装命令替换为 `pip install torch torchvision torchaudio`。
+> 无 NVIDIA GPU 可将 PyTorch 安装命令替换为 `pip install torch torchvision torchaudio`。
 
-## 项目结构
-
-```text
-melody-singer/
-  src/                              # 前端源码
-  public/samples/                   # 乐器采样
-  scripts/seedvc_service/           # SeedVC 本地服务源码
-  server/DiffSingerApi/             # DiffSinger 后端源码
-  OpenUtau/OpenUtau.Core/           # 后端依赖的 OpenUtau Core 源码子集
-  OpenUtau/OpenUtau.Plugin.Builtin/ # 后端依赖的 OpenUtau 插件源码子集
-  dev.bat                           # 一键启动预编译运行时
-  dev-source.bat                    # 一键启动源码调试环境
-  start-server.bat                  # 单独启动预编译后端
-```
-
-## 常见问题
-
-| 问题 | 排查方向 |
-| --- | --- |
-| `localhost:5000` 无响应 | 确认根目录 `server/DiffSingerApi.exe` 存在，或使用 `dev-source.bat` 从源码启动 |
-| `/api/voicebanks` 返回空数组 | 检查 `server/voicebanks/` 下是否至少有一个有效声库 |
-| `dotnet publish` 失败 | 确认 .NET 8 SDK 已安装，且可访问 NuGet |
-| `npm install` 缓慢 | 切换镜像源：`npm config set registry https://registry.npmmirror.com` |
-| SeedVC 启动后无输出 | 首次可能在后台下载较大模型，等待即可 |
+</details>
 
 ## 技术栈
 
-- 前端：Vanilla JavaScript + Vite
-- 后端：.NET 8 + ASP.NET Core + DiffSinger API
-- 后端依赖：OpenUtau Core / Plugin.Builtin（源码子集已随仓库提供）
-- 音色转换：Python + PyTorch + SeedVC
-- 音频：Web Audio API + Tone.js
-
-- 2026-04-01：新增混响面板双语标签与预设风格中文注释。
+前端：Vanilla JavaScript + Vite + Web Audio API + Tone.js
+后端：.NET 8 + ASP.NET Core（基于 [OpenUtau](https://github.com/stakira/OpenUtau) 核心模块）
+音色转换：Python + PyTorch + SeedVC
