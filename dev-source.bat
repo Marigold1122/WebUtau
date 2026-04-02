@@ -13,8 +13,11 @@ if not exist "%BACKEND_PROJECT%" (
   exit /b 1
 )
 
+if not defined MELODY_ONNX_PROVIDER set "MELODY_ONNX_PROVIDER=Cuda"
+echo [info] ONNX provider: %MELODY_ONNX_PROVIDER%
+
 echo [1/2] 启动后端源码工程 (DiffSingerApi, port 5000)...
-start "Backend-Source" /d "%BACKEND_SOURCE_DIR%" dotnet run
+start "Backend-Source" /d "%BACKEND_SOURCE_DIR%" dotnet run -p:OnnxProvider=%MELODY_ONNX_PROVIDER%
 
 echo [2/2] 启动前端 (Vite, port 3000)...
 timeout /t 2 /nobreak >nul

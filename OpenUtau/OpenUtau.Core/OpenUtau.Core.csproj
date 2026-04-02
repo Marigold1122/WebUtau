@@ -6,6 +6,11 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <DebugType>embedded</DebugType>
     <Nullable>enable</Nullable>
+    <!-- ONNX Runtime provider: Cuda (default on Windows) or DirectML.
+         Set via: dotnet run -p:OnnxProvider=DirectML
+         Or env:  set MELODY_ONNX_PROVIDER=DirectML -->
+    <OnnxProvider Condition="'$(OnnxProvider)' == ''">$(MELODY_ONNX_PROVIDER)</OnnxProvider>
+    <OnnxProvider Condition="'$(OnnxProvider)' == ''">Cuda</OnnxProvider>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="BunLabs.NAudio.Flac" Version="2.0.1" />
@@ -36,7 +41,8 @@
   </ItemGroup>
   <ItemGroup Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))' == 'true'">
     <PackageReference Include="NAudio" Version="2.2.1" />
-    <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.23.0" />
+    <PackageReference Condition="'$(OnnxProvider)' == 'Cuda'" Include="Microsoft.ML.OnnxRuntime.Gpu" Version="1.23.0" />
+    <PackageReference Condition="'$(OnnxProvider)' != 'Cuda'" Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.23.0" />
   </ItemGroup>
   <ItemGroup Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))' == 'false'">
     <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.23.2" />
@@ -83,5 +89,8 @@
   </ItemGroup>
   <PropertyGroup Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))' == 'true'">
     <DefineConstants>WINDOWS</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(OnnxProvider)' == 'Cuda'">
+    <DefineConstants>$(DefineConstants);ONNX_CUDA</DefineConstants>
   </PropertyGroup>
 </Project>

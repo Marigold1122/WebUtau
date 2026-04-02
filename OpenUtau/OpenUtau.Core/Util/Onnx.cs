@@ -16,6 +16,7 @@ namespace OpenUtau.Core {
     }
 
     public class Onnx {
+#if !ONNX_CUDA
         private static readonly Dictionary<int, OrtEpDevice> devices = initializeDevices();
 
         private static Dictionary<int, OrtEpDevice> initializeDevices() {
@@ -27,12 +28,17 @@ namespace OpenUtau.Core {
                 .Select((device, index) => new { index, device })
                 .ToDictionary(x => x.index, x => x.device);
         }
+#endif
 
         public static List<string> getRunnerOptions() {
             if (OS.IsWindows()) {
                 return new List<string> {
                 "CPU",
+#if ONNX_CUDA
+                "CUDA"
+#else
                 "DirectML"
+#endif
                 };
             } else if (OS.IsMacOS()) {
                 return new List<string> {
@@ -56,6 +62,33 @@ namespace OpenUtau.Core {
                     deviceId = 0, // eliminate exception of taking OnnxGpuOptions[0]
                 }};
             }
+#if ONNX_CUDA
+            // CUDA: ORT managed API does not expose device enumeration.
+            // Try nvidia-smi to get the real GPU name for logging.
+            var cudaDesc = "CUDA GPU 0";
+            try {
+                var psi = new System.Diagnostics.ProcessStartInfo("nvidia-smi",
+                    "--query-gpu=name --format=csv,noheader") {
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                };
+                using var proc = System.Diagnostics.Process.Start(psi);
+                if (proc != null) {
+                    var output = proc.StandardOutput.ReadToEnd().Trim();
+                    proc.WaitForExit(3000);
+                    if (!string.IsNullOrEmpty(output)) {
+                        // First line = device 0
+                        cudaDesc = output.Split('\n')[0].Trim();
+                    }
+                }
+            } catch {
+                // nvidia-smi not available, keep default description
+            }
+            return new List<GpuInfo> {
+                new GpuInfo { deviceId = 0, description = cudaDesc }
+            };
+#else
             List<GpuInfo> gpuList = new List<GpuInfo>();
             var env = OrtEnv.Instance();
             var ortDevices = env.GetEpDevices();
@@ -84,10 +117,14 @@ namespace OpenUtau.Core {
                 });
             }
             return gpuList;
+#endif
         }
 
         private static SessionOptions getOnnxSessionOptions(bool coremlEnableOnSubgraphs = false) {
             SessionOptions options = new SessionOptions();
+            options.GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL;
+            options.EnableMemoryPattern = true;
+            options.ExecutionMode = ExecutionMode.ORT_SEQUENTIAL;
             List<string> runnerOptions = getRunnerOptions();
             string runner = Preferences.Default.OnnxRunner;
             if (String.IsNullOrEmpty(runner)) {
@@ -97,6 +134,11 @@ namespace OpenUtau.Core {
                 runner = "CPU";
             }
             switch (runner) {
+#if ONNX_CUDA
+                case "CUDA":
+                    options.AppendExecutionProvider_CUDA(Preferences.Default.OnnxGpu);
+                    break;
+#else
                 case "DirectML":
                     var d = devices[Preferences.Default.OnnxGpu];
                     options.AppendExecutionProvider(
@@ -105,6 +147,7 @@ namespace OpenUtau.Core {
                         new Dictionary<string, string> {}
                      );
                     break;
+#endif
                 case "CoreML":
                     // Note: MLProgram format has stricter validation and may fail with complex DiffSinger models
                     // that have topological sorting issues (e.g., variance_predictor with diffusion embeddings)

@@ -76,6 +76,8 @@ echo.
 echo Environment variables:
 echo   MELODY_VOICEBANKS_DIR          voicebank dir (default .\server\voicebanks)
 echo   MELODY_FRONTEND_PORT           frontend port (default 3000)
+echo   MELODY_ONNX_PROVIDER           ONNX provider: Cuda (default) or DirectML
+echo   MELODY_ONNX_RUNNER             runtime override: CUDA, DirectML, or CPU
 echo   MELODY_BACKEND_START_TIMEOUT   backend health timeout seconds (default 180)
 echo   MELODY_SEEDVC_START_TIMEOUT    seedvc health timeout seconds (default 60)
 echo   MELODY_FRONTEND_START_TIMEOUT  frontend health timeout seconds (default 90)
@@ -337,8 +339,10 @@ goto _run_backend_source
 :_run_backend_source
 echo [start] backend (source)
 echo [info] voicebanks: "%VOICEBANKS_DIR%"
+if not defined MELODY_ONNX_PROVIDER set "MELODY_ONNX_PROVIDER=Cuda"
+echo [info] ONNX provider: %MELODY_ONNX_PROVIDER%
 cd /d "%ROOT%server\DiffSingerApi"
-dotnet run -- --VoicebanksPath="%VOICEBANKS_DIR%"
+dotnet run -p:OnnxProvider=%MELODY_ONNX_PROVIDER% -- --VoicebanksPath="%VOICEBANKS_DIR%"
 goto end_ok
 
 REM ========================================

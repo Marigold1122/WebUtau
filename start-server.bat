@@ -58,8 +58,10 @@ if defined USE_SOURCE_BACKEND (
 
   echo [info] published backend files are incomplete, falling back to source mode.
   echo [info] voicebanks: "%VOICEBANKS_DIR%"
+  if not defined MELODY_ONNX_PROVIDER set "MELODY_ONNX_PROVIDER=Cuda"
+  echo [info] ONNX provider: %MELODY_ONNX_PROVIDER%
   cd /d "%SERVER_DIR%\DiffSingerApi"
-  dotnet run -- --VoicebanksPath="%VOICEBANKS_DIR%"
+  dotnet run -p:OnnxProvider=%MELODY_ONNX_PROVIDER% -- --VoicebanksPath="%VOICEBANKS_DIR%"
   goto end
 )
 

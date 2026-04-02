@@ -20,6 +20,7 @@ namespace OpenUtau.Core.DiffSinger
         Dictionary<string, int> languageIds = new Dictionary<string, int>();
         Dictionary<string, int> phonemeTokens;
         ulong linguisticHash;
+        ulong pitchHash;
         InferenceSession linguisticModel;
         InferenceSession pitchModel;
         IG2p g2p;
@@ -64,7 +65,9 @@ namespace OpenUtau.Core.DiffSinger
             linguisticHash = XXH64.DigestOf(linguisticModelBytes);
             linguisticModel = Onnx.getInferenceSession(linguisticModelBytes);
             var pitchModelPath = Path.Join(rootPath, dsConfig.pitch);
-            pitchModel = Onnx.getInferenceSession(pitchModelPath);
+            var pitchModelBytes = File.ReadAllBytes(pitchModelPath);
+            pitchHash = XXH64.DigestOf(pitchModelBytes);
+            pitchModel = Onnx.getInferenceSession(pitchModelBytes);
             frameMs = 1000f * dsConfig.hop_size / dsConfig.sample_rate;
             //Load g2p
             g2p = LoadG2p(rootPath);
@@ -334,7 +337,15 @@ namespace OpenUtau.Core.DiffSinger
             }
 
             Onnx.VerifyInputNames(pitchModel, pitchInputs);
-            var pitchOutputs = pitchModel.Run(pitchInputs);
+            var pitchCache = Preferences.Default.DiffSingerTensorCache
+                ? new DiffSingerCache(pitchHash, pitchInputs)
+                : null;
+            var pitchOutputs = pitchCache?.Load();
+            if (pitchOutputs is null) {
+                pitchOutputs = pitchModel.Run(pitchInputs).Cast<NamedOnnxValue>().ToList();
+                pitchCache?.Save(pitchOutputs);
+                phrase.AddCacheFile(pitchCache?.Filename);
+            }
             var pitch_out = pitchOutputs.First().AsTensor<float>().ToArray();
             var pitchEnd = phrase.timeAxis.MsPosToTickPos(startMs + (totalFrames - 1) * frameMs) - phrase.position;
             if(pitchEnd<=phrase.duration){

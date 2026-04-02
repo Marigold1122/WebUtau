@@ -428,7 +428,7 @@ namespace OpenUtau.Core.DiffSinger {
                 acousticCache?.Save(acousticOutputs);
                 phrase.AddCacheFile(acousticCache?.Filename);
             }
-            Tensor<float> mel = acousticOutputs.First().AsTensor<float>().Clone();
+            Tensor<float> mel;
             //mel transforms for different mel base
             if (vocoder.mel_base != singer.dsConfig.mel_base) {
                 float k;
@@ -441,13 +441,15 @@ namespace OpenUtau.Core.DiffSinger {
                     // this should never happen
                     throw new Exception("This should never happen");
                 }
-                for (int b = 0; b < mel.Dimensions[0]; ++b) {
-                    for (int t = 0; t < mel.Dimensions[1]; ++t) {
-                        for (int c = 0; c < mel.Dimensions[2]; ++c) {
-                            mel[b, t, c] *= k;
-                        }
-                    }
+                // Must clone to CPU for transformation
+                mel = acousticOutputs.First().AsTensor<float>().Clone();
+                var melSpan = (mel as DenseTensor<float>).Buffer.Span;
+                for (int i = 0; i < melSpan.Length; i++) {
+                    melSpan[i] *= k;
                 }
+            } else {
+                // No transform needed — pass tensor through without cloning
+                mel = acousticOutputs.First().AsTensor<float>();
             }
             //vocoder
             //waveform = session.run(['waveform'], {'mel': mel, 'f0': f0})[0]
