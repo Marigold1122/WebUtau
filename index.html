@@ -102,89 +102,113 @@
 
         <aside class="inspector" id="main-inspector">
           <div class="inspector-content">
-            <section class="panel-section">
-              <h2>项目</h2>
-              <div class="prop-row"><label>文件</label><div class="prop-value" id="project-file-name">—</div></div>
-              <div class="prop-row"><label>轨道</label><div class="prop-value" id="project-track-count">0</div></div>
-            </section>
+            <!-- 信息标签页 -->
+            <div class="inspector-tab-panel" id="inspector-tab-info">
+              <section class="panel-section">
+                <h2>项目</h2>
+                <div class="prop-row"><label>文件</label><div class="prop-value" id="project-file-name">—</div></div>
+                <div class="prop-row"><label>轨道</label><div class="prop-value" id="project-track-count">0</div></div>
+              </section>
 
-            <section class="panel-section">
-              <h2>当前轨道</h2>
-              <div class="prop-row"><label>名称</label><div class="prop-value" id="selected-track-name">—</div></div>
-              <div class="prop-row"><label>类型</label><div class="prop-value" id="selected-track-kind">-</div></div>
-              <div class="prop-row"><label>统计</label><div class="prop-value" id="selected-track-stats">-</div></div>
-              <div class="prop-row"><label>长度</label><div class="prop-value" id="selected-track-length">-</div></div>
-              <div class="prop-row"><label>语言</label><div class="prop-value" id="selected-track-language">未设置</div></div>
-              <div class="prop-row"><label>声库</label><select class="prop-select" id="selected-track-voicebank"></select></div>
-              <div class="prop-row"><label>状态</label><div class="prop-value" id="selected-track-status">-</div></div>
-            </section>
+              <section class="panel-section">
+                <h2>当前轨道</h2>
+                <div class="prop-row"><label>名称</label><div class="prop-value" id="selected-track-name">—</div></div>
+                <div class="prop-row"><label>类型</label><div class="prop-value" id="selected-track-kind">-</div></div>
+                <div class="prop-row"><label>统计</label><div class="prop-value" id="selected-track-stats">-</div></div>
+                <div class="prop-row"><label>长度</label><div class="prop-value" id="selected-track-length">-</div></div>
+                <div class="prop-row"><label>语言</label><div class="prop-value" id="selected-track-language">未设置</div></div>
+                <div class="prop-row"><label>状态</label><div class="prop-value" id="selected-track-status">-</div></div>
+              </section>
+            </div>
 
-            <section class="panel-section voice-conversion-section" id="voice-conversion-section" hidden>
-              <h2>音色转换</h2>
-              <div class="voice-conversion-note" data-vc-ref="message" hidden></div>
-              <div class="voice-conversion-card" data-vc-ref="body">
-                <div class="voice-conversion-status" data-vc-ref="status"></div>
-                <div class="voice-conversion-draft" data-vc-ref="draft" hidden></div>
+            <!-- 声库标签页 -->
+            <div class="inspector-tab-panel" id="inspector-tab-voicebank" hidden>
+              <section class="panel-section">
+                <h2>声库</h2>
+                <div class="prop-row"><label>声库</label><select class="prop-select" id="selected-track-voicebank"></select></div>
+              </section>
+            </div>
 
-                <div class="voice-conversion-file">
-                  <div class="voice-conversion-file-row">
-                    <button type="button" class="panel-action-btn panel-action-btn--primary" data-vc-ref="reference-button">选择参考</button>
-                    <input type="file" accept="audio/*,.wav,.mp3,.flac,.m4a,.ogg" hidden data-vc-ref="reference-input" />
+            <!-- 音色转换标签页 -->
+            <div class="inspector-tab-panel" id="inspector-tab-vc" hidden>
+              <section class="panel-section voice-conversion-section" id="voice-conversion-section" hidden>
+                <h2>音色转换</h2>
+                <div class="voice-conversion-note" data-vc-ref="message" hidden></div>
+                <div class="voice-conversion-card" data-vc-ref="body">
+                  <div class="voice-conversion-status" data-vc-ref="status"></div>
+                  <div class="voice-conversion-draft" data-vc-ref="draft" hidden></div>
+
+                  <div class="voice-conversion-file">
+                    <div class="voice-conversion-file-row">
+                      <button type="button" class="panel-action-btn panel-action-btn--primary" data-vc-ref="reference-button">选择参考</button>
+                      <input type="file" accept="audio/*,.wav,.mp3,.flac,.m4a,.ogg" hidden data-vc-ref="reference-input" />
+                    </div>
+                    <div class="prop-value voice-conversion-reference-name" data-vc-ref="reference-name">未选择参考音频</div>
                   </div>
-                  <div class="prop-value voice-conversion-reference-name" data-vc-ref="reference-name">未选择参考音频</div>
-                </div>
 
-                <div class="voice-conversion-param">
-                  <div class="voice-conversion-param-head">
-                    <label for="vc-param-steps">扩散步数</label>
-                    <span data-vc-value="diffusionSteps">20</span>
+                  <div class="voice-conversion-param">
+                    <div class="voice-conversion-param-head">
+                      <label for="vc-param-steps">扩散步数</label>
+                      <span data-vc-value="diffusionSteps">20</span>
+                    </div>
+                    <input id="vc-param-steps" type="range" min="1" max="40" step="1" data-vc-param="diffusionSteps" />
                   </div>
-                  <input id="vc-param-steps" type="range" min="1" max="40" step="1" data-vc-param="diffusionSteps" />
-                </div>
 
-                <div class="voice-conversion-param">
-                  <div class="voice-conversion-param-head">
-                    <label for="vc-param-length">长度调整</label>
-                    <span data-vc-value="lengthAdjust">1.00</span>
+                  <div class="voice-conversion-param">
+                    <div class="voice-conversion-param-head">
+                      <label for="vc-param-length">长度调整</label>
+                      <span data-vc-value="lengthAdjust">1.00</span>
+                    </div>
+                    <input id="vc-param-length" type="range" min="0.5" max="2" step="0.01" data-vc-param="lengthAdjust" />
                   </div>
-                  <input id="vc-param-length" type="range" min="0.5" max="2" step="0.01" data-vc-param="lengthAdjust" />
-                </div>
 
-                <div class="voice-conversion-param">
-                  <div class="voice-conversion-param-head">
-                    <label for="vc-param-cfg">CFG</label>
-                    <span data-vc-value="cfgRate">0.70</span>
+                  <div class="voice-conversion-param">
+                    <div class="voice-conversion-param-head">
+                      <label for="vc-param-cfg">CFG</label>
+                      <span data-vc-value="cfgRate">0.70</span>
+                    </div>
+                    <input id="vc-param-cfg" type="range" min="0" max="1" step="0.01" value="0.7" data-vc-param="cfgRate" />
                   </div>
-                  <input id="vc-param-cfg" type="range" min="0" max="1" step="0.01" value="0.7" data-vc-param="cfgRate" />
-                </div>
 
-                <div class="voice-conversion-param">
-                  <div class="voice-conversion-param-head">
-                    <label for="vc-param-pitch">音高偏移</label>
-                    <span data-vc-value="pitchShift">0</span>
+                  <div class="voice-conversion-param">
+                    <div class="voice-conversion-param-head">
+                      <label for="vc-param-pitch">音高偏移</label>
+                      <span data-vc-value="pitchShift">0</span>
+                    </div>
+                    <input id="vc-param-pitch" type="number" min="-24" max="24" step="1" data-vc-param="pitchShift" />
                   </div>
-                  <input id="vc-param-pitch" type="number" min="-24" max="24" step="1" data-vc-param="pitchShift" />
+
+                  <label class="voice-conversion-check">
+                    <input type="checkbox" checked data-vc-param="f0Condition" />
+                    <span>启用 F0 条件</span>
+                  </label>
+
+                  <label class="voice-conversion-check">
+                    <input type="checkbox" data-vc-param="autoF0Adjust" />
+                    <span>自动 F0 对齐</span>
+                  </label>
+
+                  <div class="voice-conversion-actions">
+                    <button type="button" class="panel-action-btn panel-action-btn--primary" data-vc-ref="start-button">开始转换</button>
+                    <button type="button" class="panel-action-btn panel-action-btn--danger" data-vc-ref="cancel-button">取消当前合成</button>
+                    <button type="button" class="panel-action-btn" data-vc-ref="apply-button">应用转换后</button>
+                    <button type="button" class="panel-action-btn" data-vc-ref="restore-button">恢复原始</button>
+                    <button type="button" class="panel-action-btn" data-vc-ref="clear-button">清除结果</button>
+                  </div>
                 </div>
+              </section>
+            </div>
 
-                <label class="voice-conversion-check">
-                  <input type="checkbox" checked data-vc-param="f0Condition" />
-                  <span>启用 F0 条件</span>
-                </label>
-
-                <label class="voice-conversion-check">
-                  <input type="checkbox" data-vc-param="autoF0Adjust" />
-                  <span>自动 F0 对齐</span>
-                </label>
-
-                <div class="voice-conversion-actions">
-                  <button type="button" class="panel-action-btn panel-action-btn--primary" data-vc-ref="start-button">开始转换</button>
-                  <button type="button" class="panel-action-btn panel-action-btn--danger" data-vc-ref="cancel-button">取消当前合成</button>
-                  <button type="button" class="panel-action-btn" data-vc-ref="apply-button">应用转换后</button>
-                  <button type="button" class="panel-action-btn" data-vc-ref="restore-button">恢复原始</button>
-                  <button type="button" class="panel-action-btn" data-vc-ref="clear-button">清除结果</button>
+            <!-- 关于标签页 -->
+            <div class="inspector-tab-panel" id="inspector-tab-about" hidden>
+              <section class="panel-section">
+                <h2>关于</h2>
+                <div class="about-info">
+                  <div class="about-app-name">WEB UTAU</div>
+                  <div class="about-description">AI 歌声合成工作站</div>
                 </div>
-              </div>
-            </section>
+              </section>
+            </div>
           </div>
 
           <div class="side-toolbar">
@@ -196,6 +220,23 @@
               aria-label="收起右侧面板"
               aria-pressed="true"
             ></button>
+            <div class="side-toolbar-separator"></div>
+            <button type="button" class="side-tab-btn active" id="btn-tab-info" data-tab="info" title="信息" aria-label="信息">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.3"/><path d="M8 7v4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="5" r="0.8" fill="currentColor"/></svg>
+              <span>信息</span>
+            </button>
+            <button type="button" class="side-tab-btn" id="btn-tab-voicebank" data-tab="voicebank" title="声库" aria-label="声库">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2v8M8 10a2.5 2.5 0 1 0 0 .01" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 7.5V10a3 3 0 0 0 6 0V7.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M8 13v1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+              <span>声库</span>
+            </button>
+            <button type="button" class="side-tab-btn" id="btn-tab-vc" data-tab="vc" title="音色转换" aria-label="音色转换">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M11 4L5 8l6 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 8h2M11 8h2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+              <span>转换</span>
+            </button>
+            <button type="button" class="side-tab-btn" id="btn-tab-about" data-tab="about" title="关于" aria-label="关于">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.3"/><path d="M6.5 6.2a1.5 1.5 0 0 1 2.9.5c0 1-1.4 1.2-1.4 2.3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="8" cy="12" r="0.8" fill="currentColor"/></svg>
+              <span>关于</span>
+            </button>
           </div>
         </aside>
       </div>

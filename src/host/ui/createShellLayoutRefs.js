@@ -62,6 +62,18 @@ export function createShellLayoutRefs() {
     selectedTrackStatus: document.getElementById('selected-track-status'),
     mainInspector: document.getElementById('main-inspector'),
     btnInspectorToggle: document.getElementById('btn-inspector-toggle'),
+    inspectorTabPanels: {
+      info: document.getElementById('inspector-tab-info'),
+      voicebank: document.getElementById('inspector-tab-voicebank'),
+      vc: document.getElementById('inspector-tab-vc'),
+      about: document.getElementById('inspector-tab-about'),
+    },
+    inspectorTabButtons: {
+      info: document.getElementById('btn-tab-info'),
+      voicebank: document.getElementById('btn-tab-voicebank'),
+      vc: document.getElementById('btn-tab-vc'),
+      about: document.getElementById('btn-tab-about'),
+    },
     voiceConversionSection: document.getElementById('voice-conversion-section'),
     trackView: document.getElementById('track-view'),
     editorPanel: document.getElementById('editor-panel'),

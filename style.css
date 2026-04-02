@@ -2405,6 +2405,32 @@ body {
   content: ""; position: absolute; right: -4px; top: 50%; width: 2px; height: 14px; background: var(--accent-color); transform: translateY(-50%);
 }
 
+/* 标签页面板 */
+.inspector-tab-panel { display: block; }
+.inspector-tab-panel[hidden] { display: none; }
+
+/* 侧栏标签按钮分隔线 */
+.side-toolbar-separator { width: 20px; height: 1px; background: var(--border-color); margin: 4px 0; flex-shrink: 0; }
+
+/* 侧栏标签按钮 */
+.side-tab-btn {
+  width: 36px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  padding: 5px 0; border: 1px solid transparent; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text-muted); cursor: pointer; transition: all 0.1s; position: relative;
+}
+.side-tab-btn svg { width: 16px; height: 16px; flex-shrink: 0; }
+.side-tab-btn span { font-size: 9px; font-weight: 600; line-height: 1; letter-spacing: 0.2px; white-space: nowrap; }
+.side-tab-btn:hover { color: var(--text-main); background: var(--bg-3); border-color: var(--border-color); box-shadow: 0 1px 1px rgba(0,0,0,0.05), inset 0 1px 0 #FFF; }
+.side-tab-btn.active { color: var(--text-main); background: var(--bg-4); border-color: var(--border-light); box-shadow: inset 0 1px 2px rgba(0,0,0,0.1); }
+.side-tab-btn.active::after {
+  content: ""; position: absolute; left: -4px; top: 50%; width: 2px; height: 14px; background: var(--accent-color); transform: translateY(-50%);
+}
+
+/* 关于页面 */
+.about-info { text-align: center; padding: 24px 0; }
+.about-app-name { font-family: 'Oswald', sans-serif; font-size: 18px; font-weight: 600; color: var(--text-main); letter-spacing: 0.5px; margin-bottom: 6px; }
+.about-description { font-size: 11px; color: var(--text-muted); font-weight: 500; }
+
 #status-bar {
   min-height: 24px; display: flex; align-items: center; padding: 0 12px; background: var(--bg-1); border-top: 1px solid var(--border-light);
   color: var(--text-muted); font-size: 10px; font-weight: 500; letter-spacing: 0.2px; transition: min-height 0.15s ease, padding 0.15s ease, opacity 0.15s ease;

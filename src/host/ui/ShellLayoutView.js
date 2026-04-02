@@ -68,6 +68,7 @@ export class ShellLayoutView {
     this.trackContextMenu = this._createTrackContextMenu()
     this.trackContextTrackId = null
     this.playbackActive = false
+    this.activeInspectorTab = 'info'
     this.playheadFollowMode = normalizePlayheadFollowMode(null)
     this.followModeControls = null
     this.followModeButtons = new Map()
@@ -311,6 +312,9 @@ export class ShellLayoutView {
       this.handlers.onVoicebankChanged?.(event.target.value || null)
     })
     this.refs.btnInspectorToggle?.addEventListener('click', () => this.setInspectorCollapsed(!this.isInspectorCollapsed()))
+    for (const [tab, button] of Object.entries(this.refs.inspectorTabButtons || {})) {
+      button?.addEventListener('click', () => this._switchInspectorTab(tab))
+    }
     this.refs.trackViewport?.addEventListener('contextmenu', (event) => this._handleTrackViewportContextMenu(event))
     this.refs.mainInspector?.addEventListener('transitionend', (event) => {
       if (event.propertyName !== 'width') return
@@ -695,6 +699,22 @@ export class ShellLayoutView {
     button.setAttribute('aria-pressed', String(!collapsed))
     button.title = collapsed ? '展开右侧面板' : '收起右侧面板'
     button.setAttribute('aria-label', button.title)
+  }
+
+  _switchInspectorTab(tab) {
+    if (this.isInspectorCollapsed()) {
+      this.setInspectorCollapsed(false)
+    } else if (this.activeInspectorTab === tab) {
+      this.setInspectorCollapsed(true)
+      return
+    }
+    this.activeInspectorTab = tab
+    for (const [key, panel] of Object.entries(this.refs.inspectorTabPanels || {})) {
+      if (panel) panel.hidden = key !== tab
+    }
+    for (const [key, button] of Object.entries(this.refs.inspectorTabButtons || {})) {
+      button?.classList.toggle('active', key === tab)
+    }
   }
 
   _syncPlaybackFollow() {
