@@ -1,4 +1,4 @@
-import {
+﻿import {
   createProjectMixState,
   getProjectReverbPreset,
   listProjectReverbPresetTags,
@@ -43,6 +43,7 @@ export class ProjectMixController {
         reverbSend: track?.playbackState?.reverbSend,
         reverb: track?.playbackState?.reverb,
         reverbConfig: track?.playbackState?.reverbConfig,
+        guitarTone: track?.playbackState?.guitarTone,
       })
     })
     return mixState

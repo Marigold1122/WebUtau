@@ -1,10 +1,11 @@
-import { fetchVoicebanks } from '../../api/VoicebankApi.js'
+﻿import { fetchVoicebanks } from '../../api/VoicebankApi.js'
 import { getLanguageLabel } from '../../config/languageOptions.js'
 import { PLAYHEAD_FOLLOW_MODE_LABELS, PLAYHEAD_FOLLOW_MODES, normalizePlayheadFollowMode } from '../../shared/playheadFollowMode.js'
 import { InspectorVoiceConversionSection } from './InspectorVoiceConversionSection.js'
 import { MenubarTransportView } from './MenubarTransportView.js'
 import { PlaybackToastView } from './PlaybackToastView.js'
 import { ReverbDockView } from './ReverbDockView.js'
+import { TrackTonePanelView } from './TrackTonePanelView.js'
 import { isAudioTrack } from '../project/trackContentType.js'
 import { getTrackSourceInspectorText } from '../project/trackSourceAssignment.js'
 import { isVoiceRuntimeSource } from '../project/trackSourceAssignment.js'
@@ -72,6 +73,7 @@ export class ShellLayoutView {
     this.trackViewportController = new TrackViewportController(this.refs, handlers)
     this.instrumentEditorView = new InstrumentEditorView(this.refs.instrumentEditorRoot, handlers)
     this.reverbDockView = new ReverbDockView(this.refs, handlers)
+    this.trackTonePanelView = new TrackTonePanelView(this.refs, handlers)
     this.workspaceSplitController = new WorkspaceSplitController(this.refs)
     this.reverbDockVisible = false
     this.editorPlaceholderActive = false
@@ -108,6 +110,7 @@ export class ShellLayoutView {
     this.trackViewportController.setHandlers(handlers)
     this.instrumentEditorView.setHandlers(handlers)
     this.reverbDockView.setHandlers(handlers)
+    this.trackTonePanelView.setHandlers(handlers)
   }
 
   init() {
@@ -118,6 +121,7 @@ export class ShellLayoutView {
     this.voiceConversionSection.init()
     this.instrumentEditorView.init()
     this.reverbDockView.init()
+    this.trackTonePanelView.init()
     this._bindEvents()
     this.trackViewportController.init()
     this._updateInspectorToggleButton(false)
@@ -154,6 +158,11 @@ export class ShellLayoutView {
 
     this._renderProjectMeta(project, selectedTrack, editorTrack, renderBadgeTrack, viewState)
     this.voiceConversionSection.render(viewState?.voiceConversion || { visible: false })
+    this.trackTonePanelView.render({
+      project,
+      selectedTrack,
+      viewState,
+    })
     this._renderTracks(tracks, selectedTrack?.id, editorTrack?.id, timelineViewMetrics, viewState)
     this._renderRuler(timelineViewMetrics, project?.tempoData || null)
     this.trackViewportController.syncRulerOffset()
@@ -975,3 +984,4 @@ export class ShellLayoutView {
     this.refs.btnImport?.classList.remove('active')
   }
 }
+

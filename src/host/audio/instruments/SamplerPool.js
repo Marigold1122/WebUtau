@@ -1,5 +1,7 @@
-import { getInstrumentSourceConfig, resolveInstrumentPlaybackParams } from './sourceCatalog.js'
+﻿import { getInstrumentSourceConfig, resolveInstrumentPlaybackParams } from './sourceCatalog.js'
+import { SourceSamplerRegistry } from './SourceSamplerRegistry.js'
 import { loadToneRuntime } from './toneRuntime.js'
+import { resolveInstrumentTrackInsertId } from '../insert/trackInsertCatalog.js'
 
 function midiToNoteName(midi) {
   const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
@@ -7,42 +9,18 @@ function midiToNoteName(midi) {
   return `${noteNames[normalizedMidi % 12]}${Math.floor(normalizedMidi / 12) - 1}`
 }
 
-function buildViolinLayerSamples(config, layer) {
-  return Object.fromEntries(
-    config.noteKeys.map((note) => [note, `LLVln_ArcoVib_${note}${layer.suffix}.mp3`]),
-  )
+function buildLayerSamples(config, layer) {
+  if (layer.samples) return layer.samples
+  if (config.noteKeys && layer.suffix) {
+    return Object.fromEntries(
+      config.noteKeys.map((note) => [note, `LLVln_ArcoVib_${note}${layer.suffix}.mp3`]),
+    )
+  }
+  return {}
 }
 
 function buildSamplerKey(trackId, sourceId) {
   return `${trackId || 'global'}::${sourceId || 'unknown'}`
-}
-
-function createSamplerEntry(Tone, config, urls, destination = null, volume = 0) {
-  const entry = {
-    ready: false,
-    sampler: null,
-    readyPromise: null,
-  }
-
-  entry.readyPromise = new Promise((resolve) => {
-    entry.sampler = new Tone.Sampler({
-      urls,
-      baseUrl: config.baseUrl,
-      release: config.release || 1,
-      volume,
-      onload: () => {
-        entry.ready = true
-        resolve(entry)
-      },
-    })
-    if (destination) {
-      entry.sampler.connect(destination)
-    } else {
-      entry.sampler.toDestination()
-    }
-  })
-
-  return entry
 }
 
 export class SamplerPool {
@@ -50,6 +28,7 @@ export class SamplerPool {
     this.audioGraph = audioGraph
     this.entries = new Map()
     this.tone = null
+    this.sourceRegistry = new SourceSamplerRegistry()
   }
 
   async prepareTrackSources(trackSourceRefs = []) {
@@ -155,6 +134,10 @@ export class SamplerPool {
     return this.audioGraph?.setTrackReverbConfig?.(trackId, reverbConfig) || false
   }
 
+  setTrackGuitarTone(trackId, guitarTone) {
+    return this.audioGraph?.setTrackGuitarTone?.(trackId, guitarTone) || false
+  }
+
   _resolvePlayback(sourceId, playbackOptions, durationSec = null) {
     const options = playbackOptions && typeof playbackOptions === 'object' && !Array.isArray(playbackOptions)
       ? playbackOptions
@@ -198,6 +181,7 @@ export class SamplerPool {
           volume: ref?.volume,
           reverbSend: ref?.reverbSend ?? ref?.sendAmount,
           reverbConfig: ref?.reverbConfig,
+          guitarTone: ref?.guitarTone,
         })
       }
     })
@@ -206,11 +190,14 @@ export class SamplerPool {
 
   async _prepareTrackSource(ref) {
     const key = buildSamplerKey(ref.trackId, ref.sourceId)
+    const insertId = resolveInstrumentTrackInsertId(ref.sourceId)
     if (this.entries.has(key)) {
       this.audioGraph?.syncTrackState?.(ref.trackId, {
+        insertId,
         volume: ref.volume,
         reverbSend: ref.reverbSend,
         reverbConfig: ref.reverbConfig,
+        guitarTone: ref.guitarTone,
       })
       return this._waitUntilReady(this.entries.get(key))
     }
@@ -220,20 +207,24 @@ export class SamplerPool {
     const Tone = this.tone
     if (!Tone) return null
     const destination = this.audioGraph?.getTrackInput?.(ref.trackId, {
+      insertId,
       volume: ref.volume,
       reverbSend: ref.reverbSend,
       reverbConfig: ref.reverbConfig,
+      guitarTone: ref.guitarTone,
     }) || null
+    const toneContext = Tone.getContext?.() || null
 
     if (Array.isArray(config.velocityLayers) && config.velocityLayers.length > 0) {
       const layers = config.velocityLayers.map((layer) => {
-        const entry = createSamplerEntry(
+        const entry = this.sourceRegistry.createSamplerEntry({
           Tone,
           config,
-          buildViolinLayerSamples(config, layer),
+          urls: buildLayerSamples(config, layer),
           destination,
-          layer.volume || 0,
-        )
+          volume: layer.volume || 0,
+          toneContext,
+        })
         entry.maxVelocity = layer.maxVelocity
         return entry
       })
@@ -243,7 +234,14 @@ export class SamplerPool {
       return layeredEntry
     }
 
-    const single = createSamplerEntry(Tone, config, config.samples, destination, config.volume || 0)
+    const single = this.sourceRegistry.createSamplerEntry({
+      Tone,
+      config,
+      urls: config.samples,
+      destination,
+      volume: config.volume || 0,
+      toneContext,
+    })
     const singleEntry = { type: 'single', single }
     this.entries.set(key, singleEntry)
     await this._waitUntilReady(singleEntry)

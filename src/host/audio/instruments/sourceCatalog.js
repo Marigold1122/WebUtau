@@ -1,6 +1,6 @@
 import { getEffectiveSourceId, normalizeAssignedSourceId } from '../../project/trackSourceAssignment.js'
 
-export const HOST_INSTRUMENT_SOURCE_IDS = ['piano', 'violin', 'drums']
+export const HOST_INSTRUMENT_SOURCE_IDS = ['piano', 'violin', 'drums', 'bass', 'guitar']
 
 function clampUnit(value, fallback = 0.8) {
   if (!Number.isFinite(value)) return fallback
@@ -16,36 +16,59 @@ function applyVelocityCurve(velocity, exponent = 1, minimum = 0) {
   return clampUnit(Math.max(minimum, curvedVelocity))
 }
 
+const FLAT_TO_SHARP = { Db: 'C#', Eb: 'D#', Gb: 'F#', Ab: 'G#', Bb: 'A#' }
+
+function fileNoteToSamplerKey(fileNote) {
+  const match = fileNote.match(/^([A-G][bs]?)(\d+)$/)
+  if (!match) return fileNote
+  const base = match[1]
+  const oct = match[2]
+  if (base.endsWith('s')) return base.replace('s', '#') + oct
+  if (FLAT_TO_SHARP[base]) return FLAT_TO_SHARP[base] + oct
+  return fileNote
+}
+
+function buildNoteSamples(noteKeys, prefix, suffix) {
+  return Object.fromEntries(
+    noteKeys.map((note) => [fileNoteToSamplerKey(note), `${prefix}${note}${suffix}.mp3`]),
+  )
+}
+
 const SOURCE_CONFIGS = {
-  piano: {
-    baseUrl: '/samples/piano/',
+  piano: buildPianoConfig(),
+  violin: buildViolinConfig(),
+  drums: buildDrumsConfig(),
+  bass: buildBassConfig(),
+  guitar: buildGuitarConfig(),
+}
+
+function buildPianoConfig() {
+  const noteKeys = [
+    'A0', 'C1', 'Ds1', 'Fs1', 'A1', 'C2', 'Ds2', 'Fs2', 'A2', 'C3', 'Ds3', 'Fs3',
+    'A3', 'C4', 'Ds4', 'Fs4', 'A4', 'C5', 'Ds5', 'Fs5', 'A5', 'C6', 'Ds6', 'Fs6',
+    'A6', 'C7', 'Ds7', 'Fs7', 'A7', 'C8',
+  ]
+  return {
+    baseUrl: '/samples/piano-hq/',
     release: 1.2,
-    samples: {
-      A0: 'A0.mp3',
-      C1: 'C1.mp3',
-      A1: 'A1.mp3',
-      C2: 'C2.mp3',
-      A2: 'A2.mp3',
-      C3: 'C3.mp3',
-      A3: 'A3.mp3',
-      C4: 'C4.mp3',
-      'D#4': 'Ds4.mp3',
-      'F#4': 'Fs4.mp3',
-      A4: 'A4.mp3',
-      C5: 'C5.mp3',
-      'D#5': 'Ds5.mp3',
-      'F#5': 'Fs5.mp3',
-      A5: 'A5.mp3',
-      C6: 'C6.mp3',
-      A6: 'A6.mp3',
-      C7: 'C7.mp3',
-      C8: 'C8.mp3',
+    velocityLayers: Array.from({ length: 8 }, (_, i) => ({
+      maxVelocity: (i + 1) / 8,
+      samples: buildNoteSamples(noteKeys, '', `_v${i + 1}`),
+      volume: i === 0 ? 6 : 0,
+    })),
+    playbackResponse: {
+      outputVelocityExponent: 0.6,
+      minOutputVelocity: 0.15,
     },
-  },
-  violin: {
+  }
+}
+
+function buildViolinConfig() {
+  const noteKeys = ['G3', 'A3', 'C4', 'E4', 'G4', 'A4', 'C5', 'E5', 'G5', 'A5', 'C6', 'E6', 'G6', 'A6', 'C7']
+  return {
     baseUrl: '/samples/violin/',
     release: 0.8,
-    noteKeys: ['G3', 'A3', 'C4', 'E4', 'G4', 'A4', 'C5', 'E5', 'G5', 'A5', 'C6', 'E6', 'G6', 'A6', 'C7'],
+    noteKeys,
     velocityLayers: [
       { maxVelocity: 0.35, suffix: '_p', volume: 7 },
       { maxVelocity: 1, suffix: '_f', volume: 0 },
@@ -54,34 +77,85 @@ const SOURCE_CONFIGS = {
       minLayerVelocity: 1,
       outputVelocityExponent: 0.5,
       minOutputVelocity: 0.56,
-      shortNote: {
-        maxDurationSec: 0.4,
-        minOutputVelocity: 0.76,
-      },
-      preview: {
-        minOutputVelocity: 0.72,
-      },
+      shortNote: { maxDurationSec: 0.4, minOutputVelocity: 0.76 },
+      preview: { minOutputVelocity: 0.72 },
     },
-  },
-  drums: {
-    baseUrl: '/samples/drums/',
+  }
+}
+
+function buildDrumsConfig() {
+  const drumPieces = [
+    { midi: 'C2', name: 'kick' },
+    { midi: 'C#2', name: 'sidestick' },
+    { midi: 'D2', name: 'snare' },
+    { midi: 'E2', name: 'rimshot' },
+    { midi: 'F2', name: 'tom-low' },
+    { midi: 'F#2', name: 'hihat-closed' },
+    { midi: 'G2', name: 'tom-mid' },
+    { midi: 'G#2', name: 'hihat-foot' },
+    { midi: 'A2', name: 'tom-high' },
+    { midi: 'A#2', name: 'hihat-open' },
+    { midi: 'C#3', name: 'crash' },
+    { midi: 'D#3', name: 'ride' },
+    { midi: 'F3', name: 'ride-bell' },
+  ]
+  return {
+    baseUrl: '/samples/drums-hq/',
     release: 0.3,
-    samples: {
-      C2: 'kick-v2.mp3',
-      'C#2': 'sidestick-v2.mp3',
-      D2: 'snare-v2.mp3',
-      E2: 'rimshot-v2.mp3',
-      F2: 'tom-low-v2.mp3',
-      'F#2': 'hihat-closed-v2.mp3',
-      G2: 'tom-mid-v2.mp3',
-      'G#2': 'hihat-foot-v2.mp3',
-      A2: 'tom-high-v2.mp3',
-      'A#2': 'hihat-open-v2.mp3',
-      'C#3': 'crash-v2.mp3',
-      'D#3': 'ride-v2.mp3',
-      F3: 'ride-bell-v2.mp3',
+    velocityLayers: Array.from({ length: 8 }, (_, i) => ({
+      maxVelocity: (i + 1) / 8,
+      samples: Object.fromEntries(
+        drumPieces.map((d) => [d.midi, `${d.name}-v${i + 1}-r1.mp3`]),
+      ),
+      volume: i === 0 ? 5 : 0,
+    })),
+  }
+}
+
+function buildBassConfig() {
+  const noteKeys = [
+    'Gb0', 'A0', 'C1', 'D1', 'F1', 'Ab1', 'B1', 'D2', 'F2', 'Ab2',
+    'B2', 'D3', 'F3', 'Ab3', 'B3', 'D4', 'F4', 'Ab4', 'A4',
+  ]
+  const velIds = ['pp', 'p', 'mf', 'f', 'ff']
+  return {
+    baseUrl: '/samples/bass-hq/',
+    release: 0.3,
+    velocityLayers: velIds.map((vel, i) => ({
+      maxVelocity: (i + 1) / velIds.length,
+      samples: Object.fromEntries(
+        noteKeys.map((note) => [fileNoteToSamplerKey(note), `${note}_${vel}_rr1.mp3`]),
+      ),
+      volume: i === 0 ? 5 : 0,
+    })),
+    playbackResponse: {
+      outputVelocityExponent: 0.7,
+      minOutputVelocity: 0.2,
     },
-  },
+  }
+}
+
+function buildGuitarConfig() {
+  const noteKeys = [
+    'Db2', 'E2', 'Gb2', 'A2', 'C3', 'Eb3', 'Gb3', 'A3',
+    'C4', 'Eb4', 'Gb4', 'A4', 'C5', 'Eb5', 'Gb5', 'A5', 'C6', 'D6',
+  ]
+  const velIds = ['p', 'mp', 'mf', 'f']
+  return {
+    baseUrl: '/samples/guitar-hq/',
+    release: 0.5,
+    velocityLayers: velIds.map((vel, i) => ({
+      maxVelocity: (i + 1) / velIds.length,
+      samples: Object.fromEntries(
+        noteKeys.map((note) => [fileNoteToSamplerKey(note), `${note}_${vel}_rr1.mp3`]),
+      ),
+      volume: i === 0 ? 4 : 0,
+    })),
+    playbackResponse: {
+      outputVelocityExponent: 0.7,
+      minOutputVelocity: 0.2,
+    },
+  }
 }
 
 export function isHostInstrumentSource(sourceId) {

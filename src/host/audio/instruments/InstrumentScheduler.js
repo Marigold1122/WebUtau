@@ -1,6 +1,5 @@
-import { getHostPlaybackSourceId } from './sourceCatalog.js'
+﻿import { getHostPlaybackSourceId } from './sourceCatalog.js'
 import { normalizeTrackVolume } from '../../project/trackPlaybackState.js'
-
 
 function createScheduledNotes(tracks, audibleTrackIds, fromTimeSec) {
   const notes = []
@@ -30,6 +29,7 @@ function createScheduledNotes(tracks, audibleTrackIds, fromTimeSec) {
         volume: normalizeTrackVolume(track.playbackState?.volume),
         reverbSend: track.playbackState?.reverbSend,
         reverbConfig: track.playbackState?.reverbConfig,
+        guitarTone: track.playbackState?.guitarTone,
       })
     }
 
@@ -162,6 +162,10 @@ export class InstrumentScheduler {
 
   setTrackReverbConfig(trackId, reverbConfig) {
     return this.samplerPool.setTrackReverbConfig(trackId, reverbConfig)
+  }
+
+  setTrackGuitarTone(trackId, guitarTone) {
+    return this.samplerPool.setTrackGuitarTone(trackId, guitarTone)
   }
 
   _clearState() {

@@ -1,4 +1,4 @@
-import { startToneAudio } from './instruments/toneRuntime.js'
+﻿import { startToneAudio } from './instruments/toneRuntime.js'
 import { isAudioTrack } from '../project/trackContentType.js'
 import {
   normalizeTrackReverbConfig,
@@ -49,12 +49,22 @@ export class ImportedAudioTrackScheduler {
           startSec,
           duration,
           endSec: startSec + duration,
+          insertId: null,
           volume: normalizeTrackVolume(track.playbackState?.volume),
           reverbSend: track.playbackState?.reverbSend,
           reverbConfig: track.playbackState?.reverbConfig,
         }
       })
       .filter(Boolean)
+
+    readyEntries.forEach((entry) => {
+      this.audioGraph?.syncTrackState?.(entry.trackId, {
+        insertId: null,
+        volume: entry.volume,
+        reverbSend: entry.reverbSend,
+        reverbConfig: entry.reverbConfig,
+      })
+    })
 
     this.entries = readyEntries
     this.active = readyEntries.length > 0
@@ -163,6 +173,7 @@ export class ImportedAudioTrackScheduler {
     let gainNode = null
     source.buffer = buffer
     const trackInput = this.audioGraph?.getTrackInput?.(entry.trackId, {
+      insertId: entry.insertId,
       volume: entry.volume,
       reverbSend: entry.reverbSend,
       reverbConfig: entry.reverbConfig,

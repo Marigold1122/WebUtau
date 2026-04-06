@@ -1,4 +1,4 @@
-import { createHostBridgeHandlers } from './createHostBridgeHandlers.js'
+﻿import { createHostBridgeHandlers } from './createHostBridgeHandlers.js'
 import { createHostRender } from './createHostRender.js'
 import { createPhraseMissHandler } from './createPhraseMissHandler.js'
 import { createProjectImportHandler } from './createProjectImportHandler.js'
@@ -1543,6 +1543,7 @@ export function createHostApp() {
     onTrackSoloToggled: (trackId) => trackMonitorController.toggleTrackSolo(trackId),
     onTrackMuteToggled: (trackId) => trackMonitorController.toggleTrackMute(trackId),
     onTrackVolumeChanged: (trackId, volume, options) => trackMonitorController.setTrackVolume(trackId, volume, options),
+    onTrackGuitarToneChanged: (trackId, patch, options) => trackMonitorController.setTrackGuitarTone(trackId, patch, options),
     onVoicebankChanged: async (singerId) => {
       const selectedTrack = store.getSelectedTrack()
       if (!selectedTrack || isAudioTrack(selectedTrack) || !singerId) return
@@ -1635,3 +1636,4 @@ export function createHostApp() {
   })
   return { init }
 }
+

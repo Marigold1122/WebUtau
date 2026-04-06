@@ -1,4 +1,4 @@
-/* Atomic Pro Desk / Vintage Professional DAW Theme */
+﻿/* Atomic Pro Desk / Vintage Professional DAW Theme */
 :root {
   /* 精密画布与烤漆面板底色 */
   --bg-0: #E1DDD4; /* Canvas: 帆布灰 */
@@ -2466,4 +2466,106 @@ body {
     width: min(486px, calc(100vw - 72px));
     min-width: min(486px, calc(100vw - 72px));
   }
+}
+
+/* 音色面板 */
+.tone-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tone-panel-empty {
+  margin-bottom: 0;
+}
+
+.tone-panel-empty-body {
+  padding: 12px 14px;
+  border: 1px dashed rgba(143, 138, 128, 0.72);
+  border-radius: 8px;
+  background: rgba(248, 245, 238, 0.82);
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.tone-panel-hero {
+  margin-bottom: 0;
+}
+
+.tone-panel-track-name {
+  color: var(--text-main);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.tone-panel-track-note {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.tone-module {
+  background: var(--fx-module-bg);
+  border: 1px solid #B8B2A7;
+  border-radius: 8px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+  overflow: hidden;
+}
+
+.tone-module-header {
+  border-radius: 0;
+}
+
+.tone-module-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 8px;
+  padding: 12px 10px 8px;
+  justify-content: flex-start;
+}
+
+.tone-module .param-group {
+  width: 72px;
+  flex: 0 0 72px;
+}
+
+.tone-module .param-label {
+  max-width: none;
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tone-module-note {
+  padding: 0 10px 10px;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.tone-preset-section {
+  margin-bottom: 0;
+}
+
+.tone-preset-row {
+  padding: 0;
+}
+
+.tone-preset-description {
+  margin-top: 8px;
+  color: var(--text-main);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.tone-preset-source {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.6;
 }

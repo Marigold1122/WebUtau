@@ -1,3 +1,7 @@
+﻿import {
+  mergeTrackGuitarToneConfig,
+  normalizeTrackGuitarToneConfig,
+} from '../audio/insert/trackInsertCatalog.js'
 import { normalizeAssignedSourceId } from './trackSourceAssignment.js'
 import {
   DEFAULT_TRACK_REVERB_SEND,
@@ -13,7 +17,13 @@ export const DEFAULT_TRACK_VOLUME = 0.5
 export const MAX_TRACK_PLAYBACK_GAIN = 2
 export const DEFAULT_TRACK_REVERB_PRESET_ID = normalizeTrackReverbPresetId()
 
-export { DEFAULT_TRACK_REVERB_SEND, normalizeTrackReverbConfig, normalizeTrackReverbPresetId, normalizeTrackReverbSend }
+export {
+  DEFAULT_TRACK_REVERB_SEND,
+  normalizeTrackGuitarToneConfig,
+  normalizeTrackReverbConfig,
+  normalizeTrackReverbPresetId,
+  normalizeTrackReverbSend,
+}
 
 export function normalizeTrackVolume(value, fallback = DEFAULT_TRACK_VOLUME) {
   const resolvedFallback = Number.isFinite(fallback) ? fallback : DEFAULT_TRACK_VOLUME
@@ -34,6 +44,7 @@ export function createTrackPlaybackState(state = {}, defaults = {}) {
     volume: normalizeTrackVolume(state.volume, defaults?.volume),
     ...toLegacyTrackReverbFields(reverb),
     reverb,
+    guitarTone: normalizeTrackGuitarToneConfig(state?.guitarTone, defaults?.guitarTone),
   }
 }
 
@@ -45,5 +56,8 @@ export function mergeTrackPlaybackState(currentState, changes = {}, defaults = {
     ...changes,
     ...toLegacyTrackReverbFields(nextReverb),
     reverb: nextReverb,
+    guitarTone: Object.prototype.hasOwnProperty.call(changes || {}, 'guitarTone')
+      ? mergeTrackGuitarToneConfig(current.guitarTone, changes.guitarTone)
+      : current.guitarTone,
   }, defaults)
 }

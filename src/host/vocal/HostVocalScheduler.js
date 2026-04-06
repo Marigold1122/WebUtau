@@ -1,4 +1,4 @@
-import { startToneAudio } from '../audio/instruments/toneRuntime.js'
+﻿import { startToneAudio } from '../audio/instruments/toneRuntime.js'
 import {
   normalizeTrackReverbConfig,
   normalizeTrackReverbSend,
@@ -54,6 +54,7 @@ function buildPhraseEntries(tracks, audibleTrackIds, excludedTrackIds = new Set(
         durationMs: phraseState.durationMs,
         startSec,
         endSec: startSec + durationSec,
+        insertId: null,
         volume: normalizeTrackVolume(track.playbackState?.volume),
         reverbSend: track.playbackState?.reverbSend,
         reverbConfig: track.playbackState?.reverbConfig,
@@ -85,6 +86,22 @@ export class HostVocalScheduler {
   async prepare({ tracks, audibleTrackIds, excludedTrackIds = new Set(), fromTimeSec = 0 }) {
     const { entries, trackIds } = buildPhraseEntries(tracks, audibleTrackIds || new Set(), excludedTrackIds)
     this.stop()
+
+    const routingStateByTrackId = new Map()
+    entries.forEach((entry) => {
+      if (!routingStateByTrackId.has(entry.trackId)) {
+        routingStateByTrackId.set(entry.trackId, {
+          insertId: null,
+          volume: entry.volume,
+          reverbSend: entry.reverbSend,
+          reverbConfig: entry.reverbConfig,
+        })
+      }
+    })
+    routingStateByTrackId.forEach((state, trackId) => {
+      this.audioGraph?.syncTrackState?.(trackId, state)
+    })
+
     this.entries = entries
     this.active = entries.length > 0
     if (this.active) {
@@ -215,6 +232,7 @@ export class HostVocalScheduler {
     let gainNode = null
     source.buffer = audioBuffer
     const trackInput = this.audioGraph?.getTrackInput?.(entry.trackId, {
+      insertId: entry.insertId,
       volume: entry.volume,
       reverbSend: entry.reverbSend,
       reverbConfig: entry.reverbConfig,

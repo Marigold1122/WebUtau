@@ -1,4 +1,5 @@
-import {
+﻿import {
+  normalizeTrackGuitarToneConfig,
   normalizeTrackReverbConfig,
   normalizeTrackReverbSend,
   normalizeTrackVolume,
@@ -8,6 +9,20 @@ import { isSameReverbConfig } from './reverb/ReverbConfigDiff.js'
 import { LEGACY_REVERB_ENGINE_ID } from './reverb/ReverbParameterSchema.js'
 import { startToneAudio } from './instruments/toneRuntime.js'
 import { TrackReverbBus } from './TrackReverbBus.js'
+import { createTrackInsertEffect } from './insert/createTrackInsertEffect.js'
+import {
+  buildTrackInsertProfile,
+  normalizeTrackInsertId,
+  supportsTrackGuitarToneInsertId,
+} from './insert/trackInsertCatalog.js'
+
+function disconnectNode(node) {
+  try { node?.disconnect?.() } catch (_error) {}
+}
+
+function hasOwn(object, key) {
+  return Object.prototype.hasOwnProperty.call(object, key)
+}
 
 export class ProjectAudioGraph {
   constructor({ logger = null } = {}) {
@@ -68,6 +83,10 @@ export class ProjectAudioGraph {
     return Boolean(this.syncTrackState(trackId, { reverbConfig }))
   }
 
+  setTrackGuitarTone(trackId, guitarTone) {
+    return Boolean(this.syncTrackState(trackId, { guitarTone }))
+  }
+
   setReverbConfig(config = {}) {
     this.defaultReverbConfig = normalizeTrackReverbConfig(config, this.defaultReverbConfig)
     return this.defaultReverbConfig
@@ -88,10 +107,12 @@ export class ProjectAudioGraph {
     if (!channel) return false
 
     this.trackChannels.delete(trackId)
+    channel.insertEffect?.dispose?.()
     channel.reverbBus?.dispose?.()
-    try { channel.input.disconnect() } catch (_error) {}
-    try { channel.volume.disconnect() } catch (_error) {}
-    try { channel.send.disconnect() } catch (_error) {}
+    disconnectNode(channel.input)
+    disconnectNode(channel.postInsert)
+    disconnectNode(channel.volume)
+    disconnectNode(channel.send)
     return true
   }
 
@@ -100,33 +121,35 @@ export class ProjectAudioGraph {
       ? changes.reverb
       : null
     const previous = this.trackStates.get(trackId) || {
+      insertId: null,
       volume: normalizeTrackVolume(),
       reverbSend: normalizeTrackReverbSend(),
       reverbConfig: normalizeTrackReverbConfig({}, this.defaultReverbConfig),
       reverbEngineId: LEGACY_REVERB_ENGINE_ID,
+      guitarTone: normalizeTrackGuitarToneConfig(),
     }
     const hasReverbConfigChange = (
-      Object.prototype.hasOwnProperty.call(reverbSource || {}, 'config')
-      || Object.prototype.hasOwnProperty.call(reverbSource || {}, 'highCutHz')
-      || Object.prototype.hasOwnProperty.call(reverbSource || {}, 'lowCutHz')
-      || Object.prototype.hasOwnProperty.call(reverbSource || {}, 'decaySec')
-      || Object.prototype.hasOwnProperty.call(reverbSource || {}, 'decayCurve')
-      || Object.prototype.hasOwnProperty.call(reverbSource || {}, 'preDelaySec')
-      || Object.prototype.hasOwnProperty.call(reverbSource || {}, 'returnGain')
-      || Object.prototype.hasOwnProperty.call(changes, 'reverbConfig')
+      hasOwn(reverbSource || {}, 'config')
+      || hasOwn(reverbSource || {}, 'highCutHz')
+      || hasOwn(reverbSource || {}, 'lowCutHz')
+      || hasOwn(reverbSource || {}, 'decaySec')
+      || hasOwn(reverbSource || {}, 'decayCurve')
+      || hasOwn(reverbSource || {}, 'preDelaySec')
+      || hasOwn(reverbSource || {}, 'returnGain')
+      || hasOwn(changes, 'reverbConfig')
     )
     const hasReverbEngineChange = (
-      Object.prototype.hasOwnProperty.call(changes, 'reverbEngineId')
-      || Object.prototype.hasOwnProperty.call(reverbSource || {}, 'engineId')
+      hasOwn(changes, 'reverbEngineId')
+      || hasOwn(reverbSource || {}, 'engineId')
     )
     const nextState = {
-      volume: Object.prototype.hasOwnProperty.call(changes, 'volume')
+      insertId: hasOwn(changes, 'insertId')
+        ? normalizeTrackInsertId(changes.insertId)
+        : previous.insertId,
+      volume: hasOwn(changes, 'volume')
         ? normalizeTrackVolume(changes.volume, previous.volume)
         : previous.volume,
-      reverbSend: (
-        Object.prototype.hasOwnProperty.call(changes, 'reverbSend')
-        || Object.prototype.hasOwnProperty.call(changes, 'sendAmount')
-      )
+      reverbSend: (hasOwn(changes, 'reverbSend') || hasOwn(changes, 'sendAmount'))
         ? normalizeTrackReverbSend(
           changes.reverbSend == null ? changes.sendAmount : changes.reverbSend,
           previous.reverbSend,
@@ -144,6 +167,9 @@ export class ProjectAudioGraph {
           previous.reverbEngineId,
         )
         : previous.reverbEngineId,
+      guitarTone: hasOwn(changes, 'guitarTone')
+        ? normalizeTrackGuitarToneConfig(changes.guitarTone, previous.guitarTone)
+        : previous.guitarTone,
     }
     this.trackStates.set(trackId, nextState)
     return nextState
@@ -157,6 +183,7 @@ export class ProjectAudioGraph {
 
     const state = this.trackStates.get(trackId) || this._mergeTrackState(trackId, {})
     const input = this.rawContext.createGain()
+    const postInsert = this.rawContext.createGain()
     const volume = this.rawContext.createGain()
     const send = this.rawContext.createGain()
     const reverbBus = new TrackReverbBus({
@@ -165,9 +192,9 @@ export class ProjectAudioGraph {
       engineId: state.reverbEngineId,
     })
 
-    input.connect(volume)
+    postInsert.connect(volume)
     volume.connect(this.masterGain)
-    input.connect(send)
+    postInsert.connect(send)
     reverbBus.attach({
       rawContext: this.rawContext,
       inputNode: send,
@@ -176,6 +203,7 @@ export class ProjectAudioGraph {
 
     channel = {
       input,
+      postInsert,
       volume,
       send,
       reverbBus,
@@ -184,8 +212,12 @@ export class ProjectAudioGraph {
         state.reverbConfig,
         this.defaultReverbConfig,
       ),
+      insertEffect: null,
+      insertId: '__uninitialized__',
+      insertStateKey: '__uninitialized__',
     }
     this.trackChannels.set(trackId, channel)
+    this._syncTrackInsert(channel, state)
     return channel
   }
 
@@ -193,6 +225,8 @@ export class ProjectAudioGraph {
     const channel = this.trackChannels.get(trackId)
     const nextState = state || this.trackStates.get(trackId)
     if (!channel || !nextState) return false
+
+    this._syncTrackInsert(channel, nextState)
     channel.volume.gain.value = resolveTrackPlaybackGain(nextState.volume)
     channel.send.gain.value = nextState.reverbSend
     const nextReverbConfig = normalizeTrackReverbConfig(
@@ -220,6 +254,72 @@ export class ProjectAudioGraph {
       channel.lastReverbConfig = nextReverbConfig
     }
     return true
+  }
+
+  _syncTrackInsert(channel, state) {
+    const nextInsertId = normalizeTrackInsertId(state?.insertId)
+    const nextInsertStateKey = this._buildInsertStateKey(nextInsertId, state?.guitarTone)
+    if (channel.insertStateKey === nextInsertStateKey) return false
+
+    if (
+      channel.insertId === nextInsertId
+      && nextInsertId
+      && channel.insertEffect
+      && typeof channel.insertEffect.updateProfile === 'function'
+    ) {
+      try {
+        channel.insertEffect.updateProfile(buildTrackInsertProfile(nextInsertId, {
+          guitarToneConfig: state?.guitarTone,
+        }))
+        channel.insertStateKey = nextInsertStateKey
+        return true
+      } catch (error) {
+        this.logger?.warn?.('Track insert live profile update failed; recreating insert', {
+          insertId: nextInsertId,
+          error: error?.message || String(error),
+        })
+      }
+    }
+
+    disconnectNode(channel.input)
+    channel.insertEffect?.dispose?.()
+    channel.insertEffect = null
+
+    try {
+      if (nextInsertId) {
+        const insertEffect = createTrackInsertEffect({
+          rawContext: this.rawContext,
+          insertId: nextInsertId,
+          guitarToneConfig: state?.guitarTone,
+          logger: this.logger,
+        })
+        if (insertEffect) {
+          channel.input.connect(insertEffect.input)
+          insertEffect.output.connect(channel.postInsert)
+          channel.insertEffect = insertEffect
+          channel.insertId = nextInsertId
+          channel.insertStateKey = nextInsertStateKey
+          return true
+        }
+      }
+    } catch (error) {
+      this.logger?.warn?.('Track insert setup failed', {
+        insertId: nextInsertId,
+        error: error?.message || String(error),
+      })
+    }
+
+    channel.input.connect(channel.postInsert)
+    channel.insertId = null
+    channel.insertStateKey = 'none'
+    return true
+  }
+
+  _buildInsertStateKey(insertId, guitarTone) {
+    const normalizedInsertId = normalizeTrackInsertId(insertId)
+    if (!normalizedInsertId) return 'none'
+    if (!supportsTrackGuitarToneInsertId(normalizedInsertId)) return normalizedInsertId
+    return `${normalizedInsertId}::${JSON.stringify(normalizeTrackGuitarToneConfig(guitarTone))}`
   }
 
   _normalizeReverbEngineId(value, fallback = LEGACY_REVERB_ENGINE_ID) {

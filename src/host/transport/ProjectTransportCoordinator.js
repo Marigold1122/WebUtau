@@ -1,4 +1,4 @@
-import { resolveAudibleTrackIds } from '../monitor/TrackAudibilityResolver.js'
+﻿import { resolveAudibleTrackIds } from '../monitor/TrackAudibilityResolver.js'
 import { normalizeTrackVolume } from '../project/trackPlaybackState.js'
 import { getProjectDuration } from '../services/PreviewProjector.js'
 import { TrackFxDispatchRouter } from './TrackFxDispatchRouter.js'
@@ -114,6 +114,10 @@ export class ProjectTransportCoordinator {
 
   setTrackReverbConfig(trackId, reverbConfig) {
     return this.trackFxDispatchRouter.dispatch(trackId, 'setTrackReverbConfig', reverbConfig)
+  }
+
+  setTrackGuitarTone(trackId, guitarTone) {
+    return this.trackFxDispatchRouter.dispatch(trackId, 'setTrackGuitarTone', guitarTone)
   }
 
   pause() {
@@ -527,3 +531,4 @@ export class ProjectTransportCoordinator {
     })
   }
 }
+

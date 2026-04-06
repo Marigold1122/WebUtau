@@ -1,4 +1,4 @@
-import { startToneAudio } from '../audio/instruments/toneRuntime.js'
+﻿import { startToneAudio } from '../audio/instruments/toneRuntime.js'
 import {
   normalizeTrackReverbConfig,
   normalizeTrackReverbSend,
@@ -52,6 +52,7 @@ export class ConvertedVocalScheduler {
           assetKey: ref.assetKey,
           buffer: asset.buffer,
           duration: asset.buffer.duration,
+          insertId: null,
           volume: volumeByTrackId.get(ref.trackId) ?? 1,
           reverbSend: reverbSendByTrackId.get(ref.trackId),
           reverbConfig: reverbConfigByTrackId.get(ref.trackId),
@@ -64,6 +65,15 @@ export class ConvertedVocalScheduler {
         })
       }
     }
+
+    readyEntries.forEach((entry) => {
+      this.audioGraph?.syncTrackState?.(entry.trackId, {
+        insertId: null,
+        volume: entry.volume,
+        reverbSend: entry.reverbSend,
+        reverbConfig: entry.reverbConfig,
+      })
+    })
 
     this.entries = readyEntries
     this.active = readyEntries.length > 0
@@ -172,6 +182,7 @@ export class ConvertedVocalScheduler {
     let gainNode = null
     source.buffer = buffer
     const trackInput = this.audioGraph?.getTrackInput?.(entry.trackId, {
+      insertId: entry.insertId,
       volume: entry.volume,
       reverbSend: entry.reverbSend,
       reverbConfig: entry.reverbConfig,

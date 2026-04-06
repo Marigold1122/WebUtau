@@ -1,6 +1,8 @@
 export const TRACK_SOURCE_OPTIONS = [
   { id: 'piano', label: '钢琴' },
   { id: 'violin', label: '小提琴' },
+  { id: 'guitar', label: '吉他' },
+  { id: 'bass', label: '贝斯' },
   { id: 'drums', label: '鼓' },
   { id: 'vocal', label: '人声' },
 ]
@@ -37,7 +39,7 @@ export function getRoleForAssignedSource(sourceId) {
   const normalized = normalizeAssignedSourceId(sourceId)
   if (normalized === 'vocal') return 'vocal'
   if (normalized === 'drums') return 'drum'
-  if (normalized === 'piano' || normalized === 'violin') return 'instrument'
+  if (normalized === 'piano' || normalized === 'violin' || normalized === 'guitar' || normalized === 'bass') return 'instrument'
   return 'unassigned'
 }
 

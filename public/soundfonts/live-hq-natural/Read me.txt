@@ -1,0 +1,5 @@
+Live HQ Natural SoundFont GM Version 3.0 (10/22/2025).
+Visit Musical Artifacts often for new updates! https://musical-artifacts.com/artifacts/1176
+
+This is a soundfont that I compiled with high quality presets, mostly made by me, sampled from my Korg Pa700 and Roland JUNO-DS keyboards and some from Roland Zenology VST, everything in less than 1 GB, highlighting balanced and live quality pianos, guitars, basses, and more!
+Includes FX, drum kits and some aditional presets.

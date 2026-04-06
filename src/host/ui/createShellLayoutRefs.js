@@ -1,4 +1,4 @@
-function ensureReverbDockToggleButton() {
+﻿function ensureReverbDockToggleButton() {
   let button = document.getElementById('btn-toggle-reverb-dock')
   if (button) return button
 
@@ -66,14 +66,17 @@ export function createShellLayoutRefs() {
       info: document.getElementById('inspector-tab-info'),
       voicebank: document.getElementById('inspector-tab-voicebank'),
       vc: document.getElementById('inspector-tab-vc'),
+      tone: document.getElementById('inspector-tab-tone'),
       about: document.getElementById('inspector-tab-about'),
     },
     inspectorTabButtons: {
       info: document.getElementById('btn-tab-info'),
       voicebank: document.getElementById('btn-tab-voicebank'),
       vc: document.getElementById('btn-tab-vc'),
+      tone: document.getElementById('btn-tab-tone'),
       about: document.getElementById('btn-tab-about'),
     },
+    inspectorTonePanel: document.getElementById('inspector-tab-tone'),
     voiceConversionSection: document.getElementById('voice-conversion-section'),
     trackView: document.getElementById('track-view'),
     editorPanel: document.getElementById('editor-panel'),

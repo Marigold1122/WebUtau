@@ -1,3 +1,8 @@
+﻿import {
+  isSameTrackGuitarToneConfig,
+  mergeTrackGuitarToneConfig,
+  supportsTrackGuitarToneSource,
+} from '../audio/insert/trackInsertCatalog.js'
 import { getReverbPreset } from '../project/reverbConfigState.js'
 import { ReverbUpdateCoalescer } from '../audio/reverb/ReverbUpdateCoalescer.js'
 import { isSameReverbConfig } from '../audio/reverb/ReverbConfigDiff.js'
@@ -202,6 +207,31 @@ export class TrackMonitorController {
     return true
   }
 
+  async setTrackGuitarTone(trackId, patch, { commit = true } = {}) {
+    const track = this.store.getTrack(trackId)
+    if (!track || !supportsTrackGuitarToneSource(track.playbackState?.assignedSourceId)) return false
+
+    const currentTone = track.playbackState?.guitarTone
+    const nextTone = mergeTrackGuitarToneConfig(currentTone, patch)
+    if (isSameTrackGuitarToneConfig(nextTone, currentTone)) return false
+
+    this.store.updateTrackPlaybackState(track.id, { guitarTone: nextTone })
+    await this.transportCoordinator.setTrackGuitarTone(track.id, nextTone)
+
+    if (commit) {
+      this.persistence?.saveProject?.(this.store?.getProject?.())
+      this.render('track-guitar-tone-changed')
+      this.view.setStatus(this._buildGuitarToneStatusText(track.name))
+      this.logger?.info?.('Track guitar tone updated', {
+        trackId: track.id,
+        trackName: track.name,
+        guitarTone: nextTone,
+      })
+    }
+
+    return true
+  }
+
   async _applyTrackReverbConfig(trackId, config, { commit = true } = {}) {
     const track = this.store.getTrack(trackId)
     if (!track) return false
@@ -283,5 +313,9 @@ export class TrackMonitorController {
 
   _buildReverbPresetStatusText(trackName, presetName) {
     return `${trackName} 混响预设 / Reverb preset ${presetName}`
+  }
+
+  _buildGuitarToneStatusText(trackName) {
+    return `${trackName} 音色参数已更新 / Guitar tone updated`
   }
 }

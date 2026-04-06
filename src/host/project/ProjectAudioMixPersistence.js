@@ -1,4 +1,4 @@
-import { createProjectMixState } from './projectMixState.js'
+﻿import { createProjectMixState } from './projectMixState.js'
 import { isAudioTrack } from './trackContentType.js'
 import { createTrackPlaybackState, mergeTrackPlaybackState } from './trackPlaybackState.js'
 
@@ -108,6 +108,7 @@ export class ProjectAudioMixPersistence {
           reverbSend: playbackState.reverbSend,
           reverbPresetId: playbackState.reverbPresetId,
           reverbConfig: playbackState.reverbConfig,
+          guitarTone: playbackState.guitarTone,
         }
       }),
     }
@@ -162,6 +163,7 @@ export class ProjectAudioMixPersistence {
         reverbSend: track?.reverbSend,
         reverbPresetId: track?.reverbPresetId,
         reverbConfig: track?.reverbConfig,
+        guitarTone: track?.guitarTone,
       }]),
     )
 
@@ -178,6 +180,7 @@ export class ProjectAudioMixPersistence {
             reverbSend: savedPlaybackState.reverbSend,
             reverbPresetId: savedPlaybackState.reverbPresetId,
             reverbConfig: savedPlaybackState.reverbConfig,
+            guitarTone: savedPlaybackState.guitarTone,
           }, playbackDefaults),
         }
       }),
