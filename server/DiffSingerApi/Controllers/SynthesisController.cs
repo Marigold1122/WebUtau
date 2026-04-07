@@ -106,6 +106,7 @@ public class SynthesisController : ControllerBase {
         Response.Headers["Cache-Control"] = "no-store, no-cache, max-age=0";
         Response.Headers["Pragma"] = "no-cache";
         Response.Headers["Expires"] = "0";
+        Response.Headers["Content-Disposition"] = "inline";
         var stream = System.IO.File.OpenRead(phrase.OutputPath);
         return File(stream, "audio/wav");
     }

@@ -6,7 +6,23 @@ const CROSS_ORIGIN_ISOLATION_HEADERS = {
   'Cross-Origin-Embedder-Policy': 'require-corp',
 }
 
+/** 为音频静态资源设置 Content-Disposition: inline，防止 IDM 等下载管理器拦截 */
+function audioInlinePlugin() {
+  return {
+    name: 'audio-inline-headers',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (/\.(mp3|wav|ogg|flac)(\?|$)/i.test(req.url)) {
+          res.setHeader('Content-Disposition', 'inline')
+        }
+        next()
+      })
+    },
+  }
+}
+
 export default defineConfig({
+  plugins: [audioInlinePlugin()],
   server: {
     port: 3000,
     strictPort: true,
