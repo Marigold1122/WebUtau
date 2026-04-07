@@ -1,5 +1,4 @@
-# Melody Singer
-
+# WebUtau
 **浏览器端虚拟歌姬工作站** — 导入 MIDI，填写歌词，让虚拟歌姬为你演唱！
 
 ![Melody Singer 界面预览](docs/screenshot.png)
