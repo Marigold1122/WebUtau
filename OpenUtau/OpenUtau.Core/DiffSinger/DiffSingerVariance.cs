@@ -179,15 +179,7 @@ namespace OpenUtau.Core.DiffSinger{
             }
 
             Onnx.VerifyInputNames(linguisticModel, linguisticInputs);
-            var linguisticCache = Preferences.Default.DiffSingerTensorCache
-                ? new DiffSingerCache(linguisticHash, linguisticInputs)
-                : null;
-            var linguisticOutputs = linguisticCache?.Load();
-            if (linguisticOutputs is null) {
-                linguisticOutputs = linguisticModel.Run(linguisticInputs).Cast<NamedOnnxValue>().ToList();
-                linguisticCache?.Save(linguisticOutputs);
-                phrase.AddCacheFile(linguisticCache?.Filename);
-            }
+            var linguisticOutputs = linguisticModel.Run(linguisticInputs).Cast<NamedOnnxValue>().ToList();
             Tensor<float> encoder_out = linguisticOutputs
                 .Where(o => o.Name == "encoder_out")
                 .First()
@@ -263,15 +255,7 @@ namespace OpenUtau.Core.DiffSinger{
                 varianceInputs.Add(NamedOnnxValue.CreateFromTensor("spk_embed", spkEmbedTensor));
             }
             Onnx.VerifyInputNames(varianceModel, varianceInputs);
-            var varianceCache = Preferences.Default.DiffSingerTensorCache
-                ? new DiffSingerCache(varianceHash, varianceInputs)
-                : null;
-            var varianceOutputs = varianceCache?.Load();
-            if (varianceOutputs is null) {
-                varianceOutputs = varianceModel.Run(varianceInputs).Cast<NamedOnnxValue>().ToList();
-                varianceCache?.Save(varianceOutputs);
-                phrase.AddCacheFile(varianceCache?.Filename);
-            }
+            var varianceOutputs = varianceModel.Run(varianceInputs).Cast<NamedOnnxValue>().ToList();
             Tensor<float>? energy_pred = dsConfig.predict_energy
                 ? varianceOutputs
                     .Where(o => o.Name == "energy_pred")

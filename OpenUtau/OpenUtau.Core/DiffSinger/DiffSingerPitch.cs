@@ -181,15 +181,7 @@ namespace OpenUtau.Core.DiffSinger
             }
 
             Onnx.VerifyInputNames(linguisticModel, linguisticInputs);
-            var linguisticCache = Preferences.Default.DiffSingerTensorCache
-                ? new DiffSingerCache(linguisticHash, linguisticInputs)
-                : null;
-            var linguisticOutputs = linguisticCache?.Load();
-            if (linguisticOutputs is null) {
-                linguisticOutputs = linguisticModel.Run(linguisticInputs).Cast<NamedOnnxValue>().ToList();
-                linguisticCache?.Save(linguisticOutputs);
-                phrase.AddCacheFile(linguisticCache?.Filename);
-            }
+            var linguisticOutputs = linguisticModel.Run(linguisticInputs).Cast<NamedOnnxValue>().ToList();
             Tensor<float> encoder_out = linguisticOutputs
                 .Where(o => o.Name == "encoder_out")
                 .First()
@@ -337,15 +329,7 @@ namespace OpenUtau.Core.DiffSinger
             }
 
             Onnx.VerifyInputNames(pitchModel, pitchInputs);
-            var pitchCache = Preferences.Default.DiffSingerTensorCache
-                ? new DiffSingerCache(pitchHash, pitchInputs)
-                : null;
-            var pitchOutputs = pitchCache?.Load();
-            if (pitchOutputs is null) {
-                pitchOutputs = pitchModel.Run(pitchInputs).Cast<NamedOnnxValue>().ToList();
-                pitchCache?.Save(pitchOutputs);
-                phrase.AddCacheFile(pitchCache?.Filename);
-            }
+            var pitchOutputs = pitchModel.Run(pitchInputs).Cast<NamedOnnxValue>().ToList();
             var pitch_out = pitchOutputs.First().AsTensor<float>().ToArray();
             var pitchEnd = phrase.timeAxis.MsPosToTickPos(startMs + (totalFrames - 1) * frameMs) - phrase.position;
             if(pitchEnd<=phrase.duration){

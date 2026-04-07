@@ -362,70 +362,8 @@ public class SynthesisService : IHostedService {
         return quiet;
     }
 
-    private sealed record PhraseSnapshot(
-        int Index,
-        ulong Hash,
-        int Position,
-        int End);
-
-    private static List<PhraseSnapshot> CapturePhraseSnapshots(IReadOnlyList<RenderPhrase>? phrases) {
-        if (phrases == null || phrases.Count == 0) {
-            return new List<PhraseSnapshot>();
-        }
-        return phrases
-            .Select((phrase, index) => new PhraseSnapshot(
-                index,
-                phrase.hash,
-                phrase.position,
-                phrase.end))
-            .ToList();
-    }
-
-    private static Dictionary<int, int> MatchReusableOldPhrases(
-        IReadOnlyList<PhraseSnapshot> oldPhrases,
-        IReadOnlyList<RenderPhrase> newPhrases) {
-        if (oldPhrases.Count == 0 || newPhrases.Count == 0) {
-            return new Dictionary<int, int>();
-        }
-
-        var oldQueuesByHash = oldPhrases
-            .OrderBy(snapshot => snapshot.Position)
-            .ThenBy(snapshot => snapshot.End)
-            .ThenBy(snapshot => snapshot.Index)
-            .GroupBy(snapshot => snapshot.Hash)
-            .ToDictionary(
-                group => group.Key,
-                group => new Queue<PhraseSnapshot>(group));
-
-        var matches = new Dictionary<int, int>();
-        var newPhraseOrder = Enumerable.Range(0, newPhrases.Count)
-            .OrderBy(index => newPhrases[index].position)
-            .ThenBy(index => newPhrases[index].end)
-            .ThenBy(index => index);
-
-        foreach (int newIndex in newPhraseOrder) {
-            ulong hash = newPhrases[newIndex].hash;
-            if (!oldQueuesByHash.TryGetValue(hash, out var queue) || queue.Count == 0) {
-                continue;
-            }
-            matches[newIndex] = queue.Dequeue().Index;
-        }
-
-        return matches;
-    }
-
     private string GetPhraseOutputPath(string jobId, int phraseIndex) {
         return Path.Combine(_outputDir, $"{jobId}_p{phraseIndex}.wav");
-    }
-
-    private string PromotePhraseAudioForReuse(string jobId, int oldIndex, int newIndex) {
-        string oldPath = GetPhraseOutputPath(jobId, oldIndex);
-        string newPath = GetPhraseOutputPath(jobId, newIndex);
-        if (oldIndex == newIndex) {
-            return newPath;
-        }
-        File.Copy(oldPath, newPath, overwrite: true);
-        return newPath;
     }
 
     private static HashSet<string> CollectReferencedPhraseOutputPaths(SynthesisJob job) {
@@ -989,8 +927,6 @@ public class SynthesisService : IHostedService {
         var originalPhraseCount = job.AllPhrases?.Count ?? 0;
         var originalLyricsByNote = new Dictionary<UNote, string>();
 
-        // 记住旧 phrase 的稳定快照，后面按 hash + 顺序重配对，避免分句重排时整轨误判为受影响
-        var oldPhraseSnapshots = CapturePhraseSnapshots(job.AllPhrases);
 
         // 对每个 part 应用编辑
         foreach (var part in voiceParts) {
@@ -1093,7 +1029,7 @@ public class SynthesisService : IHostedService {
         var allPhrases = CollectAllPhrases(voiceParts);
 
         Log.Information("[edit-notes] after ValidateFull: old phrases={Old}, new phrases={New}",
-            oldPhraseSnapshots.Count, allPhrases.Count);
+            originalPhraseCount, allPhrases.Count);
         // 列出新的 notes 状态
         foreach (var part in voiceParts) {
             Log.Information("[edit-notes] part notes after edit:");
@@ -1117,19 +1053,8 @@ public class SynthesisService : IHostedService {
             }).ToList();
         }
 
-        var reusableOldPhraseByNewIndex = MatchReusableOldPhrases(oldPhraseSnapshots, allPhrases);
-        var editAffectedIndices = new HashSet<int>();
-        for (int i = 0; i < allPhrases.Count; i++) {
-            if (reusableOldPhraseByNewIndex.ContainsKey(i)) {
-                continue;
-            }
-            editAffectedIndices.Add(i);
-            Log.Information("[edit-notes] phrase {Idx} AFFECTED: no reusable old phrase for hash={Hash}.",
-                i, allPhrases[i].hash);
-        }
-
-        // 重新基于新 index 构建 RenderedSet / Phrases 状态。
-        // 不能继续沿用旧 index，否则 phrase 重排后会出现整轨误判和状态错乱。
+        // 所有 phrase 都需要重新预测和渲染，不复用旧结果以保证随机性
+        var editAffectedIndices = new HashSet<int>(Enumerable.Range(0, allPhrases.Count));
         var renderAffectedIndices = new HashSet<int>(editAffectedIndices);
         lock (job.RenderLock) {
             job.RenderedSet.Clear();
@@ -1139,23 +1064,6 @@ public class SynthesisService : IHostedService {
                 phraseJob.OutputPath = null;
                 phraseJob.Error = null;
                 phraseJob.Status = "pending";
-
-                if (!reusableOldPhraseByNewIndex.TryGetValue(i, out int oldIndex)) {
-                    continue;
-                }
-
-                string oldPath = GetPhraseOutputPath(job.JobId, oldIndex);
-                if (!File.Exists(oldPath)) {
-                    if (renderAffectedIndices.Add(i)) {
-                        Log.Information("[edit-notes] phrase {Idx} matched old phrase {OldIdx} but had no cached wav, re-queuing audio render.", i, oldIndex);
-                    }
-                    continue;
-                }
-
-                string reusablePath = PromotePhraseAudioForReuse(job.JobId, oldIndex, i);
-                phraseJob.OutputPath = reusablePath;
-                phraseJob.Status = "completed";
-                job.RenderedSet.Add(i);
             }
 
             job.PriorityPhraseIndex = renderAffectedIndices.Count > 0
@@ -1166,24 +1074,6 @@ public class SynthesisService : IHostedService {
 
         var affectedIndices = renderAffectedIndices.OrderBy(index => index).ToList();
         var pitchPredictionIndices = editAffectedIndices.OrderBy(index => index).ToList();
-
-        if (affectedIndices.Count == 0) {
-            Log.Information("[edit-notes] no phrases require rerender after reuse matching, returning early.");
-            ExtractPitchCurve(job, voiceParts);
-            if (previousStatus == "completed" || previousStatus == "ready") {
-                try {
-                    var fullOutputPath = Path.Combine(_outputDir, $"{job.JobId}.wav");
-                    MergePhrasesToWav(job, fullOutputPath, 44100);
-                    job.OutputPath = fullOutputPath;
-                } catch (Exception ex) {
-                    Log.Warning("Job {JobId}: full WAV merge after reusable note edit failed: {Error}", job.JobId, ex.Message);
-                }
-            }
-            RestoreInteractivePhaseState(job, previousStatus, previousProgress);
-            phaseStateResolved = true;
-            affectedOut = pitchPredictionIndices;
-            return;
-        }
 
         Log.Information("[edit-notes] {RenderCount} phrases queued for audio rerender: [{RenderIndices}]; {PitchCount} phrases need fresh pitch prediction: [{PitchIndices}]",
             affectedIndices.Count,

@@ -360,14 +360,7 @@ namespace OpenUtau.Core.DiffSinger
                 linguisticInputs.Add(NamedOnnxValue.CreateFromTensor("languages", langIdTensor));
             }
             Onnx.VerifyInputNames(linguisticModel, linguisticInputs);
-            var linguisticCache = Preferences.Default.DiffSingerTensorCache
-                ? new DiffSingerCache(linguisticHash, linguisticInputs)
-                : null;
-            var linguisticOutputs = linguisticCache?.Load();
-            if (linguisticOutputs is null) {
-                linguisticOutputs = linguisticModel.Run(linguisticInputs).Cast<NamedOnnxValue>().ToList();
-                linguisticCache?.Save(linguisticOutputs);
-            }
+            var linguisticOutputs = linguisticModel.Run(linguisticInputs).Cast<NamedOnnxValue>().ToList();
             Tensor<float> encoder_out = linguisticOutputs
                 .Where(o => o.Name == "encoder_out")
                 .First()
@@ -398,14 +391,7 @@ namespace OpenUtau.Core.DiffSinger
                 durationInputs.Add(NamedOnnxValue.CreateFromTensor("spk_embed", spkEmbedTensor));
             }
             Onnx.VerifyInputNames(durationModel, durationInputs);
-            var durationCache = Preferences.Default.DiffSingerTensorCache
-                ? new DiffSingerCache(durationHash, durationInputs)
-                : null;
-            var durationOutputs = durationCache?.Load();
-            if (durationOutputs is null) {
-                durationOutputs = durationModel.Run(durationInputs).Cast<NamedOnnxValue>().ToList();
-                durationCache?.Save(durationOutputs);
-            }
+            var durationOutputs = durationModel.Run(durationInputs).Cast<NamedOnnxValue>().ToList();
             List<double> durationFrames = durationOutputs.First().AsTensor<float>().Select(x=>(double)x).ToList();
             
             //Alignment

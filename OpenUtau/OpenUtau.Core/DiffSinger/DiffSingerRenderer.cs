@@ -105,27 +105,8 @@ namespace OpenUtau.Core.DiffSinger {
                     } else {
                         depth = 1.0;
                     }
-                    var wavName = $"ds-{phrase.hash:x16}-depth{depth:f2}-steps{steps}.wav";
-                    var wavPath = Path.Join(PathManager.Inst.CachePath, wavName);
-                    phrase.AddCacheFile(wavPath);
                     string progressInfo = $"Track {trackNo + 1}: {this} depth={depth:f2} steps={steps} \"{string.Join(" ", phrase.phones.Select(p => p.phoneme))}\"";
-                    if (File.Exists(wavPath)) {
-                        try {
-                            using (var waveStream = Wave.OpenFile(wavPath)) {
-                                result.samples = Wave.GetSamples(waveStream.ToSampleProvider().ToMono(1, 0));
-                            }
-                        } catch (Exception e) {
-                            Log.Error(e, "Failed to render.");
-                        }
-                    }
-                    if (result.samples == null) {
-                        result.samples = InvokeDiffsinger(phrase, depth, steps, cancellation);
-                        if (result.samples != null) {
-                            var source = new WaveSource(0, 0, 0, 1);
-                            source.SetSamples(result.samples);
-                            WaveFileWriter.CreateWaveFile16(wavPath, new ExportAdapter(source).ToMono(1, 0));
-                        }
-                    }
+                    result.samples = InvokeDiffsinger(phrase, depth, steps, cancellation);
                     if (result.samples != null) {
                         Renderers.ApplyDynamics(phrase, result);
                     }
@@ -414,19 +395,12 @@ namespace OpenUtau.Core.DiffSinger {
                 }
             }
             Onnx.VerifyInputNames(acousticModel, acousticInputs);
-            var acousticCache = Preferences.Default.DiffSingerTensorCache
-                ? new DiffSingerCache(singer.acousticHash, acousticInputs)
-                : null;
-            var acousticOutputs = acousticCache?.Load();
-            if (acousticOutputs is null) {
-                lock(acousticModel){
-                    if(cancellation.IsCancellationRequested) {
-                        return null;
-                    }
-                    acousticOutputs = acousticModel.Run(acousticInputs).Cast<NamedOnnxValue>().ToList();
+            List<NamedOnnxValue> acousticOutputs;
+            lock(acousticModel){
+                if(cancellation.IsCancellationRequested) {
+                    return null;
                 }
-                acousticCache?.Save(acousticOutputs);
-                phrase.AddCacheFile(acousticCache?.Filename);
+                acousticOutputs = acousticModel.Run(acousticInputs).Cast<NamedOnnxValue>().ToList();
             }
             Tensor<float> mel;
             //mel transforms for different mel base
@@ -456,19 +430,12 @@ namespace OpenUtau.Core.DiffSinger {
             var vocoderInputs = new List<NamedOnnxValue>();
             vocoderInputs.Add(NamedOnnxValue.CreateFromTensor("mel", mel));
             vocoderInputs.Add(NamedOnnxValue.CreateFromTensor("f0",f0Tensor));
-            var vocoderCache = Preferences.Default.DiffSingerTensorCache
-                ? new DiffSingerCache(vocoder.hash, vocoderInputs)
-                : null;
-            var vocoderOutputs = vocoderCache?.Load();
-            if (vocoderOutputs is null) {
-                lock(vocoder){
-                    if(cancellation.IsCancellationRequested) {
-                        return null;
-                    }
-                    vocoderOutputs = vocoder.session.Run(vocoderInputs).Cast<NamedOnnxValue>().ToList();
+            List<NamedOnnxValue> vocoderOutputs;
+            lock(vocoder){
+                if(cancellation.IsCancellationRequested) {
+                    return null;
                 }
-                vocoderCache?.Save(vocoderOutputs);
-                phrase.AddCacheFile(vocoderCache?.Filename);
+                vocoderOutputs = vocoder.session.Run(vocoderInputs).Cast<NamedOnnxValue>().ToList();
             }
             Tensor<float> samplesTensor = vocoderOutputs.First().AsTensor<float>();
             //Check the size of samplesTensor
@@ -492,9 +459,6 @@ namespace OpenUtau.Core.DiffSinger {
         }
 
         public List<RenderRealCurveResult> LoadRenderedRealCurves(RenderPhrase phrase) {
-            if (!Preferences.Default.DiffSingerTensorCache) {
-                throw new Exception("Please enable DiffSinger tensor cache and re-render the phrase to display correct base curves.");
-            }
             DiffSingerSinger singer = (DiffSingerSinger) phrase.singer;
             if (!singer.HasVariancePredictor) {
                 return new List<RenderRealCurveResult>(0);
