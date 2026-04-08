@@ -10,7 +10,7 @@
          Set via: dotnet run -p:OnnxProvider=DirectML
          Or env:  set MELODY_ONNX_PROVIDER=DirectML -->
     <OnnxProvider Condition="'$(OnnxProvider)' == ''">$(MELODY_ONNX_PROVIDER)</OnnxProvider>
-    <OnnxProvider Condition="'$(OnnxProvider)' == ''">Cuda</OnnxProvider>
+    <OnnxProvider Condition="'$(OnnxProvider)' == '' and '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))' == 'true'">Cuda</OnnxProvider>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="BunLabs.NAudio.Flac" Version="2.0.1" />
@@ -90,7 +90,7 @@
   <PropertyGroup Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))' == 'true'">
     <DefineConstants>WINDOWS</DefineConstants>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(OnnxProvider)' == 'Cuda'">
+  <PropertyGroup Condition="'$(OnnxProvider)' == 'Cuda' and '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))' == 'true'">
     <DefineConstants>$(DefineConstants);ONNX_CUDA</DefineConstants>
   </PropertyGroup>
 </Project>
