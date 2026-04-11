@@ -299,10 +299,14 @@ class PianoRollInputController {
     if (!pos) return
     const pointHit = this._hitTestPitchPoint(pos.x, pos.y)
     if (pointHit) return
-    const noteHit = this._findPitchEditableNote(pos.x, pos.y)
-    if (!noteHit) return
+    let targetNote = this._findPitchEditableNote(pos.x, pos.y)
+    if (!targetNote) {
+      const segmentHit = this._hitTestPitchSegment(pos.x, pos.y)
+      if (segmentHit) targetNote = this._resolveDisplayNote(segmentHit)
+    }
+    if (!targetNote) return
     try {
-      await pitchEditor.addPointForNote(noteHit.note, pos.time, pos.pitchValue)
+      await pitchEditor.addPointForNote(targetNote.note, pos.time, pos.pitchValue)
     } catch (error) {
       console.error('[InputController] 添加音高控制点失败:', error)
     }
