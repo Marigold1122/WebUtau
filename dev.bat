@@ -34,6 +34,9 @@ set "FRONTEND_PORT=%MELODY_FRONTEND_PORT%"
 if not defined MELODY_BACKEND_START_TIMEOUT  set "MELODY_BACKEND_START_TIMEOUT=180"
 if not defined MELODY_SEEDVC_START_TIMEOUT   set "MELODY_SEEDVC_START_TIMEOUT=60"
 if not defined MELODY_FRONTEND_START_TIMEOUT set "MELODY_FRONTEND_START_TIMEOUT=90"
+if not defined MELODY_TUNNEL                 set "MELODY_TUNNEL=1"
+if not defined MELODY_TUNNEL_START_TIMEOUT   set "MELODY_TUNNEL_START_TIMEOUT=120"
+set "TUNNEL_SCRIPT=%ROOT%scripts\start-tunnel.mjs"
 
 REM ========================================
 REM Command dispatch
@@ -81,6 +84,8 @@ echo   MELODY_ONNX_RUNNER             runtime override: CUDA, DirectML, or CPU
 echo   MELODY_BACKEND_START_TIMEOUT   backend health timeout seconds (default 180)
 echo   MELODY_SEEDVC_START_TIMEOUT    seedvc health timeout seconds (default 60)
 echo   MELODY_FRONTEND_START_TIMEOUT  frontend health timeout seconds (default 90)
+echo   MELODY_TUNNEL                  auto-start cloudflare quick tunnel, default 1 (set 0 to disable)
+echo   MELODY_TUNNEL_START_TIMEOUT    tunnel URL wait seconds (default 120)
 echo.
 goto end_ok
 
@@ -123,6 +128,26 @@ for /l %%P in (%~1,1,65535) do (
 )
 echo [error] no available frontend port found starting from %~1
 exit /b 1
+
+:start_tunnel_if_enabled
+REM args: %1 = port
+if "%MELODY_TUNNEL%"=="0" exit /b 0
+if not exist "%TUNNEL_SCRIPT%" (
+  echo [hint] tunnel script not found, skipping cloudflare tunnel
+  exit /b 0
+)
+where node >nul 2>nul
+if errorlevel 1 (
+  echo [hint] node not found, skipping cloudflare tunnel; install Node.js to enable
+  exit /b 0
+)
+echo [start] tunnel
+echo [hint]  a separate "WebUTAU Tunnel" window will open
+echo [hint]  it shows download progress and the public URL; first run downloads ~30 MB
+echo [hint]  backend/frontend keep running even if tunnel preparation fails
+echo [hint]  set MELODY_TUNNEL=0 to disable on next launch
+start "WebUTAU Tunnel" /d "%ROOT%" cmd /k "node ""%TUNNEL_SCRIPT%"" --port %~1"
+exit /b 0
 
 :warn_if_no_voicebanks
 if not exist "%VOICEBANKS_DIR%" (
@@ -488,6 +513,8 @@ echo [wait] frontend health check...
 call :wait_for_http "Frontend" "http://127.0.0.1:%FRONTEND_PORT%" %MELODY_FRONTEND_START_TIMEOUT%
 if errorlevel 1 goto end_fail
 echo [ready] frontend: http://127.0.0.1:%FRONTEND_PORT%
+
+call :start_tunnel_if_enabled %FRONTEND_PORT%
 
 REM ---- summary ----
 echo.

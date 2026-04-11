@@ -20,6 +20,9 @@ DEFAULT_FRONTEND_PORT="${MELODY_FRONTEND_PORT:-3000}"
 BACKEND_START_TIMEOUT="${MELODY_BACKEND_START_TIMEOUT:-180}"
 SEEDVC_START_TIMEOUT="${MELODY_SEEDVC_START_TIMEOUT:-60}"
 FRONTEND_START_TIMEOUT="${MELODY_FRONTEND_START_TIMEOUT:-90}"
+TUNNEL_ENABLED="${MELODY_TUNNEL:-1}"
+TUNNEL_START_TIMEOUT="${MELODY_TUNNEL_START_TIMEOUT:-120}"
+TUNNEL_SCRIPT="$ROOT/scripts/start-tunnel.mjs"
 TMP_BASE="${TMPDIR:-/tmp}"
 LAST_PID=""
 typeset -a PIDS
@@ -46,6 +49,8 @@ usage() {
   MELODY_BACKEND_START_TIMEOUT   Backend 健康检查等待秒数，默认 180
   MELODY_SEEDVC_START_TIMEOUT    SeedVC 健康检查等待秒数，默认 60
   MELODY_FRONTEND_START_TIMEOUT  Frontend 健康检查等待秒数，默认 90
+  MELODY_TUNNEL                  是否自动启动 Cloudflare quick tunnel，默认 1（设为 0 可关闭）
+  MELODY_TUNNEL_START_TIMEOUT    Tunnel URL 等待秒数，默认 120
 EOF
 }
 
@@ -346,6 +351,31 @@ run_frontend() {
   exec npm run dev -- --host 127.0.0.1 --port "$port"
 }
 
+start_tunnel_if_enabled() {
+  local port="$1"
+  local log_dir="$2"
+  if [[ "$TUNNEL_ENABLED" == "0" ]]; then
+    return 0
+  fi
+  if [[ ! -f "$TUNNEL_SCRIPT" ]]; then
+    echo "[提示] 未找到 $TUNNEL_SCRIPT，跳过 Cloudflare tunnel"
+    return 0
+  fi
+  if ! command -v node >/dev/null 2>&1; then
+    echo "[提示] 未找到 node，跳过 Cloudflare tunnel；如需启用请安装 Node.js"
+    return 0
+  fi
+
+  local tunnel_url_file="$log_dir/tunnel-url.txt"
+  echo "[启动] Tunnel (后台运行，不阻塞前后端；下载进度与公开地址将直接显示在本终端)"
+  (
+    cd "$ROOT"
+    node "$TUNNEL_SCRIPT" --port "$port" --url-file "$tunnel_url_file"
+  ) &
+  PIDS+=("$!")
+  return 0
+}
+
 run_check() {
   ensure_backend_source_prereqs
   ensure_frontend_prereqs
@@ -480,6 +510,8 @@ run_all() {
 
   start_process "Frontend" "$frontend_log" "$SELF" frontend "$frontend_port"
   wait_for_http "Frontend" "http://127.0.0.1:$frontend_port" "$frontend_log" "$FRONTEND_START_TIMEOUT"
+
+  start_tunnel_if_enabled "$frontend_port" "$log_dir"
 
   echo
   echo "所有服务已启动:"
