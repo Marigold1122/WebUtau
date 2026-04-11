@@ -332,8 +332,8 @@ run_backend_auto() {
 
 run_seedvc() {
   ensure_seedvc_prereqs
-  export MPLCONFIGDIR="${TMP_BASE}/melody-singer-mpl"
-  export XDG_CACHE_HOME="${TMP_BASE}/melody-singer-cache"
+  export MPLCONFIGDIR="${TMP_BASE}/webutau-mpl"
+  export XDG_CACHE_HOME="${TMP_BASE}/webutau-cache"
   mkdir -p "$MPLCONFIGDIR" "$XDG_CACHE_HOME"
   cd "$ROOT"
   exec "$SEEDVC_PYTHON_BIN" "$SEEDVC_APP"
@@ -442,7 +442,7 @@ run_all() {
     echo "[提示] 前端默认端口 $DEFAULT_FRONTEND_PORT 已被占用，自动切换到 $frontend_port。"
   fi
 
-  log_dir="$(mktemp -d "$TMP_BASE/melody-singer-dev.XXXXXX")"
+  log_dir="$(mktemp -d "$TMP_BASE/webutau-dev.XXXXXX")"
   backend_log="$log_dir/backend.log"
   seedvc_log="$log_dir/seedvc.log"
   frontend_log="$log_dir/frontend.log"

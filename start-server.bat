@@ -1,7 +1,7 @@
 @echo off
 setlocal
 chcp 65001 >nul
-title Melody Singer - Backend Launcher
+title webUTAU - Backend Launcher
 
 set "ROOT=%~dp0"
 set "SERVER_DIR=%ROOT%server"
@@ -18,7 +18,7 @@ if defined MELODY_VOICEBANKS_DIR (
 )
 
 echo ========================================
-echo   Starting Melody Singer backend...
+echo   Starting webUTAU backend...
 echo   Keep this window open while developing
 echo ========================================
 echo.

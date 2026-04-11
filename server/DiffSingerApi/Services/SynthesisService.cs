@@ -29,9 +29,11 @@ public class SynthesisService : IHostedService {
     public SynthesisService(IConfiguration config) {
         var basePath = AppContext.BaseDirectory;
         var configuredVoicebanksPath = config.GetValue<string>("VoicebanksPath");
-        _outputDir = Path.Combine(basePath, "output");
-        _uploadsDir = Path.Combine(basePath, "uploads");
-        _voicebanksDir = ResolveVoicebanksDir(basePath, configuredVoicebanksPath);
+        var configuredOutputPath = config.GetValue<string>("OutputPath");
+        var configuredUploadsPath = config.GetValue<string>("UploadsPath");
+        _outputDir = ResolveRuntimePath(basePath, configuredOutputPath, "output");
+        _uploadsDir = ResolveRuntimePath(basePath, configuredUploadsPath, "uploads");
+        _voicebanksDir = ResolveRuntimePath(basePath, configuredVoicebanksPath, "voicebanks");
         Directory.CreateDirectory(_outputDir);
         Directory.CreateDirectory(_uploadsDir);
         Directory.CreateDirectory(_voicebanksDir);
@@ -1305,9 +1307,9 @@ public class SynthesisService : IHostedService {
         }
     }
 
-    private static string ResolveVoicebanksDir(string basePath, string? configuredPath) {
+    private static string ResolveRuntimePath(string basePath, string? configuredPath, string defaultRelativePath) {
         if (string.IsNullOrWhiteSpace(configuredPath)) {
-            return Path.Combine(basePath, "voicebanks");
+            return Path.Combine(basePath, defaultRelativePath);
         }
         if (Path.IsPathRooted(configuredPath)) {
             return configuredPath;

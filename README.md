@@ -1,8 +1,8 @@
-# Melody Singer
+# WebUtau
 
 **浏览器端虚拟歌姬工作站** — 导入 MIDI，填写歌词，让虚拟歌姬为你演唱！
 
-![Melody Singer 界面预览](docs/screenshot.png)
+![webUTAU 界面预览](docs/screenshot.png)
 
 ## 功能亮点
 
@@ -61,6 +61,37 @@ dotnet publish server/DiffSingerApi/DiffSingerApi.csproj -c Release -o server
 使用 `dev-source.bat` 可直接从源码启动后端与前端开发服务器。
 
 </details>
+
+## Tauri 桌面打包
+
+桌面版会把前端静态资源和已发布的 DiffSinger/OpenUtau 运行时一起打进客户端，Tauri 只负责资源整理、本地后端拉起和进程生命周期管理，不接管现有前端业务逻辑。
+
+打包前执行：
+
+```bash
+npm install
+npm run tauri:build
+```
+
+如果当前 shell 里 `dotnet` 不在默认 `PATH`，可先设置 `DOTNET_BIN` 指向真实可执行文件。若你已经手动执行过 `dotnet publish`，也可以通过 `MELODY_TAURI_BACKEND_SOURCE_DIR` 直接指定现成的发布目录。
+
+安装后的客户端会在固定目录下保留如下结构，用户升级客户端时这些目录不会被覆盖：
+
+- `runtime/`：桌面壳复制出的只读后端运行时
+- `voicebanks/`：用户自定义声库目录，可直接手动放入歌手子目录
+- `uploads/`：运行时上传缓存
+- `output/`：渲染导出产物
+- `logs/`：本地后端日志
+
+其中 `voicebanks/README.txt` 会在首次启动时自动创建，提示用户如何手动放置自定义声库。
+
+典型路径示例：
+
+- Windows：安装目录下的 `voicebanks/`、`uploads/`、`output/`、`logs/`
+- macOS：`~/webutau/voicebanks`
+- Linux：`~/webutau/voicebanks`
+
+Windows 的 NSIS 安装器默认会优先把安装目录设为 `D:\webUTAU`；如果目标机器没有 `D:` 盘，则回退到 `%LOCALAPPDATA%\webUTAU`。你仍然可以在安装向导里手动改成其他路径。
 
 <details>
 <summary><strong>SeedVC 音色转换（可选）</strong></summary>

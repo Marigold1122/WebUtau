@@ -1,7 +1,7 @@
 @echo off
 setlocal
 chcp 65001 >nul
-title Melody Singer - Source Dev Launcher
+title webUTAU - Source Dev Launcher
 
 set "ROOT=%~dp0"
 set "BACKEND_SOURCE_DIR=%ROOT%server\DiffSingerApi"

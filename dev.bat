@@ -1,7 +1,7 @@
 @echo off
 setlocal
 chcp 65001 >nul
-title Melody Singer - Dev Launcher
+title webUTAU - Dev Launcher
 
 REM ========================================
 REM Paths and defaults

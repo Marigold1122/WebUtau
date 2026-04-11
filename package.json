@@ -1,5 +1,5 @@
 {
-  "name": "melody-app",
+  "name": "webutau",
   "version": "0.1.0",
   "type": "module",
   "scripts": {
@@ -7,9 +7,15 @@
     "build": "vite build",
     "build:dict": "node scripts/build-reading-dict.mjs",
     "test": "node --test test/*.test.mjs",
-    "check:max-lines": "node ./scripts/check-max-lines.mjs"
+    "check:max-lines": "node ./scripts/check-max-lines.mjs",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "tauri:prepare-assets": "node ./scripts/prepare-tauri-assets.mjs",
+    "tauri:dev:frontend": "node ./scripts/run-tauri-frontend.mjs dev --prepare-assets",
+    "tauri:build:frontend": "node ./scripts/run-tauri-frontend.mjs build --prepare-assets"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
     "vite": "6.4.1"
   },
   "dependencies": {

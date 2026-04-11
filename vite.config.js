@@ -6,6 +6,13 @@ const CROSS_ORIGIN_ISOLATION_HEADERS = {
   'Cross-Origin-Embedder-Policy': 'require-corp',
 }
 
+const DEFAULT_FRONTEND_PORT = 3000
+
+function resolveFrontendPort() {
+  const rawPort = Number.parseInt(process.env.MELODY_FRONTEND_PORT || '', 10)
+  return Number.isFinite(rawPort) && rawPort > 0 ? rawPort : DEFAULT_FRONTEND_PORT
+}
+
 /** 为音频静态资源设置 Content-Disposition: inline，防止 IDM 等下载管理器拦截 */
 function audioInlinePlugin() {
   return {
@@ -24,9 +31,9 @@ function audioInlinePlugin() {
 export default defineConfig({
   plugins: [audioInlinePlugin()],
   server: {
-    port: 3000,
+    port: resolveFrontendPort(),
     strictPort: true,
-    open: true,
+    open: process.env.MELODY_TAURI_DEV !== '1',
     headers: CROSS_ORIGIN_ISOLATION_HEADERS,
     allowedHosts: ['.trycloudflare.com', 'singer.haruyuki.cn'],
     proxy: {

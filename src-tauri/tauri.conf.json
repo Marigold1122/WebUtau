@@ -1,0 +1,55 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "webUTAU",
+  "identifier": "cn.haruyuki.melody-singer",
+  "build": {
+    "beforeDevCommand": "npm run tauri:dev:frontend",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run tauri:build:frontend",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "webUTAU",
+        "width": 1600,
+        "height": 980,
+        "minWidth": 1200,
+        "minHeight": 760,
+        "visible": false,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": {
+        "default-src": "'self' customprotocol: asset:",
+        "connect-src": "'self' ipc: http://ipc.localhost http://127.0.0.1:5000 http://127.0.0.1:5001",
+        "img-src": "'self' asset: http://asset.localhost blob: data:",
+        "media-src": "'self' asset: http://asset.localhost blob: data: http://127.0.0.1:5000 http://127.0.0.1:5001",
+        "style-src": "'self' 'unsafe-inline' https://fonts.googleapis.com",
+        "font-src": "'self' data: https://fonts.gstatic.com",
+        "script-src": "'self' 'wasm-unsafe-eval'",
+        "worker-src": "'self' blob:",
+        "child-src": "'self' blob:",
+        "frame-src": "'self'"
+      },
+      "headers": {
+        "Cross-Origin-Opener-Policy": "same-origin",
+        "Cross-Origin-Embedder-Policy": "require-corp"
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "template": "windows/webutau-installer.nsi"
+      }
+    },
+    "resources": {
+      "resources/runtime/": "runtime/"
+    }
+  }
+}

@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-title Melody Singer - Local SeedVC Service
+title webUTAU - Local SeedVC Service
 
 set "ROOT=%~dp0.."
 set "SEED_VC_ROOT=%ROOT%\external\seed-vc"

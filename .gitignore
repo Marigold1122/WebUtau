@@ -59,6 +59,8 @@ backups/
 # Tauri
 src-tauri/target/
 src-tauri/binaries/
+src-tauri/.backend-build/
+src-tauri/resources/runtime/
 
 # Environment
 .env
