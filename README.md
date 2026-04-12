@@ -1,6 +1,6 @@
 # WebUtau
 
-**浏览器端虚拟歌姬工作站** — 导入 MIDI，填写歌词，让虚拟歌姬为你演唱！
+**一站式虚拟歌姬网页工作站** — 导入 MIDI，填写歌词，让虚拟歌姬为你演唱！
 
 ![webUTAU 界面预览](docs/screenshot.png)
 
@@ -9,11 +9,14 @@
 ### 虚拟歌姬演唱
 基于 [OpenUtau](https://github.com/stakira/OpenUtau) 歌声合成引擎，支持加载 UTAU 主流声库，在浏览器中即可驱动虚拟歌姬声库演唱你编写的旋律与歌词。
 
+### 灵活的使用方式
+支持通过源码启动网页版，也支持安装点击即用的客户端。无论是在网页版还是客户端中，你都可以生成一个分享链接，在其它设备上使用或分享给他人。在浏览器中打开分享链接即可以完整使用该项目，并加载你在本地的声库，无需其它安装流程。
+
 ### 音色转换
-集成 [SeedVC](https://github.com/Plachtaa/seed-vc) 音色转换技术，可将歌姬的演唱转换为目标音色，拓展声音表现力。
+支持 [SeedVC](https://github.com/Plachtaa/seed-vc) 音色转换技术，可将歌姬的演唱转换为目标音色，使用此功能需自行在本地部署[SeedVC](https://github.com/Plachtaa/seed-vc)。
 
 ### 钢琴卷帘编辑器
-直观的钢琴卷帘界面，支持 MIDI 导入与手动编辑，提供音高、时值的精细控制。
+直观的钢琴卷帘界面，支持 MIDI 导入与手动编辑，提供音高、时值的精细控制，对于多轨道MIDI有良好的支持。
 
 ### 歌词编辑
 支持中文与日语歌词输入，提供快速填词面板，可批量填写并自动匹配音符。
@@ -24,14 +27,31 @@
 ### 混音与效果
 轨道级混响、音量控制，多种预设效果风格，让作品更具表现力。
 
+### 无损导出
+可精准导出指定轨道或整个工程的无损音频，快速产出试听版本。
+
+### 跨平台支持
+支持Windows、Mac、Linux平台使用。
+
 ## 快速开始
 
-### 环境要求
+### 通过客户端版本运行
+
+对于无部署经验的用户，通过 [Releases](https://github.com/Marigold1122/WebUtau/releases/latest) 下载可直接安装的客户端是最好的选择。安装后，你可在指定目录中配置你的声库。
+
+Mac版的声库配置目录位于 `～/webutau/voicebanks` , Windows版位于软件安装目录下的 `runtime/voicebanks-seed` ，将解压后的声库放在这两个目录下即可，每个歌手为独立子文件夹。
+
+### 通过源码启动网页版
+
+该方式仅推荐有项目部署经验的用户使用。
+
+#### 环境要求
 
 - [Node.js](https://nodejs.org/) LTS
 - [Git](https://git-scm.com/)
+- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
 
-### 安装与启动
+#### 安装与启动
 
 ```bash
 git clone https://github.com/Marigold1122/melody-singer.git
@@ -39,59 +59,12 @@ cd melody-singer
 npm install
 ```
 
-从 [Releases](https://github.com/Marigold1122/melody-singer/releases) 下载最新后端运行时，解压到 `server/` 目录，确保 `server/DiffSingerApi.exe` 存在。
-
 将声库放入 `server/voicebanks/` 下（每个歌手为独立子文件夹）。
 
-```bash
-dev.bat
-```
+在Mac上应运行`dev-mac.sh`，在Windows上应运行`dev.bat`。
 
-打开浏览器访问 http://localhost:3000 即可使用。
+打开浏览器访问 http://localhost:3000 即可使用。(具体端口以终端显示为准)
 
-<details>
-<summary><strong>从源码构建后端</strong></summary>
-
-需要 [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)：
-
-```bash
-dotnet publish server/DiffSingerApi/DiffSingerApi.csproj -c Release -o server
-```
-
-使用 `dev-source.bat` 可直接从源码启动后端与前端开发服务器。
-
-</details>
-
-## Tauri 桌面打包
-
-桌面版会把前端静态资源和已发布的 DiffSinger/OpenUtau 运行时一起打进客户端，Tauri 只负责资源整理、本地后端拉起和进程生命周期管理，不接管现有前端业务逻辑。
-
-打包前执行：
-
-```bash
-npm install
-npm run tauri:build
-```
-
-如果当前 shell 里 `dotnet` 不在默认 `PATH`，可先设置 `DOTNET_BIN` 指向真实可执行文件。若你已经手动执行过 `dotnet publish`，也可以通过 `MELODY_TAURI_BACKEND_SOURCE_DIR` 直接指定现成的发布目录。
-
-安装后的客户端会在固定目录下保留如下结构，用户升级客户端时这些目录不会被覆盖：
-
-- `runtime/`：桌面壳复制出的只读后端运行时
-- `voicebanks/`：用户自定义声库目录，可直接手动放入歌手子目录
-- `uploads/`：运行时上传缓存
-- `output/`：渲染导出产物
-- `logs/`：本地后端日志
-
-其中 `voicebanks/README.txt` 会在首次启动时自动创建，提示用户如何手动放置自定义声库。
-
-典型路径示例：
-
-- Windows：安装目录下的 `voicebanks/`、`uploads/`、`output/`、`logs/`
-- macOS：`~/webutau/voicebanks`
-- Linux：`~/webutau/voicebanks`
-
-Windows 的 NSIS 安装器默认会优先把安装目录设为 `D:\webUTAU`；如果目标机器没有 `D:` 盘，则回退到 `%LOCALAPPDATA%\webUTAU`。你仍然可以在安装向导里手动改成其他路径。
 
 <details>
 <summary><strong>SeedVC 音色转换（可选）</strong></summary>
@@ -117,5 +90,7 @@ scripts\start-seedvc-service.bat
 ## 技术栈
 
 前端：Vanilla JavaScript + Vite + Web Audio API + Tone.js
+
 后端：.NET 8 + ASP.NET Core（基于 [OpenUtau](https://github.com/stakira/OpenUtau) 核心模块）
+
 音色转换：Python + PyTorch + SeedVC
