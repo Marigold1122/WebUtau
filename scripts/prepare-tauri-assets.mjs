@@ -57,9 +57,12 @@ if (configuredBackendSourceDir) {
 
 await cp(backendSourceDir, runtimeBackendDir, { recursive: true, force: true })
 
-const hasSeedVoicebanks = await directoryHasFiles(voicebanksSourceDir)
-if (hasSeedVoicebanks) {
+const bundleVoicebanks = process.env.MELODY_TAURI_BUNDLE_VOICEBANKS === '1'
+if (bundleVoicebanks && await directoryHasFiles(voicebanksSourceDir)) {
   await cp(voicebanksSourceDir, runtimeVoicebanksDir, { recursive: true, force: true })
+  console.log(`[voicebanks] 已打包声库到 ${relative(rootDir, runtimeVoicebanksDir)}`)
+} else if (!bundleVoicebanks) {
+  console.log('[voicebanks] 默认不打包声库（设置 MELODY_TAURI_BUNDLE_VOICEBANKS=1 可启用）')
 }
 
 await ensureCloudflaredBundled(host)
