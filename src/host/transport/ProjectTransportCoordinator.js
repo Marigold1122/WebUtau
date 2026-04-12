@@ -93,6 +93,11 @@ export class ProjectTransportCoordinator {
     }
 
     this.view.setStatus('正在加载项目播放资源...')
+    this.view.showPlaybackToast?.('正在准备播放资源，请稍候… 受网络环境影响，此过程可能较慢。', {
+      tone: 'preparing',
+      durationMs: 0,
+      toastId: 'preparing-playback',
+    })
     const currentTime = this.transportStore.getSnapshot().currentTime || 0
     this._logTrace('toggleProjectPlayback:start-request', { requestedTime: currentTime })
     return this._startProjectPlaybackFromTime(currentTime, 'play')
@@ -328,6 +333,7 @@ export class ProjectTransportCoordinator {
     })
     try {
       const prepared = await this._prepareProjectPlayback(currentTime)
+      this.view.hidePlaybackToast?.('preparing-playback')
       if (token !== this.refreshToken) {
         this._logTrace('startProjectPlaybackFromTime:stale-token-abort', {
           reason,
@@ -373,6 +379,7 @@ export class ProjectTransportCoordinator {
       })
       return true
     } catch (error) {
+      this.view.hidePlaybackToast?.('preparing-playback')
       this._logTrace('startProjectPlaybackFromTime:error', {
         reason,
         requestedTime: currentTime,
@@ -397,12 +404,26 @@ export class ProjectTransportCoordinator {
       trackCount: project.tracks?.length || 0,
     })
 
+    const updateToast = (text) => {
+      this.view.showPlaybackToast?.(text, {
+        tone: 'preparing',
+        durationMs: 0,
+        toastId: 'preparing-playback',
+      })
+    }
+
     const audibleTrackIds = resolveAudibleTrackIds(project.tracks, this.sessionStore.getSnapshot())
     const convertedPrepared = await this.convertedVocalScheduler.prepare({
       tracks: project.tracks,
       audibleTrackIds,
       fromTimeSec,
+      onProgress: (current, total) => {
+        updateToast(`正在加载音色转换资源 (${current}/${total})… 受网络环境影响，此过程可能较慢。`)
+      },
     })
+
+    updateToast('正在加载乐器与人声资源… 受网络环境影响，此过程可能较慢。')
+
     const [instrumentPrepared, importedAudioPrepared, vocalPrepared] = await Promise.all([
       this.instrumentScheduler.prepare({
         tracks: project.tracks,

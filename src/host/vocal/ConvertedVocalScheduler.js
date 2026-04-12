@@ -29,7 +29,7 @@ export class ConvertedVocalScheduler {
     this.active = false
   }
 
-  async prepare({ tracks, audibleTrackIds, fromTimeSec = 0 }) {
+  async prepare({ tracks, audibleTrackIds, fromTimeSec = 0, onProgress }) {
     this.stop()
 
     const refs = collectConvertedTrackRefs(tracks, audibleTrackIds || new Set())
@@ -44,7 +44,9 @@ export class ConvertedVocalScheduler {
     )
     const readyEntries = []
 
-    for (const ref of refs) {
+    for (let i = 0; i < refs.length; i += 1) {
+      const ref = refs[i]
+      onProgress?.(i + 1, refs.length)
       try {
         const asset = await this.assetRegistry.ensureAsset(ref)
         readyEntries.push({
