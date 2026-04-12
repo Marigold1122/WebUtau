@@ -475,12 +475,13 @@ Function .onInit
   !insertmacro SetContext
 
   ${If} $INSTDIR == "${PLACEHOLDER_INSTALL_DIR}"
-    ; Set default install location
-    IfFileExists "D:\" 0 use_official_default_install_dir
+    ; Set default install location — use Win32 GetDriveType for reliable detection
+    ; Return: 0=unknown 1=no_root 2=removable 3=fixed 4=remote 5=cdrom 6=ramdisk
+    System::Call 'kernel32::GetDriveType(t "D:\") i .r0'
+    ${If} $0 == 3 ; DRIVE_FIXED
       StrCpy $INSTDIR "${WEBUTAU_PREFERRED_INSTALL_ROOT}"
       Goto default_install_dir_done
-
-    use_official_default_install_dir:
+    ${EndIf}
     !if "${INSTALLMODE}" == "perMachine"
       ${If} ${RunningX64}
         !if "${ARCH}" == "x64"
