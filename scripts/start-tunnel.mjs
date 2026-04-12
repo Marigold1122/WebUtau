@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process'
-import { mkdir, chmod, access, rm, writeFile } from 'node:fs/promises'
+import { mkdir, chmod, access, rm, writeFile, readFile as readFileAsync, stat as statAsync } from 'node:fs/promises'
 import { writeFileSync } from 'node:fs'
 import { createWriteStream } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -110,20 +110,10 @@ async function fileExists(path) {
   }
 }
 
-async function fetchFollowRedirect(url, maxRedirects = 8) {
-  let current = url
-  for (let i = 0; i < maxRedirects; i += 1) {
-    const res = await fetch(current, { redirect: 'manual' })
-    if (res.status >= 300 && res.status < 400) {
-      const location = res.headers.get('location')
-      if (!location) throw new Error(`重定向缺少 location: ${current}`)
-      current = new URL(location, current).toString()
-      continue
-    }
-    if (!res.ok) throw new Error(`下载失败 ${res.status}: ${current}`)
-    return res
-  }
-  throw new Error('重定向次数过多')
+async function fetchBinary(url) {
+  const res = await fetch(url, { redirect: 'follow' })
+  if (!res.ok) throw new Error(`下载失败 ${res.status}: ${url}`)
+  return res
 }
 
 function formatMB(bytes) {
@@ -131,7 +121,7 @@ function formatMB(bytes) {
 }
 
 async function downloadTo(url, dest) {
-  const res = await fetchFollowRedirect(url)
+  const res = await fetchBinary(url)
   if (!res.body) throw new Error('响应没有 body')
   const totalHeader = Number.parseInt(res.headers.get('content-length') || '0', 10)
   const total = Number.isFinite(totalHeader) && totalHeader > 0 ? totalHeader : 0
@@ -184,7 +174,14 @@ async function extractTgz(archivePath, destDir) {
 async function ensureBinary() {
   const asset = detectAsset()
   const binPath = join(CACHE_DIR, asset.binary)
-  if (await fileExists(binPath)) return binPath
+  if (await fileExists(binPath)) {
+    try {
+      await verifyExecutable(binPath)
+      return binPath
+    } catch (err) {
+      console.error(`[tunnel] 已缓存的二进制无效，将重新下载: ${err?.message || err}`)
+    }
+  }
 
   await mkdir(CACHE_DIR, { recursive: true })
   console.error('[tunnel] ─────────────────────────────────────────────')
@@ -222,8 +219,43 @@ async function ensureBinary() {
     throw new Error(`下载完成但未找到二进制: ${binPath}`)
   }
 
+  await verifyExecutable(binPath)
+
   console.error('[tunnel] cloudflared 已就绪')
   return binPath
+}
+
+async function verifyExecutable(binPath) {
+  const info = await statAsync(binPath)
+  if (info.size < 100_000) {
+    await rm(binPath, { force: true })
+    throw new Error(
+      `下载的文件异常小 (${info.size} 字节)，可能是代理/防火墙拦截返回了错误页面而非二进制文件。`
+      + ' 请检查网络环境后重试。已删除无效文件。',
+    )
+  }
+  const header = new Uint8Array(await readFileAsync(binPath).then((buf) => buf.buffer.slice(0, 4)))
+  const isMachO = header[0] === 0xCF && header[1] === 0xFA
+  const isPE = header[0] === 0x4D && header[1] === 0x5A
+  const isELF = header[0] === 0x7F && header[1] === 0x45 && header[2] === 0x4C && header[3] === 0x46
+  if (!isMachO && !isPE && !isELF) {
+    await rm(binPath, { force: true })
+    throw new Error(
+      '下载的文件不是有效的可执行文件（文件头校验失败）。'
+      + ' 可能原因：代理/防火墙拦截了 GitHub 下载，返回了 HTML 错误页面。'
+      + ' 请检查网络环境后重试。已删除无效文件。',
+    )
+  }
+  const expectedPE = process.platform === 'win32'
+  const expectedMachO = process.platform === 'darwin'
+  const expectedELF = process.platform === 'linux'
+  if ((expectedPE && !isPE) || (expectedMachO && !isMachO) || (expectedELF && !isELF)) {
+    await rm(binPath, { force: true })
+    throw new Error(
+      `下载的文件是有效可执行文件，但与当前平台 (${process.platform}) 不匹配。`
+      + ' 已删除，重试将重新下载正确版本。',
+    )
+  }
 }
 
 function makeLineSplitter(onLine) {
