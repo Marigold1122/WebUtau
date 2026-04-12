@@ -63,6 +63,7 @@ if (hasSeedVoicebanks) {
 }
 
 await ensureCloudflaredBundled(host)
+await codesignBundledNativeBinaries()
 
 const fingerprint = await fingerprintDirectory(runtimeResourcesDir)
 const manifest = {
@@ -298,20 +299,69 @@ function pickCloudflaredAsset(targetHost) {
   return null
 }
 
-async function downloadFile(url, destPath, maxRedirects = 8) {
-  let current = url
-  for (let i = 0; i < maxRedirects; i += 1) {
-    const res = await fetch(current, { redirect: 'manual' })
-    if (res.status >= 300 && res.status < 400) {
-      const location = res.headers.get('location')
-      if (!location) throw new Error(`重定向缺少 location: ${current}`)
-      current = new URL(location, current).toString()
-      continue
-    }
-    if (!res.ok) throw new Error(`下载失败 ${res.status}: ${current}`)
-    if (!res.body) throw new Error('响应没有 body')
-    await pipeline(Readable.fromWeb(res.body), createWriteStream(destPath))
+async function downloadFile(url, destPath) {
+  const res = await fetch(url, { redirect: 'follow' })
+  if (!res.ok) throw new Error(`下载失败 ${res.status}: ${url}`)
+  if (!res.body) throw new Error('响应没有 body')
+  await pipeline(Readable.fromWeb(res.body), createWriteStream(destPath))
+}
+
+async function codesignBundledNativeBinaries() {
+  if (process.platform !== 'darwin') return
+  const identity = process.env.APPLE_SIGNING_IDENTITY?.trim()
+  if (!identity) {
+    console.log('[codesign] APPLE_SIGNING_IDENTITY 未设置，跳过预签名（公证会失败）')
     return
   }
-  throw new Error('重定向次数过多')
+
+  const dirs = [runtimeBackendDir, cloudflaredResourcesDir]
+  const targets = []
+  for (const dir of dirs) {
+    if (!existsSync(dir)) continue
+    for (const name of await readdir(dir)) {
+      const fullPath = resolve(dir, name)
+      const info = await stat(fullPath)
+      if (!info.isFile()) continue
+      if (isMachOBinary(name)) targets.push(fullPath)
+    }
+  }
+
+  if (targets.length === 0) {
+    console.log('[codesign] 未找到需要签名的原生二进制')
+    return
+  }
+
+  console.log(`[codesign] 使用 "${identity}" 签名 ${targets.length} 个原生二进制...`)
+  for (const target of targets) {
+    const relPath = relative(rootDir, target)
+    try {
+      await runCommand('codesign', [
+        '--force',
+        '--options', 'runtime',
+        '--timestamp',
+        '--sign', identity,
+        target,
+      ], { stdio: 'pipe' })
+      console.log(`  ✓ ${relPath}`)
+    } catch (error) {
+      console.error(`  ✗ ${relPath}: ${error?.message || error}`)
+      throw new Error(`签名失败: ${relPath}`)
+    }
+  }
+  console.log('[codesign] 所有原生二进制已签名')
+}
+
+function isMachOBinary(filename) {
+  const lower = filename.toLowerCase()
+  if (lower.endsWith('.dylib')) return true
+  if (lower.endsWith('.so')) return true
+  if (lower.endsWith('.dll') || lower.endsWith('.pdb') || lower.endsWith('.json')
+      || lower.endsWith('.xml') || lower.endsWith('.txt') || lower.endsWith('.md')
+      || lower.endsWith('.yaml') || lower.endsWith('.yml') || lower.endsWith('.config')
+      || lower.endsWith('.deps.json') || lower.endsWith('.runtimeconfig.json')
+      || lower.endsWith('.png') || lower.endsWith('.ico') || lower.endsWith('.placeholder')) {
+    return false
+  }
+  if (!lower.includes('.')) return true
+  return false
 }
