@@ -227,10 +227,11 @@ async function ensureBinary() {
 
 async function verifyExecutable(binPath) {
   const info = await statAsync(binPath)
-  if (info.size < 100_000) {
+  if (info.size < 10_000_000) {
     await rm(binPath, { force: true })
     throw new Error(
-      `下载的文件异常小 (${info.size} 字节)，可能是代理/防火墙拦截返回了错误页面而非二进制文件。`
+      `下载的文件异常小 (${(info.size / 1024 / 1024).toFixed(1)} MB)，cloudflared 正常应大于 10 MB。`
+      + ' 可能是下载中断、代理/防火墙拦截返回了错误页面。'
       + ' 请检查网络环境后重试。已删除无效文件。',
     )
   }
@@ -256,6 +257,28 @@ async function verifyExecutable(binPath) {
       + ' 已删除，重试将重新下载正确版本。',
     )
   }
+  // Smoke-test: try running the binary to catch truncated/corrupted files
+  await new Promise((resolve, reject) => {
+    const proc = spawn(binPath, ['version'], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 10_000 })
+    proc.on('error', (err) => {
+      rm(binPath, { force: true }).finally(() => {
+        reject(new Error(
+          `cloudflared 无法启动 (${err.code || err.message})，文件可能损坏或下载不完整。`
+          + ' 已删除，重试将重新下载。',
+        ))
+      })
+    })
+    proc.on('exit', (code) => {
+      if (code === 0) resolve()
+      else {
+        rm(binPath, { force: true }).finally(() => {
+          reject(new Error(
+            `cloudflared version 退出码 ${code}，文件可能损坏。已删除，重试将重新下载。`,
+          ))
+        })
+      }
+    })
+  })
 }
 
 function makeLineSplitter(onLine) {
