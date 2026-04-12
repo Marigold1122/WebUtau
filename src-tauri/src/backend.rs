@@ -12,7 +12,7 @@ use std::{
 use tauri::{path::BaseDirectory, AppHandle, Manager};
 
 const BACKEND_HOST: &str = "127.0.0.1";
-const BACKEND_PORT: u16 = 5000;
+const BACKEND_PORT: u16 = 38510;
 const BACKEND_START_TIMEOUT: Duration = Duration::from_secs(20);
 const BACKEND_CONNECT_TIMEOUT: Duration = Duration::from_millis(250);
 

@@ -139,5 +139,5 @@ var app = builder.Build();
 app.UseCors();
 app.MapControllers();
 
-Log.Information("DiffSinger API starting on http://localhost:5000");
-app.Run("http://0.0.0.0:5000");
+Log.Information("DiffSinger API starting on http://localhost:38510");
+app.Run("http://0.0.0.0:38510");

@@ -12,8 +12,8 @@ use tauri::{path::BaseDirectory, AppHandle, Manager};
 use tokio::net::TcpListener;
 use tower_http::services::ServeDir;
 
-const BACKEND_BASE: &str = "http://127.0.0.1:5000";
-const SEEDVC_BASE: &str = "http://127.0.0.1:5001";
+const BACKEND_BASE: &str = "http://127.0.0.1:38510";
+const SEEDVC_BASE: &str = "http://127.0.0.1:38511";
 
 #[derive(Clone)]
 struct ProxyState {

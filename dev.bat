@@ -25,8 +25,8 @@ if defined MELODY_VOICEBANKS_DIR (
   set "VOICEBANKS_DIR=%DEFAULT_VOICEBANKS_DIR%"
 )
 
-set "BACKEND_HEALTH_URL=http://127.0.0.1:5000/api/voicebanks"
-set "SEEDVC_HEALTH_URL=http://127.0.0.1:5001/health"
+set "BACKEND_HEALTH_URL=http://127.0.0.1:38510/api/voicebanks"
+set "SEEDVC_HEALTH_URL=http://127.0.0.1:38511/health"
 
 if not defined MELODY_FRONTEND_PORT set "MELODY_FRONTEND_PORT=3000"
 set "FRONTEND_PORT=%MELODY_FRONTEND_PORT%"
@@ -448,12 +448,12 @@ call :pick_frontend_port %FRONTEND_PORT%
 REM ---- launch backend ----
 call :http_is_ready "%BACKEND_HEALTH_URL%"
 if not errorlevel 1 (
-  echo [reuse] backend already running: http://127.0.0.1:5000
+  echo [reuse] backend already running: http://127.0.0.1:38510
   goto _all_backend_ready
 )
 call :port_is_listening 5000
 if not errorlevel 1 (
-  echo [error] port 5000 in use but not a valid DiffSinger backend.
+  echo [error] port 38510 in use but not a valid DiffSinger backend.
   goto end_fail
 )
 
@@ -472,7 +472,7 @@ start "Backend" /d "%ROOT%" "%SELF%" backend-source
 echo [wait] backend health check...
 call :wait_for_http "Backend" "%BACKEND_HEALTH_URL%" %MELODY_BACKEND_START_TIMEOUT%
 if errorlevel 1 goto end_fail
-echo [ready] backend: http://127.0.0.1:5000
+echo [ready] backend: http://127.0.0.1:38510
 
 :_all_backend_ready
 
@@ -484,12 +484,12 @@ if "%_start_seedvc%"=="0" (
 
 call :http_is_ready "%SEEDVC_HEALTH_URL%"
 if not errorlevel 1 (
-  echo [reuse] SeedVC already running: http://127.0.0.1:5001
+  echo [reuse] SeedVC already running: http://127.0.0.1:38511
   goto _all_seedvc_done
 )
 call :port_is_listening 5001
 if not errorlevel 1 (
-  echo [error] port 5001 in use but not a valid SeedVC service.
+  echo [error] port 38511 in use but not a valid SeedVC service.
   goto end_fail
 )
 
@@ -498,7 +498,7 @@ start "SeedVC" /d "%ROOT%" "%SELF%" seedvc
 echo [wait] SeedVC health check...
 call :wait_for_http "SeedVC" "%SEEDVC_HEALTH_URL%" %MELODY_SEEDVC_START_TIMEOUT%
 if errorlevel 1 goto _all_seedvc_warn
-echo [ready] SeedVC: http://127.0.0.1:5001
+echo [ready] SeedVC: http://127.0.0.1:38511
 goto _all_seedvc_done
 
 :_all_seedvc_warn
@@ -520,8 +520,8 @@ REM ---- summary ----
 echo.
 echo ========================================
 echo   All services launched:
-echo   Backend:  http://127.0.0.1:5000
-if "%_start_seedvc%"=="1" echo   SeedVC:   http://127.0.0.1:5001
+echo   Backend:  http://127.0.0.1:38510
+if "%_start_seedvc%"=="1" echo   SeedVC:   http://127.0.0.1:38511
 echo   Frontend: http://127.0.0.1:%FRONTEND_PORT%
 echo ========================================
 echo.

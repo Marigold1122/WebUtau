@@ -92,11 +92,11 @@ export default defineConfig({
     allowedHosts: ['.trycloudflare.com', 'singer.haruyuki.cn'],
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:5000',
+        target: 'http://127.0.0.1:38510',
         changeOrigin: true,
       },
       '/seedvc/api': {
-        target: 'http://127.0.0.1:5001',
+        target: 'http://127.0.0.1:38511',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/seedvc/, ''),
       },

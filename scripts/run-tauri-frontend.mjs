@@ -26,8 +26,8 @@ if (shouldPrepareAssets) {
 
 const env = {
   ...process.env,
-  VITE_RENDER_API_BASE_URL: process.env.VITE_RENDER_API_BASE_URL || 'http://127.0.0.1:5000',
-  VITE_SEEDVC_API_BASE_URL: process.env.VITE_SEEDVC_API_BASE_URL || 'http://127.0.0.1:5001',
+  VITE_RENDER_API_BASE_URL: process.env.VITE_RENDER_API_BASE_URL || 'http://127.0.0.1:38510',
+  VITE_SEEDVC_API_BASE_URL: process.env.VITE_SEEDVC_API_BASE_URL || 'http://127.0.0.1:38511',
 }
 
 const args = [viteCli]

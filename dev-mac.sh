@@ -14,8 +14,8 @@ DEFAULT_VOICEBANKS_DIR="$ROOT/server/voicebanks"
 VOICEBANKS_DIR="${MELODY_VOICEBANKS_DIR:-$DEFAULT_VOICEBANKS_DIR}"
 DOTNET_BIN="${DOTNET_BIN:-}"
 SEEDVC_PYTHON_BIN="${SEEDVC_PYTHON_BIN:-$SEEDVC_ROOT/.venv/bin/python}"
-BACKEND_HEALTH_URL="http://127.0.0.1:5000/api/voicebanks"
-SEEDVC_HEALTH_URL="http://127.0.0.1:5001/health"
+BACKEND_HEALTH_URL="http://127.0.0.1:38510/api/voicebanks"
+SEEDVC_HEALTH_URL="http://127.0.0.1:38511/health"
 DEFAULT_FRONTEND_PORT="${MELODY_FRONTEND_PORT:-3000}"
 BACKEND_START_TIMEOUT="${MELODY_BACKEND_START_TIMEOUT:-180}"
 SEEDVC_START_TIMEOUT="${MELODY_SEEDVC_START_TIMEOUT:-60}"
@@ -479,9 +479,9 @@ run_all() {
   echo "[日志] $log_dir"
 
   if http_is_ready "$BACKEND_HEALTH_URL"; then
-    echo "[复用] Backend 已在运行: http://127.0.0.1:5000"
-  elif port_is_listening 5000; then
-    echo "[错误] 端口 5000 已被占用，但当前进程不是可用的 DiffSinger 后端。"
+    echo "[复用] Backend 已在运行: http://127.0.0.1:38510"
+  elif port_is_listening 38510; then
+    echo "[错误] 端口 38510 已被占用，但当前进程不是可用的 DiffSinger 后端。"
     return 1
   else
     echo "[模式] Backend 使用 $resolved_backend_mode"
@@ -495,9 +495,9 @@ run_all() {
 
   if [[ "$should_start_seedvc" == "1" ]]; then
     if http_is_ready "$SEEDVC_HEALTH_URL"; then
-      echo "[复用] SeedVC 已在运行: http://127.0.0.1:5001"
-    elif port_is_listening 5001; then
-      echo "[错误] 端口 5001 已被占用，但当前进程不是可用的 SeedVC 服务。"
+      echo "[复用] SeedVC 已在运行: http://127.0.0.1:38511"
+    elif port_is_listening 38511; then
+      echo "[错误] 端口 38511 已被占用，但当前进程不是可用的 SeedVC 服务。"
       return 1
     else
       start_process "SeedVC" "$seedvc_log" "$SELF" seedvc
@@ -514,10 +514,10 @@ run_all() {
 
   echo
   echo "所有服务已启动:"
-  echo "Backend:  http://127.0.0.1:5000"
+  echo "Backend:  http://127.0.0.1:38510"
   echo "Frontend: http://127.0.0.1:$frontend_port"
   if [[ "$should_start_seedvc" == "1" ]]; then
-    echo "SeedVC:   http://127.0.0.1:5001"
+    echo "SeedVC:   http://127.0.0.1:38511"
   fi
   echo
   echo "按 Ctrl+C 可停止本脚本启动的服务。"

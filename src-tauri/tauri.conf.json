@@ -24,9 +24,9 @@
     "security": {
       "csp": {
         "default-src": "'self' customprotocol: asset:",
-        "connect-src": "'self' ipc: http://ipc.localhost http://127.0.0.1:5000 http://127.0.0.1:5001",
+        "connect-src": "'self' ipc: http://ipc.localhost http://127.0.0.1:38510 http://127.0.0.1:38511",
         "img-src": "'self' asset: http://asset.localhost blob: data:",
-        "media-src": "'self' asset: http://asset.localhost blob: data: http://127.0.0.1:5000 http://127.0.0.1:5001",
+        "media-src": "'self' asset: http://asset.localhost blob: data: http://127.0.0.1:38510 http://127.0.0.1:38511",
         "style-src": "'self' 'unsafe-inline' https://fonts.googleapis.com",
         "font-src": "'self' data: https://fonts.gstatic.com",
         "script-src": "'self' 'wasm-unsafe-eval'",
