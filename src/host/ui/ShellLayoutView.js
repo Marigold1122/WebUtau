@@ -33,6 +33,7 @@ import {
   normalizeShellStatusText,
 } from './trackStatusText.js'
 import { WorkspaceSplitController } from './WorkspaceSplitController.js'
+import sharePanel from '../../ui/SharePanel.js'
 
 const TRACK_HEADER_FALLBACK_WIDTH = 240
 
@@ -133,6 +134,7 @@ export class ShellLayoutView {
     this.setMidiRecordingEnabled(false)
     this.refs.statusBar?.classList.add('is-empty')
     this._loadInspectorVoicebanks()
+    sharePanel.init(document.getElementById('share-tunnel-section'))
     this.workspaceSplitController.init()
     if (!this.fileMenu.isConnected) {
       document.body.appendChild(this.fileMenu)

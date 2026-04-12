@@ -61,6 +61,8 @@ src-tauri/target/
 src-tauri/binaries/
 src-tauri/.backend-build/
 src-tauri/resources/runtime/
+src-tauri/resources/cloudflared/
+.cloudflared-cache/
 
 # Environment
 .env

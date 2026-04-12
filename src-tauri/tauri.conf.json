@@ -56,7 +56,9 @@
       }
     },
     "resources": {
-      "resources/runtime/": "runtime/"
+      "resources/runtime/": "runtime/",
+      "resources/cloudflared/": "cloudflared/",
+      "../dist/": "dist/"
     }
   }
 }

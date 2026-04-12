@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process'
-import { mkdir, chmod, access, rm, writeFile, unlink } from 'node:fs/promises'
+import { mkdir, chmod, access, rm, writeFile } from 'node:fs/promises'
+import { writeFileSync } from 'node:fs'
 import { createWriteStream } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { tmpdir } from 'node:os'
 import { pipeline } from 'node:stream/promises'
 import { Readable } from 'node:stream'
 
@@ -12,28 +14,67 @@ const ROOT = join(dirname(__filename), '..')
 const CACHE_DIR = join(ROOT, 'external', 'cloudflared')
 const URL_REGEX = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/i
 const RELEASE_BASE = 'https://github.com/cloudflare/cloudflared/releases/latest/download/'
+const DEFAULT_STATUS_FILE = join(tmpdir(), 'webutau-tunnel-status.json')
 
 function parseArgs() {
   const args = process.argv.slice(2)
   let port = 3000
-  let urlFile = null
+  let statusFile = process.env.MELODY_TUNNEL_STATUS_FILE || DEFAULT_STATUS_FILE
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i]
     if (arg === '--port' || arg === '-p') {
       port = Number.parseInt(args[++i], 10)
     } else if (arg.startsWith('--port=')) {
       port = Number.parseInt(arg.slice('--port='.length), 10)
-    } else if (arg === '--url-file') {
-      urlFile = args[++i]
-    } else if (arg.startsWith('--url-file=')) {
-      urlFile = arg.slice('--url-file='.length)
+    } else if (arg === '--status-file') {
+      statusFile = args[++i]
+    } else if (arg.startsWith('--status-file=')) {
+      statusFile = arg.slice('--status-file='.length)
+    } else if (arg === '--url-file' || arg.startsWith('--url-file=')) {
+      // 兼容旧用法：忽略 url-file 参数（状态文件取代）
+      if (arg === '--url-file') i += 1
     }
   }
   if (!Number.isFinite(port) || port <= 0) {
     console.error('[tunnel] 无效的端口参数')
     process.exit(2)
   }
-  return { port, urlFile }
+  return { port, statusFile }
+}
+
+const status = {
+  available: true,
+  manualStart: false,
+  state: 'preparing',
+  url: null,
+  downloadedBytes: 0,
+  totalBytes: 0,
+  message: '正在准备',
+  error: null,
+  source: 'web',
+  updatedAt: Date.now(),
+}
+
+let statusFilePath = null
+let lastStatusWriteAt = 0
+
+function writeStatusFileNow() {
+  if (!statusFilePath) return
+  try {
+    writeFileSync(statusFilePath, JSON.stringify(status), 'utf8')
+  } catch (err) {
+    console.error(`[tunnel] 写入状态文件失败: ${err?.message || err}`)
+  }
+}
+
+function emitStatus(partial, { force = false } = {}) {
+  Object.assign(status, partial)
+  status.updatedAt = Date.now()
+  const now = Date.now()
+  if (force || status.state !== 'downloading' || now - lastStatusWriteAt >= 250) {
+    lastStatusWriteAt = now
+    writeStatusFileNow()
+  }
 }
 
 function detectAsset() {
@@ -98,9 +139,17 @@ async function downloadTo(url, dest) {
   let lastReport = 0
   const reportInterval = 1000
 
+  emitStatus({
+    state: 'downloading',
+    downloadedBytes: 0,
+    totalBytes: total,
+    message: '正在下载 cloudflared',
+  }, { force: true })
+
   const source = Readable.fromWeb(res.body)
   source.on('data', (chunk) => {
     received += chunk.length
+    emitStatus({ downloadedBytes: received, totalBytes: total })
     const now = Date.now()
     if (now - lastReport >= reportInterval) {
       lastReport = now
@@ -113,6 +162,7 @@ async function downloadTo(url, dest) {
     }
   })
   await pipeline(source, createWriteStream(dest))
+  emitStatus({ downloadedBytes: received, totalBytes: total }, { force: true })
   if (total > 0) {
     console.error(`[tunnel] 下载完成: ${formatMB(received)} / ${formatMB(total)} MB ✓`)
   } else {
@@ -145,11 +195,17 @@ async function ensureBinary() {
   console.error('[tunnel] 此过程在后台进行，不会阻塞前后端服务，可继续在本地使用')
   console.error('[tunnel] ─────────────────────────────────────────────')
 
+  emitStatus({
+    state: 'preparing',
+    message: '首次启动，正在下载 cloudflared (~20-35 MB)',
+  }, { force: true })
+
   if (asset.archive === 'tgz') {
     const tmpFile = join(CACHE_DIR, '_download.tgz')
     try {
       await downloadTo(asset.url, tmpFile)
       console.error('[tunnel] 解压中 ...')
+      emitStatus({ state: 'preparing', message: '正在解压 cloudflared' }, { force: true })
       await extractTgz(tmpFile, CACHE_DIR)
     } finally {
       await rm(tmpFile, { force: true })
@@ -184,16 +240,24 @@ function makeLineSplitter(onLine) {
 }
 
 async function main() {
-  const { port, urlFile } = parseArgs()
+  const { port, statusFile } = parseArgs()
+  statusFilePath = statusFile
 
-  if (urlFile) await unlink(urlFile).catch(() => {})
+  emitStatus({
+    state: 'preparing',
+    message: '正在准备 cloudflared',
+    available: true,
+    manualStart: false,
+    source: 'web',
+  }, { force: true })
 
   let binPath
   try {
     binPath = await ensureBinary()
   } catch (err) {
+    const errMsg = err?.message || String(err)
     console.error('[tunnel] ─────────────────────────────────────────────')
-    console.error(`[tunnel] cloudflared 准备失败: ${err?.message || err}`)
+    console.error(`[tunnel] cloudflared 准备失败: ${errMsg}`)
     console.error('[tunnel] 可能原因：')
     console.error('[tunnel]   1) 网络无法访问 GitHub（部分地区不稳定，或被代理/防火墙拦截）')
     console.error('[tunnel]   2) 磁盘写入权限不足')
@@ -201,10 +265,21 @@ async function main() {
     console.error('[tunnel] 影响范围：仅外网公开链接不可用，前后端服务不受影响，仍可在本地使用 http://127.0.0.1:<port>')
     console.error('[tunnel] 处理方式：稍后重试启动；或设置环境变量 MELODY_TUNNEL=0 跳过此步')
     console.error('[tunnel] ─────────────────────────────────────────────')
+    emitStatus({
+      state: 'error',
+      message: 'cloudflared 准备失败',
+      error: errMsg,
+    }, { force: true })
     process.exit(1)
   }
 
   console.error(`[tunnel] 启动 cloudflared quick tunnel → http://127.0.0.1:${port}`)
+  emitStatus({
+    state: 'starting',
+    message: '正在建立隧道',
+    downloadedBytes: 0,
+    totalBytes: 0,
+  }, { force: true })
 
   const child = spawn(binPath, [
     'tunnel',
@@ -212,14 +287,12 @@ async function main() {
     '--url', `http://127.0.0.1:${port}`,
   ], { stdio: ['ignore', 'pipe', 'pipe'] })
 
-  let publicUrl = null
-
   const handleLine = (line) => {
     process.stdout.write(line + '\n')
-    if (publicUrl) return
+    if (status.url) return
     const match = line.match(URL_REGEX)
     if (!match) return
-    publicUrl = match[0]
+    const publicUrl = match[0]
     console.error('')
     console.error('[tunnel] ═════════════════════════════════════════════════════')
     console.error('[tunnel]   公开访问地址 (临时, 每次启动都会变):')
@@ -227,11 +300,12 @@ async function main() {
     console.error('[tunnel]   分享给他人即可访问；关闭本进程会停止外网访问。')
     console.error('[tunnel] ═════════════════════════════════════════════════════')
     console.error('')
-    if (urlFile) {
-      writeFile(urlFile, publicUrl + '\n', 'utf8').catch((err) => {
-        console.error(`[tunnel] 写入 url-file 失败: ${err?.message || err}`)
-      })
-    }
+    emitStatus({
+      state: 'ready',
+      url: publicUrl,
+      message: '公开链接已就绪',
+      error: null,
+    }, { force: true })
   }
 
   const stdoutSplitter = makeLineSplitter(handleLine)
@@ -249,7 +323,14 @@ async function main() {
   }
   process.on('SIGINT', cleanup)
   process.on('SIGTERM', cleanup)
-  process.on('exit', cleanup)
+  process.on('exit', () => {
+    cleanup()
+    if (status.state !== 'ready' && status.state !== 'error') {
+      emitStatus({ state: 'stopped', message: '隧道已停止' }, { force: true })
+    } else if (status.state === 'ready') {
+      emitStatus({ state: 'stopped', url: null, message: '隧道已停止' }, { force: true })
+    }
+  })
 
   child.on('exit', (code, signal) => {
     if (signal) console.error(`[tunnel] cloudflared 已退出 (信号 ${signal})`)
@@ -258,7 +339,13 @@ async function main() {
   })
 
   child.on('error', (err) => {
-    console.error(`[tunnel] cloudflared 启动失败: ${err?.message || err}`)
+    const msg = err?.message || String(err)
+    console.error(`[tunnel] cloudflared 启动失败: ${msg}`)
+    emitStatus({
+      state: 'error',
+      message: 'cloudflared 启动失败',
+      error: msg,
+    }, { force: true })
     process.exit(1)
   })
 }

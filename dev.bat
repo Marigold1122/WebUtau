@@ -143,8 +143,8 @@ if errorlevel 1 (
 )
 echo [start] tunnel
 echo [hint]  a separate "WebUTAU Tunnel" window will open
-echo [hint]  it shows download progress and the public URL; first run downloads ~30 MB
-echo [hint]  backend/frontend keep running even if tunnel preparation fails
+echo [hint]  download progress and public URL also appear in the "share link" panel inside the app
+echo [hint]  first run downloads ~30 MB; backend/frontend keep running even if tunnel preparation fails
 echo [hint]  set MELODY_TUNNEL=0 to disable on next launch
 start "WebUTAU Tunnel" /d "%ROOT%" cmd /k "node ""%TUNNEL_SCRIPT%"" --port %~1"
 exit /b 0

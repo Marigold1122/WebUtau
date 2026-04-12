@@ -1,5 +1,23 @@
-﻿import { resolve } from 'node:path'
+﻿import { resolve, join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { readFile } from 'node:fs/promises'
 import { defineConfig } from 'vite'
+
+const TUNNEL_STATUS_FILE = process.env.MELODY_TUNNEL_STATUS_FILE
+  || join(tmpdir(), 'webutau-tunnel-status.json')
+
+const DISABLED_TUNNEL_STATUS = {
+  available: false,
+  manualStart: false,
+  state: 'disabled',
+  url: null,
+  downloadedBytes: 0,
+  totalBytes: 0,
+  message: '隧道服务未启动；通过 dev-mac.sh / dev.bat 启动可自动开启，或设置 MELODY_TUNNEL=1',
+  error: null,
+  source: 'web',
+  updatedAt: 0,
+}
 
 const CROSS_ORIGIN_ISOLATION_HEADERS = {
   'Cross-Origin-Opener-Policy': 'same-origin',
@@ -28,8 +46,44 @@ function audioInlinePlugin() {
   }
 }
 
+/** 暴露 cloudflare tunnel 的状态文件给前端轮询 */
+function tunnelStatusPlugin() {
+  const handler = async (req, res, next) => {
+    if (!req.url) return next()
+    const path = req.url.split('?')[0]
+    if (path !== '/__tunnel/status') return next()
+    if (req.method !== 'GET') {
+      res.statusCode = 405
+      res.end()
+      return
+    }
+    let payload
+    try {
+      const text = await readFile(TUNNEL_STATUS_FILE, 'utf8')
+      JSON.parse(text)
+      payload = text
+    } catch {
+      payload = JSON.stringify(DISABLED_TUNNEL_STATUS)
+    }
+    res.setHeader('Content-Type', 'application/json; charset=utf-8')
+    res.setHeader('Cache-Control', 'no-store')
+    res.end(payload)
+  }
+
+  return {
+    name: 'tunnel-status-endpoint',
+    configureServer(server) {
+      // 同步注册 → 在 vite 内部 middlewares（含 SPA fallback）之前匹配
+      server.middlewares.use(handler)
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(handler)
+    },
+  }
+}
+
 export default defineConfig({
-  plugins: [audioInlinePlugin()],
+  plugins: [audioInlinePlugin(), tunnelStatusPlugin()],
   server: {
     port: resolveFrontendPort(),
     strictPort: true,

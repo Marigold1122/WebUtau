@@ -366,11 +366,10 @@ start_tunnel_if_enabled() {
     return 0
   fi
 
-  local tunnel_url_file="$log_dir/tunnel-url.txt"
-  echo "[启动] Tunnel (后台运行，不阻塞前后端；下载进度与公开地址将直接显示在本终端)"
+  echo "[启动] Tunnel (后台运行，不阻塞前后端；下载进度与公开地址会同步到 UI 的「分享链接」面板，并直接显示在本终端)"
   (
     cd "$ROOT"
-    node "$TUNNEL_SCRIPT" --port "$port" --url-file "$tunnel_url_file"
+    node "$TUNNEL_SCRIPT" --port "$port"
   ) &
   PIDS+=("$!")
   return 0
