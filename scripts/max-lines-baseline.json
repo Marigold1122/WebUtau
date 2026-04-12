@@ -2,7 +2,6 @@
   "src/modules/PitchEditor.js": 1468,
   "src/host/app/createHostApp.js": 1458,
   "src/host/ui/InstrumentEditorView.js": 1233,
-  "src/main.js": 1101,
   "src/ui/PianoRollInputController.js": 697,
   "src/host/ui/ShellLayoutView.js": 681,
   "src/host/ui/tracks/buildTrackShellViews.js": 593,
