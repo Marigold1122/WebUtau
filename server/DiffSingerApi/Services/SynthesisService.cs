@@ -25,6 +25,15 @@ public class SynthesisService : IHostedService {
     private readonly ManualResetEventSlim _signal = new(false);
     private bool _initialized;
 
+    // Limits how many phrases can be running through the DiffSinger pipeline at the
+    // same time. Multiple jobs interleave naturally on this semaphore, giving each
+    // active user roughly fair access to local compute.
+    private readonly SemaphoreSlim _renderConcurrency;
+    // Limits how many jobs can be "in flight" (PrepareJob + RenderPhrases + merge)
+    // at once. Prevents unbounded memory/phonemizer queue growth when many users
+    // submit together. Jobs beyond this cap wait at the semaphore then proceed.
+    private readonly SemaphoreSlim _jobConcurrency;
+
     public SynthesisService(IConfiguration config) {
         var basePath = AppContext.BaseDirectory;
         var configuredVoicebanksPath = config.GetValue<string>("VoicebanksPath");
@@ -36,6 +45,20 @@ public class SynthesisService : IHostedService {
         Directory.CreateDirectory(_outputDir);
         Directory.CreateDirectory(_uploadsDir);
         Directory.CreateDirectory(_voicebanksDir);
+
+        int defaultRenderSlots = Math.Clamp(Environment.ProcessorCount / 2, 1, 4);
+        int renderSlots = config.GetValue<int?>("MaxConcurrentPhraseRenders") ?? defaultRenderSlots;
+        renderSlots = Math.Max(1, renderSlots);
+        _renderConcurrency = new SemaphoreSlim(renderSlots, renderSlots);
+
+        int defaultJobSlots = Math.Max(renderSlots * 2, 4);
+        int jobSlots = config.GetValue<int?>("MaxConcurrentJobs") ?? defaultJobSlots;
+        jobSlots = Math.Max(1, jobSlots);
+        _jobConcurrency = new SemaphoreSlim(jobSlots, jobSlots);
+
+        Log.Information(
+            "SynthesisService concurrency: MaxConcurrentJobs={Jobs}, MaxConcurrentPhraseRenders={Renders}",
+            jobSlots, renderSlots);
     }
 
     public string VoicebanksDir => _voicebanksDir;
@@ -108,6 +131,9 @@ public class SynthesisService : IHostedService {
             return;
         }
 
+        // Dispatcher loop: dequeue jobs and dispatch each to the thread pool so that
+        // multiple jobs can run in parallel. Concurrency is bounded by _jobConcurrency
+        // and individual phrase renders are bounded by _renderConcurrency.
         while (!_cts.IsCancellationRequested) {
             _signal.Wait(_cts.Token);
             _signal.Reset();
@@ -115,58 +141,77 @@ public class SynthesisService : IHostedService {
             while (_queue.TryDequeue(out var jobId)) {
                 if (_cts.IsCancellationRequested) break;
                 if (!_jobs.TryGetValue(jobId, out var job)) continue;
-
-                // 使用 job 自己的 CancellationTokenSource。只有 DeleteJob 会取消它。
-                var jobCts = job.JobCts;
-
-                try {
-                    // 阶段 1: 准备（音素化 + 音高预测）—— 前端弹窗阻塞
-                    job.Status = "preparing";
-                    job.Progress = "Loading MIDI...";
-                    var (allPhrases, renderer) = PrepareJob(job);
-
-                    if (jobCts.IsCancellationRequested) {
-                        job.Status = "failed";
-                        job.Error = "Cancelled.";
-                        continue;
-                    }
-
-                    // 阶段 2: 渲染短语 —— 前端可操作，支持优先级
-                    job.Status = "rendering";
-                    lock (job.RenderLock) { job.RenderedSet.Clear(); }
-                    RenderPhrases(job, allPhrases, renderer, jobCts.Token);
-
-                    if (jobCts.IsCancellationRequested) {
-                        job.Status = "failed";
-                        job.Error = "Cancelled.";
-                        continue;
-                    }
-
-                    // 阶段 3: 合并完整 WAV（用于下载）
-                    job.Progress = "Writing full WAV...";
-                    try {
-                        var fullOutputPath = Path.Combine(_outputDir, $"{job.JobId}.wav");
-                        MergePhrasesToWav(job, fullOutputPath, 44100);
-                        job.OutputPath = fullOutputPath;
-                    } catch (Exception ex) {
-                        Log.Warning("Job {JobId}: full WAV merge failed: {Error}", job.JobId, ex.Message);
-                    }
-
-                    job.Status = "completed";
-                    job.Progress = null;
-                } catch (OperationCanceledException) {
-                    job.Status = "failed";
-                    job.Error = "Cancelled.";
-                    Log.Information("Job {JobId} cancelled.", jobId);
-                } catch (Exception ex) {
-                    Log.Error(ex, "Synthesis job {JobId} failed.", jobId);
-                    job.Status = "failed";
-                    job.Error = ex.Message;
-                    job.Progress = null;
-                }
+                var capturedJob = job;
+                Task.Run(() => ProcessJob(capturedJob));
             }
 
             CleanupOldJobs();
+        }
+    }
+
+    private void ProcessJob(SynthesisJob job) {
+        var jobCts = job.JobCts;
+        bool jobSlotAcquired = false;
+        try {
+            // Wait for a job slot so we don't blow past the concurrency cap.
+            try {
+                _jobConcurrency.Wait(jobCts.Token);
+                jobSlotAcquired = true;
+            } catch (OperationCanceledException) {
+                job.Status = "failed";
+                job.Error = "Cancelled.";
+                return;
+            }
+
+            try {
+                // 阶段 1: 准备（音素化 + 音高预测）—— 前端弹窗阻塞
+                job.Status = "preparing";
+                job.Progress = "Loading MIDI...";
+                var (allPhrases, renderer) = PrepareJob(job);
+
+                if (jobCts.IsCancellationRequested) {
+                    job.Status = "failed";
+                    job.Error = "Cancelled.";
+                    return;
+                }
+
+                // 阶段 2: 渲染短语 —— 前端可操作，支持优先级
+                job.Status = "rendering";
+                lock (job.RenderLock) { job.RenderedSet.Clear(); }
+                RenderPhrases(job, allPhrases, renderer, jobCts.Token);
+
+                if (jobCts.IsCancellationRequested) {
+                    job.Status = "failed";
+                    job.Error = "Cancelled.";
+                    return;
+                }
+
+                // 阶段 3: 合并完整 WAV（用于下载）
+                job.Progress = "Writing full WAV...";
+                try {
+                    var fullOutputPath = Path.Combine(_outputDir, $"{job.JobId}.wav");
+                    MergePhrasesToWav(job, fullOutputPath, 44100);
+                    job.OutputPath = fullOutputPath;
+                } catch (Exception ex) {
+                    Log.Warning("Job {JobId}: full WAV merge failed: {Error}", job.JobId, ex.Message);
+                }
+
+                job.Status = "completed";
+                job.Progress = null;
+            } catch (OperationCanceledException) {
+                job.Status = "failed";
+                job.Error = "Cancelled.";
+                Log.Information("Job {JobId} cancelled.", job.JobId);
+            } catch (Exception ex) {
+                Log.Error(ex, "Synthesis job {JobId} failed.", job.JobId);
+                job.Status = "failed";
+                job.Error = ex.Message;
+                job.Progress = null;
+            }
+        } finally {
+            if (jobSlotAcquired) {
+                try { _jobConcurrency.Release(); } catch { /* ignore */ }
+            }
         }
     }
 
@@ -275,7 +320,10 @@ public class SynthesisService : IHostedService {
             track.RendererSettings.renderer = "DIFFSINGER";
         }
 
-        DocManager.Inst.ExecuteCmd(new LoadProjectNotification(project));
+        // NOTE: Do NOT call LoadProjectNotification here. DocManager.Inst.Project
+        // is a global singleton and mutating it from concurrent PrepareJob calls
+        // would race. After the PhonemizerRunner fix (project/track carried in the
+        // request), nothing in our code path reads DocManager.Inst.Project anyway.
 
         // Phonemization
         job.Progress = "Phonemizing...";
@@ -462,10 +510,23 @@ public class SynthesisService : IHostedService {
                 var phrase = currentPhrases[nextIndex];
                 var progress = new Progress(total);
                 RenderResult result;
+                // Throttle concurrent phrase renders across all active jobs. Multiple
+                // jobs waiting at this semaphore interleave fairly, sharing local
+                // compute instead of one job monopolising it.
+                bool renderSlotAcquired = false;
                 try {
+                    try {
+                        _renderConcurrency.Wait(phraseCts.Token);
+                        renderSlotAcquired = true;
+                    } catch (OperationCanceledException) {
+                        throw new OperationCanceledException("Phrase render cancelled before slot acquired.", phraseCts.Token);
+                    }
                     var task = renderer.Render(phrase, progress, 0, phraseCts, true);
                     result = task.GetAwaiter().GetResult();
                 } finally {
+                    if (renderSlotAcquired) {
+                        try { _renderConcurrency.Release(); } catch { /* ignore */ }
+                    }
                     job.CurrentPhraseQuietGate.Set();
                     if (job.CurrentPhraseCts == phraseCts) {
                         job.CurrentPhraseCts = null;

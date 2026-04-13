@@ -51,6 +51,9 @@ namespace OpenUtau.Core.DiffSinger {
         public DsPitch pitchPredictor = null;
         public DiffSingerSpeakerEmbedManager speakerEmbedManager = null;
         public DsVariance variancePredictor = null;
+        // Guards lazy-loading of all of the above so concurrent render requests
+        // do not accidentally create duplicate InferenceSessions.
+        private readonly object lazyInitLock = new object();
         public bool HasPitchPredictor => File.Exists(Path.Join(Location, "dspitch", "dsconfig.yaml"));
         public bool HasVariancePredictor => File.Exists(Path.Join(Location,"dsvariance", "dsconfig.yaml"));
 
@@ -162,49 +165,60 @@ namespace OpenUtau.Core.DiffSinger {
         }
 
         public InferenceSession getAcousticSession() {
-            if (acousticSession is null) {
-                var acousticPath = Path.Combine(Location, dsConfig.acoustic);
-                var acousticBytes = File.ReadAllBytes(acousticPath);
-                acousticHash = XXH64.DigestOf(acousticBytes);
-                acousticSession = Onnx.getInferenceSession(acousticBytes);
+            if (acousticSession is not null) return acousticSession;
+            lock (lazyInitLock) {
+                if (acousticSession is null) {
+                    var acousticPath = Path.Combine(Location, dsConfig.acoustic);
+                    var acousticBytes = File.ReadAllBytes(acousticPath);
+                    acousticHash = XXH64.DigestOf(acousticBytes);
+                    acousticSession = Onnx.getInferenceSession(acousticBytes);
+                }
+                return acousticSession;
             }
-            return acousticSession;
         }
 
         public DsVocoder getVocoder() {
-            if(vocoder is null) {
-                if(File.Exists(Path.Join(Location, "dsvocoder", "vocoder.yaml"))) {
-                    vocoder = new DsVocoder(Path.Join(Location, "dsvocoder"));
-                    return vocoder;
+            if (vocoder is not null) return vocoder;
+            lock (lazyInitLock) {
+                if (vocoder is null) {
+                    if (File.Exists(Path.Join(Location, "dsvocoder", "vocoder.yaml"))) {
+                        vocoder = new DsVocoder(Path.Join(Location, "dsvocoder"));
+                    } else {
+                        vocoder = new DsVocoder(dsConfig.vocoder);
+                    }
                 }
-                vocoder = new DsVocoder(dsConfig.vocoder);
+                return vocoder;
             }
-            return vocoder;
         }
 
         public DsPitch? getPitchPredictor(){
-            if(pitchPredictor is null) {
-                if(HasPitchPredictor){
+            if (pitchPredictor is not null) return pitchPredictor;
+            lock (lazyInitLock) {
+                if (pitchPredictor is null && HasPitchPredictor) {
                     pitchPredictor = new DsPitch(Path.Join(Location, "dspitch"));
                 }
+                return pitchPredictor;
             }
-            return pitchPredictor;
         }
-       
+
         public DiffSingerSpeakerEmbedManager getSpeakerEmbedManager(){
-            if(speakerEmbedManager is null) {
-                speakerEmbedManager = new DiffSingerSpeakerEmbedManager(dsConfig, Location);
+            if (speakerEmbedManager is not null) return speakerEmbedManager;
+            lock (lazyInitLock) {
+                if (speakerEmbedManager is null) {
+                    speakerEmbedManager = new DiffSingerSpeakerEmbedManager(dsConfig, Location);
+                }
+                return speakerEmbedManager;
             }
-            return speakerEmbedManager;
         }
 
         public DsVariance? getVariancePredictor(){
-            if(variancePredictor is null) {
-                if(HasVariancePredictor){
+            if (variancePredictor is not null) return variancePredictor;
+            lock (lazyInitLock) {
+                if (variancePredictor is null && HasVariancePredictor) {
                     variancePredictor = new DsVariance(Path.Join(Location, "dsvariance"));
                 }
+                return variancePredictor;
             }
-            return variancePredictor;
         }
 
         public int PhonemeTokenize(string phoneme){

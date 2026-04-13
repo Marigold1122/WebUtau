@@ -44,7 +44,11 @@ namespace OpenUtau.Core.DiffSinger {
                 {Format.Ustx.TENC, (x, y) => x + y / 20},
             };
 
-        static readonly object lockObj = new object();
+        // Historical global lock that serialized every render call. Removed so that
+        // multiple phrases can render in parallel. Thread safety still holds because:
+        //   * DiffSingerSinger.get* accessors are lock-protected (see lazyInitLock).
+        //   * InferenceSession.Run calls are wrapped in per-instance locks below.
+        //   * Per-phrase tensors/arrays are all local to this call.
 
         public USingerType SingerType => USingerType.DiffSinger;
 
@@ -86,33 +90,31 @@ namespace OpenUtau.Core.DiffSinger {
 
         public Task<RenderResult> Render(RenderPhrase phrase, Progress progress, int trackNo, CancellationTokenSource cancellation, bool isPreRender) {
             var task = Task.Run(() => {
-                lock (lockObj) {
-                    if (cancellation.IsCancellationRequested) {
-                        return new RenderResult();
-                    }
-                    var result = Layout(phrase);
-
-                    // calculate real depth
-                    var singer = (DiffSingerSinger) phrase.singer;
-                    double depth;
-                    int steps = Preferences.Default.DiffSingerSteps;
-                    if (singer.dsConfig.useVariableDepth) {
-                        double maxDepth = singer.dsConfig.maxDepth;
-                        if (maxDepth < 0) {
-                            throw new InvalidDataException("Max depth is unset or is negative.");
-                        }
-                        depth = Math.Min(Preferences.Default.DiffSingerDepth, maxDepth);
-                    } else {
-                        depth = 1.0;
-                    }
-                    string progressInfo = $"Track {trackNo + 1}: {this} depth={depth:f2} steps={steps} \"{string.Join(" ", phrase.phones.Select(p => p.phoneme))}\"";
-                    result.samples = InvokeDiffsinger(phrase, depth, steps, cancellation);
-                    if (result.samples != null) {
-                        Renderers.ApplyDynamics(phrase, result);
-                    }
-                    progress.Complete(phrase.phones.Length, progressInfo);
-                    return result;
+                if (cancellation.IsCancellationRequested) {
+                    return new RenderResult();
                 }
+                var result = Layout(phrase);
+
+                // calculate real depth
+                var singer = (DiffSingerSinger) phrase.singer;
+                double depth;
+                int steps = Preferences.Default.DiffSingerSteps;
+                if (singer.dsConfig.useVariableDepth) {
+                    double maxDepth = singer.dsConfig.maxDepth;
+                    if (maxDepth < 0) {
+                        throw new InvalidDataException("Max depth is unset or is negative.");
+                    }
+                    depth = Math.Min(Preferences.Default.DiffSingerDepth, maxDepth);
+                } else {
+                    depth = 1.0;
+                }
+                string progressInfo = $"Track {trackNo + 1}: {this} depth={depth:f2} steps={steps} \"{string.Join(" ", phrase.phones.Select(p => p.phoneme))}\"";
+                result.samples = InvokeDiffsinger(phrase, depth, steps, cancellation);
+                if (result.samples != null) {
+                    Renderers.ApplyDynamics(phrase, result);
+                }
+                progress.Complete(phrase.phones.Length, progressInfo);
+                return result;
             });
             return task;
         }
