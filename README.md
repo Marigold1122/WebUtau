@@ -4,6 +4,9 @@
 
 ![webUTAU 界面预览](docs/screenshot.png)
 
+在线体验版：[https://singer.haruyuki.cn/](https://singer.haruyuki.cn/) ，受服务器资源限制，体验版可能卡顿，且有时不可用，体验后请优先下载本地版使用。体验版中预设的声库为[泠鸢yousa](https://github.com/yousa-ling-official-production/yousa-ling-diffsinger-v1)声库，使用时请遵守其使用规定。
+
+
 ## 功能亮点
 
 ### 虚拟歌姬演唱
@@ -39,7 +42,7 @@
 
 对于无部署经验的用户，通过 [Releases](https://github.com/Marigold1122/WebUtau/releases/latest) 下载可直接安装的客户端是最好的选择。安装后，你可在指定目录中配置你的声库。
 
-Mac版的声库配置目录位于 `～/webutau/voicebanks` , Windows版位于软件安装目录下的 `runtime/voicebanks-seed` ，将解压后的声库放在这两个目录下即可，每个歌手为独立子文件夹。
+Mac版的声库配置目录位于 `～/webutau/voicebanks` , Windows版位于软件安装目录下的 `/voicebanks` ，将解压后的声库放在这两个目录下即可，每个歌手为独立子文件夹。
 
 ### 通过源码启动网页版
 
@@ -86,6 +89,14 @@ scripts\start-seedvc-service.bat
 > 无 NVIDIA GPU 可将 PyTorch 安装命令替换为 `pip install torch torchvision torchaudio`。
 
 </details>
+
+## 关于我们
+
+webUTAU 由 **凉宫春日开发组** 发布，此项目的核心开发者是 [Marigold1122](https://github.com/Marigold1122) 。
+
+**凉宫春日开发组** 是 [**凉宫春日应援团**](https://space.bilibili.com/201296348) 的附属组织，致力于创造更多让世界变得更加热闹的项目。
+
+欢迎通过 haruhifanclub@outlook.com 投递加入申请！
 
 ## 技术栈
 
