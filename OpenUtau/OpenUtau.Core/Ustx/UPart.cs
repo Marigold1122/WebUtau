@@ -140,6 +140,11 @@ namespace OpenUtau.Core.Ustx {
                     notes = groups.ToArray(),
                     phonemizer = track.Phonemizer,
                     timeAxis = project.timeAxis.Clone(),
+                    // Carry the owning project/track through the phonemizer pipeline so
+                    // responses route correctly even when the global DocManager.Inst.Project
+                    // singleton has been swapped by a concurrent job.
+                    project = project,
+                    track = track,
                 };
                 notesTimestamp = request.timestamp;
                 DocManager.Inst.PhonemizerRunner?.Push(request);

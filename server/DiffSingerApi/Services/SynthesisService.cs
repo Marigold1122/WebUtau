@@ -23,7 +23,6 @@ public class SynthesisService : IHostedService {
     private Thread? _workerThread;
     private readonly CancellationTokenSource _cts = new();
     private readonly ManualResetEventSlim _signal = new(false);
-    private volatile CancellationTokenSource? _activeJobCts;
     private bool _initialized;
 
     public SynthesisService(IConfiguration config) {
@@ -59,8 +58,8 @@ public class SynthesisService : IHostedService {
     }
 
     public string EnqueueJob(string midiPath, string singerId, string? defaultLanguageCode) {
-        // 取消当前正在执行的 job（用户打开新文件，旧 job 不再需要）
-        _activeJobCts?.Cancel();
+        // 不再自动取消其它 job —— 多用户并发下每个 job 独立运行。
+        // 前端若需要放弃旧任务，应显式调用 DELETE /api/jobs/{id}。
 
         var job = new SynthesisJob {
             JobId = Guid.NewGuid().ToString("N")[..12],
@@ -82,6 +81,10 @@ public class SynthesisService : IHostedService {
 
     public bool DeleteJob(string jobId) {
         if (!_jobs.TryRemove(jobId, out var job)) return false;
+        // 取消进行中的准备/渲染。worker 线程检测到后会把状态置为 failed，
+        // 之后文件清理才不会和写入竞争。
+        try { job.JobCts.Cancel(); } catch { /* ignore */ }
+        job.CurrentPhraseCts?.Cancel();
         CleanupJobOutputArtifacts(jobId, includeMergedOutput: true);
         TryDeleteFile(job.MidiPath, "uploaded midi cleanup", jobId);
         return true;
@@ -113,9 +116,8 @@ public class SynthesisService : IHostedService {
                 if (_cts.IsCancellationRequested) break;
                 if (!_jobs.TryGetValue(jobId, out var job)) continue;
 
-                // 为当前 job 创建取消令牌（新 job 入队时会 Cancel 它）
-                var jobCts = new CancellationTokenSource();
-                _activeJobCts = jobCts;
+                // 使用 job 自己的 CancellationTokenSource。只有 DeleteJob 会取消它。
+                var jobCts = job.JobCts;
 
                 try {
                     // 阶段 1: 准备（音素化 + 音高预测）—— 前端弹窗阻塞
@@ -125,7 +127,7 @@ public class SynthesisService : IHostedService {
 
                     if (jobCts.IsCancellationRequested) {
                         job.Status = "failed";
-                        job.Error = "Cancelled by new job.";
+                        job.Error = "Cancelled.";
                         continue;
                     }
 
@@ -136,7 +138,7 @@ public class SynthesisService : IHostedService {
 
                     if (jobCts.IsCancellationRequested) {
                         job.Status = "failed";
-                        job.Error = "Cancelled by new job.";
+                        job.Error = "Cancelled.";
                         continue;
                     }
 
@@ -154,16 +156,13 @@ public class SynthesisService : IHostedService {
                     job.Progress = null;
                 } catch (OperationCanceledException) {
                     job.Status = "failed";
-                    job.Error = "Cancelled by new job.";
+                    job.Error = "Cancelled.";
                     Log.Information("Job {JobId} cancelled.", jobId);
                 } catch (Exception ex) {
                     Log.Error(ex, "Synthesis job {JobId} failed.", jobId);
                     job.Status = "failed";
                     job.Error = ex.Message;
                     job.Progress = null;
-                } finally {
-                    if (_activeJobCts == jobCts)
-                        _activeJobCts = null;
                 }
             }
 

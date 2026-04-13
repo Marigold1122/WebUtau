@@ -17,6 +17,12 @@ namespace OpenUtau.Api {
         public Phonemizer.Note[][] notes;
         public Phonemizer phonemizer;
         public TimeAxis timeAxis;
+        // The project/track this request belongs to. Carried through the pipeline so that
+        // response routing and phonemizer setup do not depend on the global
+        // DocManager.Inst.Project singleton, which is unsafe when multiple jobs run
+        // concurrently (e.g. headless server hosts like DiffSingerApi).
+        public UProject project;
+        public UTrack track;
     }
 
     internal class PhonemizerResponse {
@@ -24,6 +30,7 @@ namespace OpenUtau.Api {
         public long timestamp;
         public int[] noteIndexes;
         public Phonemizer.Phoneme[][] phonemes;
+        public UProject project;
     }
 
     public class PhonemizerRunner : IDisposable {
@@ -73,14 +80,27 @@ namespace OpenUtau.Api {
 
         void SendResponse(PhonemizerResponse response) {
             Task.Factory.StartNew(_ => {
-                if (DocManager.Inst.Project.parts.Contains(response.part)) {
+                // Route the response to the project carried in the response itself,
+                // not DocManager.Inst.Project (which may have been overwritten by a
+                // concurrent job in headless/multi-project hosts).
+                var project = response.project;
+                if (project != null && project.parts.Contains(response.part)) {
                     response.part.SetPhonemizerResponse(response);
+                    project.Validate(new ValidateOptions {
+                        SkipTiming = true,
+                        Part = response.part,
+                        SkipPhonemizer = true,
+                    });
+                } else if (DocManager.Inst.Project != null
+                        && DocManager.Inst.Project.parts.Contains(response.part)) {
+                    // Fallback for legacy callers that didn't set response.project.
+                    response.part.SetPhonemizerResponse(response);
+                    DocManager.Inst.Project.Validate(new ValidateOptions {
+                        SkipTiming = true,
+                        Part = response.part,
+                        SkipPhonemizer = true,
+                    });
                 }
-                DocManager.Inst.Project.Validate(new ValidateOptions {
-                    SkipTiming = true,
-                    Part = response.part,
-                    SkipPhonemizer = true,
-                });
                 DocManager.Inst.ExecuteCmd(new PhonemizedNotification());
             }, null, CancellationToken.None, TaskCreationOptions.None, mainScheduler);
         }
@@ -94,12 +114,21 @@ namespace OpenUtau.Api {
                     part = request.part,
                     phonemes = new Phonemizer.Phoneme[][] { },
                     timestamp = request.timestamp,
+                    project = request.project,
                 };
             }
             phonemizer.SetSinger(request.singer);
             phonemizer.SetTiming(request.timeAxis);
+            // Prefer the project/track carried by the request. Fall back to the global
+            // singleton for legacy callers that didn't populate these fields.
+            var setupProject = request.project ?? DocManager.Inst.Project;
+            var setupTrack = request.track
+                ?? (setupProject != null && request.part.trackNo >= 0
+                    && request.part.trackNo < setupProject.tracks.Count
+                    ? setupProject.tracks[request.part.trackNo]
+                    : null);
             try {
-                phonemizer.SetUp(notes, DocManager.Inst.Project, DocManager.Inst.Project.tracks[request.part.trackNo]);
+                phonemizer.SetUp(notes, setupProject, setupTrack);
             } catch (Exception e) {
                 Log.Error(e, $"phonemizer failed to setup.");
             }
@@ -170,6 +199,7 @@ namespace OpenUtau.Api {
                 part = request.part,
                 phonemes = result.ToArray(),
                 timestamp = request.timestamp,
+                project = request.project,
             };
         }
 

@@ -66,6 +66,13 @@ public class SynthesisJob {
     /// </summary>
     [System.Text.Json.Serialization.JsonIgnore]
     public ManualResetEventSlim RenderGate { get; } = new(true); // 默认开门
+
+    /// <summary>
+    /// 本 job 的整体取消令牌。DeleteJob 会取消它以中断 PrepareJob / RenderPhrases。
+    /// 其它 job 的 EnqueueJob 绝对不应该取消它（否则就会出现多用户互相踩踏）。
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public CancellationTokenSource JobCts { get; } = new();
 }
 
 public class PhraseJob {
