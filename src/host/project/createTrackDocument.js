@@ -1,5 +1,6 @@
 import { normalizeOptionalLanguageCode } from '../../config/languageOptions.js'
 import { createPhraseDocuments } from '../../shared/phraseDocument.js'
+import { createPreviewNoteDocument } from '../../shared/noteDocument.js'
 import { normalizeAudioClip, normalizeTrackContentType, TRACK_CONTENT_TYPES } from './trackContentType.js'
 import { createTrackJobRef } from './trackJobRef.js'
 import { createTrackPlaybackState } from './trackPlaybackState.js'
@@ -42,7 +43,7 @@ export function createTrackDocument(trackSummary, sourcePhrases = [], languageCo
     durationTicks: trackSummary.durationTicks || 0,
     noteCount: trackSummary.noteCount || 0,
     phraseCount: null,
-    previewNotes: cloneValue(trackSummary.previewNotes, []),
+    previewNotes: (Array.isArray(trackSummary?.previewNotes) ? trackSummary.previewNotes : []).map((note) => createPreviewNoteDocument(note)),
     sourcePhrases: phrases,
     audioClip,
     voiceSnapshot: null,

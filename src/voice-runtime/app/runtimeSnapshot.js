@@ -1,4 +1,5 @@
 import { createPhraseDocuments } from '../../shared/phraseDocument.js'
+import { createPreviewNoteDocument } from '../../shared/noteDocument.js'
 import { createTempoDocument } from '../../shared/tempoDocument.js'
 
 function cloneValue(value, fallback) {
@@ -9,12 +10,7 @@ function cloneValue(value, fallback) {
 function buildPreviewNotesFromPhrases(phrases) {
   return (Array.isArray(phrases) ? phrases : [])
     .flatMap((phrase) => phrase.notes || [])
-    .map((note) => ({
-      time: note.time,
-      duration: note.duration,
-      midi: note.midi,
-      velocity: note.velocity,
-    }))
+    .map((note) => createPreviewNoteDocument(note))
 }
 
 function getTrackDuration(previewNotes) {

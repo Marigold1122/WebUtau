@@ -6,6 +6,7 @@ class NoteSelection {
   constructor() {
     this._selected = new Map()
     this._marqueeRect = null
+    this._bindEvents()
   }
 
   startMarquee(x, y) {
@@ -88,6 +89,77 @@ class NoteSelection {
       indices.add(phrase.index)
     }
     return [...indices]
+  }
+
+  _bindEvents() {
+    const remap = ({ phrases } = {}) => this._remapSelection(phrases)
+    eventBus.on(EVENTS.TRACK_SELECTED, remap)
+    eventBus.on(EVENTS.PHRASES_REBUILT, remap)
+    eventBus.on(EVENTS.PHRASES_EDITED, remap)
+  }
+
+  _captureSelectionSnapshot() {
+    const snapshot = []
+    for (const [note, phrase] of this._selected) {
+      const noteIndex = Array.isArray(phrase?.notes) ? phrase.notes.indexOf(note) : -1
+      snapshot.push({
+        phraseIndex: Number.isInteger(phrase?.index) ? phrase.index : null,
+        noteIndex,
+        tick: Number.isFinite(note?.tick) ? Math.round(note.tick) : null,
+        durationTicks: Number.isFinite(note?.durationTicks) ? Math.max(1, Math.round(note.durationTicks)) : null,
+        midi: Number.isFinite(note?.midi) ? Math.round(note.midi) : null,
+        time: Number.isFinite(note?.time) ? note.time : null,
+        duration: Number.isFinite(note?.duration) ? note.duration : null,
+      })
+    }
+    return snapshot
+  }
+
+  _matchesSelectionSnapshot(note, snapshot) {
+    if (!note || !snapshot) return false
+    if (snapshot.tick != null && snapshot.durationTicks != null && snapshot.midi != null) {
+      return Math.round(note?.tick || -1) === snapshot.tick
+        && Math.max(1, Math.round(note?.durationTicks || 0)) === snapshot.durationTicks
+        && Math.round(note?.midi || -1) === snapshot.midi
+    }
+    return Number.isFinite(snapshot.time)
+      && Number.isFinite(snapshot.duration)
+      && Math.abs((note?.time || 0) - snapshot.time) < 0.0001
+      && Math.abs((note?.duration || 0) - snapshot.duration) < 0.0001
+      && Math.round(note?.midi || -1) === snapshot.midi
+  }
+
+  _remapSelection(phrases = []) {
+    if (this._selected.size === 0 || !Array.isArray(phrases) || phrases.length === 0) return
+
+    const snapshot = this._captureSelectionSnapshot()
+    if (snapshot.length === 0) return
+
+    const phraseByIndex = new Map(phrases.map((phrase) => [phrase?.index, phrase]))
+    const nextSelected = new Map()
+
+    for (const entry of snapshot) {
+      const phrase = phraseByIndex.get(entry.phraseIndex)
+      if (!phrase) continue
+
+      let note = Number.isInteger(entry.noteIndex) && entry.noteIndex >= 0
+        ? phrase?.notes?.[entry.noteIndex] || null
+        : null
+      if (!this._matchesSelectionSnapshot(note, entry)) {
+        note = (Array.isArray(phrase?.notes) ? phrase.notes : [])
+          .find((candidate) => this._matchesSelectionSnapshot(candidate, entry)) || null
+      }
+      if (note) {
+        nextSelected.set(note, phrase)
+      }
+    }
+
+    const changed = nextSelected.size !== this._selected.size
+      || [...nextSelected.keys()].some((note) => !this._selected.has(note))
+    if (!changed) return
+
+    this._selected = nextSelected
+    this._emitChange()
   }
 
   _normalize(r) {

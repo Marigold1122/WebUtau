@@ -27,6 +27,8 @@ public class SynthesisJob {
     /// 原始 MIDI 文件的 PPQ（用于坐标系换算，OpenUtau 内部固定 480）
     /// </summary>
     public short MidiPPQ { get; set; } = 480;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public List<NoteParamsEdit> InitialNoteParams { get; set; } = new();
 
     // === 保留渲染上下文，供前端音高编辑后重新渲染 ===
     [System.Text.Json.Serialization.JsonIgnore]
@@ -98,6 +100,38 @@ public class PitchPoint {
 /// <summary>
 /// 前端发来的单条音符编辑指令
 /// </summary>
+public class NotePitchPointData {
+    public float X { get; set; }
+    public float Y { get; set; }
+    public string Shape { get; set; } = "io";
+}
+
+public class NotePitchData {
+    public bool SnapFirst { get; set; } = true;
+    public List<NotePitchPointData> Data { get; set; } = new();
+}
+
+public class NoteVibratoData {
+    public float Length { get; set; }
+    public float Period { get; set; } = 175;
+    public float Depth { get; set; } = 25;
+    public float In { get; set; } = 10;
+    public float Out { get; set; } = 10;
+    public float Shift { get; set; }
+    public float Drift { get; set; }
+    public float VolLink { get; set; }
+}
+
+public class NoteParamsEdit {
+    public int Position { get; set; }
+    public int Duration { get; set; }
+    public int Tone { get; set; }
+    public int? Tuning { get; set; }
+    public NotePitchData? Pitch { get; set; }
+    public NoteVibratoData? Vibrato { get; set; }
+    public bool ClearPitchDeviation { get; set; }
+}
+
 public class NoteEdit {
     /// <summary>add / remove / move / resize / lyric</summary>
     public string Action { get; set; } = string.Empty;

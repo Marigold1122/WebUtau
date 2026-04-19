@@ -16,11 +16,14 @@ function _buildPhraseDownloadUrl(jobId, phraseIndex, versionKey = null) {
 }
 
 const renderApi = {
-  async submitJob(midiFile, singerId, language) {
+  async submitJob(midiFile, singerId, language, options = {}) {
     const formData = new FormData()
     formData.append('midi', midiFile)
     formData.append('singerId', singerId)
     formData.append('defaultLanguageCode', language)
+    if (Array.isArray(options?.noteParams) && options.noteParams.length > 0) {
+      formData.append('noteParamsJson', JSON.stringify(options.noteParams))
+    }
 
     const response = await fetch(buildRenderApiUrl('/api/synthesize'), {
       method: 'POST',
@@ -67,6 +70,18 @@ const renderApi = {
     const data = await response.json().catch(() => null)
     if (!response.ok) {
       throw new Error(data?.error || `applyPitchDeviation failed: ${response.status}`)
+    }
+    return data
+  },
+  async applyNoteParams(jobId, notes) {
+    const response = await fetch(buildRenderApiUrl(`/api/jobs/${jobId}/note-params`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes }),
+    })
+    const data = await response.json().catch(() => null)
+    if (!response.ok) {
+      throw new Error(data?.error || `applyNoteParams failed: ${response.status}`)
     }
     return data
   },
