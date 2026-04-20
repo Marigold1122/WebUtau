@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using DiffSingerApi.Models;
 using OpenUtau.Core;
+using OpenUtau.Core.Ustx;
 using Serilog;
 
 namespace DiffSingerApi.Services;
@@ -16,12 +17,17 @@ public class VoicebankService {
         if (!_synthesisService.IsInitialized)
             return new List<VoicebankInfo>();
 
+        // 当前运行时支持两类音源：
+        //   - DiffSinger：有内嵌 ONNX 音高/表情预测
+        //   - Classic UTAU：依赖手画 PIT，音素化与渲染复用 OpenUtau 的 Classic 渲染管线
+        // 其它类型（Enunu / Voicevox / Vogen）需要外部服务进程，未在本项目集成，暂不暴露。
         return SingerManager.Inst.Singers.Values
-            .Where(s => s.SingerType == OpenUtau.Core.Ustx.USingerType.DiffSinger)
+            .Where(s => s.SingerType == USingerType.DiffSinger
+                     || s.SingerType == USingerType.Classic)
             .Select(s => new VoicebankInfo {
                 Id = s.Id,
                 Name = s.Name,
-                SingerType = s.SingerType.ToString()
+                SingerType = s.SingerType.ToString(),
             })
             .ToList();
     }

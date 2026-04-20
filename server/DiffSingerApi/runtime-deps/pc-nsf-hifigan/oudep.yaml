@@ -1,0 +1,4 @@
+id: 'pc-nsf-hifigan'
+version: '2025.02'
+description: 'pc-nsf-hifigan-44.1k-hop512-128bin'
+class: PcNsfHifiGanVocoder

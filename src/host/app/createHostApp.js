@@ -1179,13 +1179,13 @@ export function createHostApp() {
       view.showTrackSynthesisOverlay(
         refreshedTrack.name,
         '正在同步音符改动...',
-        { title: `${refreshedTrack.name} 正在重新预测音高`, initialPercent: 12 },
+        { title: `${refreshedTrack.name} 重新合成中`, initialPercent: 12 },
       )
       try {
         await ensureRuntimeAvailableForTrack(refreshedTrack.id)
         view.updateTrackSynthesisOverlay('正在载入人声运行时...', 0.2)
         await loadTrackIntoVoiceEditor(refreshedTrack.id, { editorMode: nextMode })
-        view.updateTrackSynthesisOverlay('正在重新预测受影响语句的音高...', 0.42)
+        view.updateTrackSynthesisOverlay('正在重新合成受影响的语句...', 0.42)
         const result = await bridge.applyNoteEdits(refreshedTrack.pendingVoiceEditState.edits)
         const affectedIndices = Array.isArray(result?.affectedIndices) ? result.affectedIndices : []
         if (result?.snapshot) {

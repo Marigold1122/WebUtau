@@ -19,4 +19,41 @@
     <PackageReference Include="Serilog.AspNetCore" Version="8.0.3" />
   </ItemGroup>
 
+  <!-- 随项目打包的 pc-nsf-hifigan vocoder 种子目录。
+       发布/运行时会原样拷贝到输出目录下的 runtime-deps/pc-nsf-hifigan/，
+       服务启动时再把它 seed 到用户的 OpenUtau Dependencies 目录。 -->
+  <ItemGroup>
+    <None Include="runtime-deps\**\*" Exclude="runtime-deps\**\.gitkeep">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
+
+  <!-- Classic UTAU 渲染链路用的 worldline 原生库（P/Invoke "worldline"）。
+       按平台挑对应文件拷到输出根目录，DllImport 会从那里加载。
+       - macOS: libworldline.dylib （Universal：x86_64 + arm64）
+       - Linux: libworldline.so    （x86_64）
+       - Windows: worldline.dll    （x86_64） -->
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+    <None Include="runtime-native\libworldline.dylib">
+      <Link>libworldline.dylib</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
+    <None Include="runtime-native\libworldline.so">
+      <Link>libworldline.so</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+    <None Include="runtime-native\worldline.dll">
+      <Link>worldline.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

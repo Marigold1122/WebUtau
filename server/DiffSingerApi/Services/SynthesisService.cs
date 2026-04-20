@@ -4,12 +4,14 @@ using System.Text;
 using DiffSingerApi.Models;
 using NAudio.Wave;
 using OpenUtau.Api;
+using OpenUtau.Classic;
 using OpenUtau.Core;
 using OpenUtau.Core.Format;
 using OpenUtau.Core.Render;
 using OpenUtau.Core.SignalChain;
 using OpenUtau.Core.Ustx;
 using OpenUtau.Core.Util;
+using OpenUtauRenderers = OpenUtau.Core.Render.Renderers;
 using Serilog;
 
 namespace DiffSingerApi.Services;
@@ -20,6 +22,7 @@ public class SynthesisService : IHostedService {
     private readonly string _outputDir;
     private readonly string _uploadsDir;
     private readonly string _voicebanksDir;
+    private readonly string _pcNsfHifiganSeedDir;
     private Thread? _workerThread;
     private readonly CancellationTokenSource _cts = new();
     private readonly ManualResetEventSlim _signal = new(false);
@@ -39,9 +42,13 @@ public class SynthesisService : IHostedService {
         var configuredVoicebanksPath = config.GetValue<string>("VoicebanksPath");
         var configuredOutputPath = config.GetValue<string>("OutputPath");
         var configuredUploadsPath = config.GetValue<string>("UploadsPath");
+        var configuredSeedPath = config.GetValue<string>("PcNsfHifiganSeedPath");
         _outputDir = ResolveRuntimePath(basePath, configuredOutputPath, "output");
         _uploadsDir = ResolveRuntimePath(basePath, configuredUploadsPath, "uploads");
         _voicebanksDir = ResolveRuntimePath(basePath, configuredVoicebanksPath, "voicebanks");
+        // pc-nsf-hifigan 随项目打包的种子目录。服务端启动时若发现用户机器上
+        // 的 OpenUtau Dependencies/pc-nsf-hifigan 缺失，会从该目录自动复制过去。
+        _pcNsfHifiganSeedDir = ResolveRuntimePath(basePath, configuredSeedPath, Path.Combine("runtime-deps", "pc-nsf-hifigan"));
         Directory.CreateDirectory(_outputDir);
         Directory.CreateDirectory(_uploadsDir);
         Directory.CreateDirectory(_voicebanksDir);
@@ -186,6 +193,28 @@ public class SynthesisService : IHostedService {
                     return;
                 }
 
+                // 检查是否所有 phrase 都失败了。如果是，把整个 job 标记为失败，
+                // 把第一个 phrase 的错误作为 job.Error 冒出来，前端就能走失败路径
+                // 关掉 overlay + 展示错误，而不是看着"completed 0/N"干等着。
+                if (job.Phrases != null && job.Phrases.Count > 0) {
+                    int completed = job.Phrases.Count(p => p.Status == "completed");
+                    int failed = job.Phrases.Count(p => p.Status == "failed");
+                    if (completed == 0 && failed > 0) {
+                        var firstErr = job.Phrases.FirstOrDefault(p => !string.IsNullOrEmpty(p.Error))?.Error
+                            ?? "unknown phrase render error";
+                        job.Status = "failed";
+                        job.Error = $"All {failed} phrase(s) failed to render. First error: {firstErr}";
+                        job.Progress = null;
+                        Log.Error("Job {JobId}: all phrases failed. Aggregated error: {Error}",
+                            job.JobId, job.Error);
+                        return;
+                    }
+                    if (failed > 0) {
+                        Log.Warning("Job {JobId}: {Failed}/{Total} phrase(s) failed but {Completed} succeeded; continuing.",
+                            job.JobId, failed, job.Phrases.Count, completed);
+                    }
+                }
+
                 // 阶段 3: 合并完整 WAV（用于下载）
                 job.Progress = "Writing full WAV...";
                 try {
@@ -223,6 +252,23 @@ public class SynthesisService : IHostedService {
         Directory.CreateDirectory(PathManager.Inst.CachePath);
         Directory.CreateDirectory(PathManager.Inst.SingersPath);
 
+        // Classic UTAU 音源走 WORLDLINE-R 渲染路径，会调用 pc-nsf-hifigan vocoder
+        // 去合成波形。保证该依赖在用户机器上到位，否则 Classic 渲染会抛异常。
+        EnsurePcNsfHifiganDependency();
+
+        // Classic UTAU 渲染链路通过 ToolsManager 解析 resampler / wavtool。
+        // OpenUtau GUI 的 App 层会在启动时 Initialize() 这个单例，
+        // 但我们只依赖 Core，必须手动初始化；否则 resamplersMap 是空的，
+        // GetResampler 的 fallback 会抛 "The given key 'worldline' was not
+        // present in the dictionary."。DiffSinger 路径不走这里，多初始化一次无害。
+        try {
+            ToolsManager.Inst.Initialize();
+            Log.Information("ToolsManager initialized: {ResamplerCount} resampler(s), {WavtoolCount} wavtool(s).",
+                ToolsManager.Inst.Resamplers.Count, ToolsManager.Inst.Wavtools.Count);
+        } catch (Exception ex) {
+            Log.Warning(ex, "ToolsManager.Initialize failed; Classic UTAU rendering may be unavailable.");
+        }
+
         DocManager.Inst.Initialize(Thread.CurrentThread, TaskScheduler.Default);
         DocManager.Inst.PostOnUIThread = action => {
             DocManager.Inst.mainThread = Thread.CurrentThread;
@@ -239,6 +285,91 @@ public class SynthesisService : IHostedService {
     public void ReloadSingers() {
         Preferences.Default.AdditionalSingerPath = _voicebanksDir;
         SingerManager.Inst.Initialize();
+    }
+
+    /// <summary>
+    /// 确保 pc-nsf-hifigan vocoder 可用。查找顺序：
+    ///   1) OpenUtau Dependencies/pc-nsf-hifigan（已安装则什么都不做）
+    ///   2) 配置/默认 seed 目录（随项目打包，推荐的主来源）
+    ///   3) 项目自带 DiffSinger 声库里的 dsvocoder（最后兜底，能让 Classic 至少跑起来）
+    /// </summary>
+    private void EnsurePcNsfHifiganDependency() {
+        const string pkgId = "pc-nsf-hifigan";
+        var depPath = Path.Combine(PathManager.Inst.DependencyPath, pkgId);
+        if (IsValidVocoderDir(depPath)) {
+            Log.Information("pc-nsf-hifigan already installed at {Path}", depPath);
+            return;
+        }
+
+        var seedDir = FindPcNsfHifiganSeed();
+        if (seedDir == null) {
+            Log.Warning("pc-nsf-hifigan vocoder not found in any seed location. "
+                + "Classic UTAU voicebanks will fail to render. "
+                + "Drop vocoder.yaml + model.onnx into {SeedDir}.", _pcNsfHifiganSeedDir);
+            return;
+        }
+
+        try {
+            Directory.CreateDirectory(PathManager.Inst.DependencyPath);
+            CopyDirectory(seedDir, depPath);
+            Log.Information("pc-nsf-hifigan seeded from {Seed} -> {Dep}", seedDir, depPath);
+        } catch (Exception ex) {
+            Log.Warning(ex, "Failed to seed pc-nsf-hifigan from {Seed} to {Dep}. "
+                + "Classic UTAU rendering may fail.", seedDir, depPath);
+        }
+    }
+
+    /// <summary>
+    /// 校验一个目录是不是有效的 pc_nsf vocoder：vocoder.yaml 存在，且其中声明的 model 文件也在。
+    /// </summary>
+    private static bool IsValidVocoderDir(string dir) {
+        if (!Directory.Exists(dir)) return false;
+        var yamlPath = Path.Combine(dir, "vocoder.yaml");
+        if (!File.Exists(yamlPath)) return false;
+        try {
+            var config = Yaml.DefaultDeserializer.Deserialize<OpenUtau.Core.DiffSinger.DsVocoderConfig>(
+                File.ReadAllText(yamlPath, Encoding.UTF8));
+            var modelPath = Path.Combine(dir, config.model);
+            return File.Exists(modelPath);
+        } catch {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 按优先级搜索种子：配置/默认 seed 目录 -> 声库内的 dsvocoder。
+    /// </summary>
+    private string? FindPcNsfHifiganSeed() {
+        if (IsValidVocoderDir(_pcNsfHifiganSeedDir)) {
+            return _pcNsfHifiganSeedDir;
+        }
+
+        // 声库内置的 dsvocoder 兜底：yousa 等 DiffSinger 声库自带 pc_nsf 兼容 vocoder，
+        // Classic 音源可以借用（音色不完全匹配但能跑）。只取第一个有效的。
+        if (Directory.Exists(_voicebanksDir)) {
+            foreach (var singerDir in Directory.EnumerateDirectories(_voicebanksDir)) {
+                var candidate = Path.Combine(singerDir, "dsvocoder");
+                if (IsValidVocoderDir(candidate)) {
+                    Log.Warning("pc-nsf-hifigan seed not found; falling back to voicebank-bundled dsvocoder at {Path}. "
+                        + "Quality may differ from the official pc-nsf-hifigan.", candidate);
+                    return candidate;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static void CopyDirectory(string source, string destination) {
+        Directory.CreateDirectory(destination);
+        foreach (var file in Directory.EnumerateFiles(source)) {
+            var target = Path.Combine(destination, Path.GetFileName(file));
+            File.Copy(file, target, overwrite: true);
+        }
+        foreach (var dir in Directory.EnumerateDirectories(source)) {
+            var target = Path.Combine(destination, Path.GetFileName(dir));
+            CopyDirectory(dir, target);
+        }
     }
 
     /// <summary>
@@ -305,11 +436,22 @@ public class SynthesisService : IHostedService {
         } catch { /* 读取失败则保持默认 480 */ }
         Log.Information("Job {JobId}: MIDI PPQ = {PPQ}, OpenUtau resolution = 480", job.JobId, job.MidiPPQ);
 
-        // Find phonemizer
-        var phonemizerFactory = DiffSingerPhonemizerSelector.Select(job.DefaultLanguageCode);
-        Log.Information("Job {JobId}: selected phonemizer {Phonemizer} for language {Language}",
+        // Find phonemizer（按音源类型区分：DiffSinger 用专属 phonemizer，Classic UTAU 用 Classic 兼容的）
+        var phonemizerFactory = DiffSingerPhonemizerSelector.SelectForSinger(singer.SingerType, job.DefaultLanguageCode);
+        // 按音源类型挑 renderer：
+        //   - DiffSinger -> DIFFSINGER（内嵌 ONNX）
+        //   - Classic UTAU -> CLASSIC（Worldline.Resample + SharpWavtool 拼接，纯原生 + C#）
+        // 故意不走 WORLDLINE-R(2)：那条路径依赖 InitAnalysisConfig / WorldAnalysis 等
+        // worldline v2 新入口；本仓库里打包的 libworldline 来自 0.1.565，早于新入口的
+        // 加入时间，调用时会抛 "Unable to find an entry point named 'InitAnalysisConfig'"。
+        var rendererName = singer.SingerType == USingerType.Classic
+            ? OpenUtauRenderers.CLASSIC
+            : OpenUtauRenderers.GetDefaultRenderer(singer.SingerType);
+        Log.Information("Job {JobId}: singer type {Type}, phonemizer {Phonemizer}, renderer {Renderer}, language {Language}",
             job.JobId,
+            singer.SingerType,
             phonemizerFactory?.type.FullName ?? "N/A",
+            rendererName,
             job.DefaultLanguageCode);
 
         // Assign singer + phonemizer + renderer
@@ -317,7 +459,7 @@ public class SynthesisService : IHostedService {
             track.Singer = singer;
             if (phonemizerFactory != null)
                 track.Phonemizer = phonemizerFactory.Create();
-            track.RendererSettings.renderer = "DIFFSINGER";
+            track.RendererSettings.renderer = rendererName;
         }
 
         // NOTE: Do NOT call LoadProjectNotification here. DocManager.Inst.Project
@@ -330,7 +472,15 @@ public class SynthesisService : IHostedService {
         project.ValidateFull();
 
         var voiceParts = project.parts.OfType<UVoicePart>().ToList();
+        Log.Information("Job {JobId}: waiting for phonemization, {Parts} voice part(s)...", job.JobId, voiceParts.Count);
         WaitForPhonemization(voiceParts, 120, 1000, "prepare");
+        Log.Information("Job {JobId}: phonemization complete.", job.JobId);
+
+        // Classic UTAU 不走音高预测路径；如果这里不更新 Progress，前端进度条会一直
+        // 卡在 "Phonemizing..." 对应的 20%（直到渲染循环开始才跳到 90%+）。给一个
+        // 中间状态让前端能正常推进；同时 DiffSinger 路径下面会立刻被 "Predicting
+        // pitch..." 覆盖，不影响它的显示。
+        job.Progress = "Building phrases...";
 
         project.Validate(new ValidateOptions { SkipPhonemizer = true });
 
@@ -340,14 +490,46 @@ public class SynthesisService : IHostedService {
             project.Validate(new ValidateOptions { SkipPhonemizer = true });
             totalPhrases = voiceParts.Sum(p => p.renderPhrases.Count);
         }
-        if (totalPhrases == 0)
-            throw new InvalidOperationException("No render phrases generated.");
+        if (totalPhrases == 0) {
+            // 收集音素信息帮助排查：phonemizer 产出的 phoneme 数 vs 全部标 Error 的数。
+            int totalPhonemes = 0;
+            int erroredPhonemes = 0;
+            var sampleErrored = new List<string>();
+            foreach (var part in voiceParts) {
+                foreach (var ph in part.phonemes) {
+                    totalPhonemes++;
+                    if (ph.Error) {
+                        erroredPhonemes++;
+                        if (sampleErrored.Count < 8 && !string.IsNullOrEmpty(ph.phoneme)) {
+                            sampleErrored.Add(ph.phoneme);
+                        }
+                    }
+                }
+            }
+            string hint;
+            if (totalPhonemes == 0) {
+                hint = "Phonemizer produced 0 phonemes. " +
+                       "Check that the lyric language matches the chosen phonemizer/voicebank.";
+            } else if (erroredPhonemes == totalPhonemes) {
+                hint = $"All {totalPhonemes} phonemes failed oto lookup. " +
+                       $"Sample failed phonemes: [{string.Join(", ", sampleErrored)}]. " +
+                       "The voicebank may not contain matching aliases for these phonemes.";
+            } else {
+                hint = $"Phonemizer produced {totalPhonemes} phonemes but none survived to render phrases.";
+            }
+            Log.Error("Job {JobId}: no render phrases. {Hint}", job.JobId, hint);
+            throw new InvalidOperationException("No render phrases generated. " + hint);
+        }
+        Log.Information("Job {JobId}: {Total} render phrase(s) built.", job.JobId, totalPhrases);
 
-        // Auto-pitch
+        // Auto-pitch（Classic UTAU 的 renderer.SupportsRenderPitch=false，会跳过这块）
         var renderer = project.tracks[0].RendererSettings.Renderer;
         if (renderer != null && renderer.SupportsRenderPitch) {
             job.Progress = "Predicting pitch...";
             ApplyAutoPitch(job, project, voiceParts, renderer);
+        } else {
+            Log.Information("Job {JobId}: renderer {Renderer} does not support pitch prediction, skipping.",
+                job.JobId, renderer?.GetType().Name ?? "null");
         }
 
         // 提取短语列表
@@ -566,8 +748,20 @@ public class SynthesisService : IHostedService {
                 Log.Information("Job {JobId}: phrase {Index} interrupted by edit, will re-pick with priority.", job.JobId, nextIndex);
                 // 不 break，继续循环——下一轮 PickNextPhrase 会按新优先级选择
             } catch (Exception ex) {
-                Log.Warning("Job {JobId}: phrase {Index} failed: {Error}",
-                    job.JobId, nextIndex, ex.Message);
+                // 用 Error 级别输出第一次失败的完整堆栈，后续同 job 内的失败回落到
+                // Warning，避免日志噪声；但 Error 级别能让用户在终端里立刻看到。
+                bool isFirstFailure;
+                lock (job.RenderLock) {
+                    isFirstFailure = job.Phrases == null
+                        || !job.Phrases.Any(p => p.Status == "failed");
+                }
+                if (isFirstFailure) {
+                    Log.Error(ex, "Job {JobId}: phrase {Index} failed (first failure).",
+                        job.JobId, nextIndex);
+                } else {
+                    Log.Warning("Job {JobId}: phrase {Index} failed: {Error}",
+                        job.JobId, nextIndex, ex.Message);
+                }
                 lock (job.RenderLock) {
                     if (nextIndex < job.Phrases!.Count) {
                         job.Phrases[nextIndex].Status = "failed";

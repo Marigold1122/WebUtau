@@ -200,6 +200,20 @@ class RenderJobManager {
         this._downloadAndCache(phraseInfo, expectedHash)
       }
 
+      // 兜底：如果后端把 job 标成 completed 但 phrase 层面全部失败（历史 backend
+      // 可能出现这种状态），按失败处理，避免前端 overlay 挂住。
+      const failedPhrases = phrases.filter((phrase) => phrase.status === 'failed')
+      if (status === 'completed' && completed === 0 && failedPhrases.length > 0) {
+        this.stopPolling()
+        const firstErr = failedPhrases.find((p) => p.error)?.error || '所有短语渲染均失败'
+        console.error(`${M} 渲染失败 | 所有 ${failedPhrases.length} 句均失败 | 首条错误=${firstErr}`)
+        for (const p of failedPhrases.slice(0, 5)) {
+          if (p.error) console.error(`${M}   第${p.index}句: ${p.error}`)
+        }
+        eventBus.emit(EVENTS.JOB_FAILED, { error: firstErr })
+        return
+      }
+
       eventBus.emit(EVENTS.JOB_PROGRESS, {
         status,
         completed,
@@ -218,6 +232,10 @@ class RenderJobManager {
       if (status === 'failed') {
         this.stopPolling()
         console.error(`${M} 渲染失败 | 错误=${data.error || '未知'}`)
+        // 把 phrase 层面的错误也打出来，方便排查
+        for (const p of failedPhrases.slice(0, 5)) {
+          if (p.error) console.error(`${M}   第${p.index}句: ${p.error}`)
+        }
         eventBus.emit(EVENTS.JOB_FAILED, { error: data.error })
       }
     } catch (error) {

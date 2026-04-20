@@ -70,7 +70,7 @@ export class TrackPredictionGateController {
     this.view.showTrackSynthesisOverlay(
       preparedTrack.name,
       buildPredictionOverlayText(8),
-      { title: `${preparedTrack.name} 正在预测音高`, initialPercent: 8 },
+      { title: `${preparedTrack.name} 准备中`, initialPercent: 8 },
     )
 
     try {
@@ -88,12 +88,12 @@ export class TrackPredictionGateController {
         this.onEditorOpened?.(preparedTrack.id)
         this.render('editor-opened-after-prediction')
         this.view.notifyRuntimeLayoutChanged()
-        this.view.setStatus(`已打开 ${preparedTrack.name} | 音高预测完成`)
+        this.view.setStatus(`已打开 ${preparedTrack.name} | 准备完成`)
         return true
       }
 
       this.render('playback-start-after-prediction')
-      this.view.setStatus(`已完成 ${preparedTrack.name} 的音高预测，开始播放`)
+      this.view.setStatus(`已完成 ${preparedTrack.name} 的准备，开始播放`)
       await this.onPlaybackRequested?.()
       return true
     } finally {
@@ -113,12 +113,14 @@ export class TrackPredictionGateController {
   }
 
   async _promptTrackLanguage(track, intent) {
+    // 注意：此弹窗出现在 singerId 确定之前，无法按音源类型个性化文案。
+    // 改用对 DiffSinger / Classic UTAU 都适用的"准备"字样。
     const result = await this.view.promptTrackLanguage(track.name, track.languageCode, {
       title: `为 ${track.name} 选择语言`,
       hint: intent === 'play'
-        ? '开始播放前，必须先确认语言并完成音高预测。'
-        : '进入人声编辑器前，必须先确认语言并完成音高预测。',
-      actionLabel: intent === 'play' ? '预测后播放' : '预测并打开',
+        ? '开始播放前，必须先确认语言并准备音轨。'
+        : '进入人声编辑器前，必须先确认语言并准备音轨。',
+      actionLabel: intent === 'play' ? '准备并播放' : '准备并打开',
       singerId: track.singerId,
     })
     if (!result) return null
