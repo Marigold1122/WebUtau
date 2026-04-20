@@ -5,7 +5,6 @@ import phraseStore from '../core/PhraseStore.js'
 import viewport from './PianoRollViewport.js'
 import phraseRenderStateStore from '../voice-runtime/app/phraseRenderStateStore.js'
 import pitchEditor from '../modules/PitchEditor.js'
-import { createVibratoDocument } from '../shared/noteDocument.js'
 
 class PianoRollNotes {
   constructor() {
@@ -56,7 +55,10 @@ class PianoRollNotes {
         this.ctx.beginPath()
         this.ctx.roundRect(x, y, width, height, PIANO_ROLL.NOTE_CORNER_RADIUS)
         this.ctx.stroke()
-        this._drawVibratoPreview(note, x, y, width, height)
+        // 注意：不在这里再画颤音白线。后端 OpenUtau RenderPhrase 已经把 note.vibrato
+        // 波形合进 pitchesBeforeDeviation（见 RenderPhrase.cs:254-268, :383），
+        // 而 _drawPitchCurve 画的就是这个数组 → 颤音已经体现在音高线上。
+        // 再单独画一条本地计算的白线只会跟真正的音高线错位，且不会跟随音高编辑更新。
         if (note.lyric && width > 14) {
           this.ctx.fillStyle = '#f8f5ee'
           this.ctx.font = '600 10px "Inter", sans-serif'
@@ -94,65 +96,6 @@ class PianoRollNotes {
       this._drawSelectedPitchSegment()
       this._drawPitchControlPoints(pitchData)
     }
-  }
-
-  _drawVibratoPreview(note, x, y, width, height) {
-    const vibrato = createVibratoDocument(note?.vibrato)
-    if (!vibrato || vibrato.length <= 0 || width < 18 || note?.duration <= 0) return
-
-    const noteDurationMs = Math.max(1, note.duration * 1000)
-    const normalizedStart = 1 - vibrato.length / 100
-    const normalizedPeriod = vibrato.period / noteDurationMs
-    if (!Number.isFinite(normalizedPeriod) || normalizedPeriod <= 0) return
-
-    const sampleCount = Math.max(12, Math.min(48, Math.round(width / 6)))
-    const tuning = Number.isFinite(note?.tuning) ? note.tuning / 100 : 0
-    const centerOffset = (vibrato.depth / 100) * (vibrato.drift / 100)
-
-    this.ctx.save()
-    this.ctx.beginPath()
-    this.ctx.roundRect(x, y, width, height, PIANO_ROLL.NOTE_CORNER_RADIUS)
-    this.ctx.clip()
-    this.ctx.strokeStyle = 'rgba(248, 245, 238, 0.82)'
-    this.ctx.lineWidth = 1.2
-    this.ctx.beginPath()
-
-    for (let index = 0; index <= sampleCount; index += 1) {
-      const nPos = normalizedStart + (index / sampleCount) * (1 - normalizedStart)
-      const fade = this._getVibratoFade(vibrato, nPos)
-      const phase = (nPos - normalizedStart) / normalizedPeriod + vibrato.shift / 100
-      const cent = (Math.sin(phase * Math.PI * 2) * vibrato.depth + centerOffset) * fade
-      const time = note.time + note.duration * nPos
-      const pitch = note.midi + tuning + cent / 100
-      const px = viewport.timeToX(time)
-      const py = viewport.pitchToY(pitch) + PIANO_ROLL.KEY_HEIGHT / 2
-      if (index === 0) {
-        this.ctx.moveTo(px, py)
-      } else {
-        this.ctx.lineTo(px, py)
-      }
-    }
-
-    this.ctx.stroke()
-    this.ctx.restore()
-  }
-
-  _getVibratoFade(vibrato, nPos) {
-    const normalizedStart = 1 - vibrato.length / 100
-    if (nPos <= normalizedStart) return 0
-
-    const fadeInLength = (vibrato.length / 100) * (vibrato.in / 100)
-    const fadeOutLength = (vibrato.length / 100) * (vibrato.out / 100)
-    const fadeInEnd = normalizedStart + fadeInLength
-    const fadeOutStart = 1 - fadeOutLength
-
-    if (fadeInLength > 0 && nPos < fadeInEnd) {
-      return (nPos - normalizedStart) / fadeInLength
-    }
-    if (fadeOutLength > 0 && nPos > fadeOutStart) {
-      return (1 - nPos) / fadeOutLength
-    }
-    return 1
   }
 
   requestDraw() {
