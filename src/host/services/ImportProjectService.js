@@ -3,6 +3,7 @@ import midiImporter from '../../modules/MidiImporter.js'
 import midiEncoder from '../../modules/MidiEncoder.js'
 import { normalizeOptionalLanguageCode } from '../../config/languageOptions.js'
 import { createPhraseDocuments } from '../../shared/phraseDocument.js'
+import { clampMidi, clampVelocity, createNoteDocument, createPreviewNoteDocument } from '../../shared/noteDocument.js'
 import { createTempoDocument } from '../../shared/tempoDocument.js'
 import { createTimelineAxis } from '../../shared/timelineAxis.js'
 import { createTrackDocument } from '../project/createTrackDocument.js'
@@ -12,16 +13,6 @@ import { isTrackPrepReady } from '../project/trackPrepState.js'
 function cloneValue(value, fallback) {
   if (value == null) return fallback
   return structuredClone(value)
-}
-
-function clampMidi(value, fallback = 60) {
-  const midi = Number.isFinite(value) ? Math.round(value) : fallback
-  return Math.max(0, Math.min(127, midi))
-}
-
-function clampVelocity(value, fallback = 0.8) {
-  if (!Number.isFinite(value)) return fallback
-  return Math.max(0, Math.min(1, value))
 }
 
 function createEncodedMidi(phrases, tempoData) {
@@ -72,13 +63,7 @@ function buildPreviewStats(previewNotes = []) {
 
 function buildSourcePhrasesFromPreviewNotes(previewNotes = []) {
   if (!Array.isArray(previewNotes) || previewNotes.length === 0) return []
-  const phraseNotes = previewNotes.map((note) => ({
-    time: note.time,
-    duration: note.duration,
-    midi: note.midi,
-    velocity: note.velocity,
-    lyric: 'a',
-  }))
+  const phraseNotes = previewNotes.map((note) => createNoteDocument(note))
   const endTime = phraseNotes.reduce((maxValue, note) => Math.max(maxValue, note.time + note.duration), 0)
   return createPhraseDocuments([{
     index: 0,
@@ -97,13 +82,19 @@ function buildRetimedSourcePhrases(sourcePhrases = [], previewNotes = []) {
     const nextNotes = (Array.isArray(phrase?.notes) ? phrase.notes : []).map((note) => {
       const previewNote = previewNotes[noteIndex] || null
       noteIndex += 1
-      return {
+      return createNoteDocument({
         ...note,
         time: previewNote?.time ?? note?.time ?? 0,
         duration: previewNote?.duration ?? note?.duration ?? 0,
+        tick: previewNote?.tick ?? note?.tick,
+        durationTicks: previewNote?.durationTicks ?? note?.durationTicks,
         midi: previewNote?.midi ?? note?.midi ?? 60,
         velocity: previewNote?.velocity ?? note?.velocity ?? 0.8,
-      }
+        lyric: previewNote?.lyric ?? note?.lyric ?? 'a',
+        tuning: previewNote?.tuning ?? note?.tuning ?? 0,
+        pitch: previewNote?.pitch ?? note?.pitch ?? null,
+        vibrato: previewNote?.vibrato ?? note?.vibrato ?? null,
+      })
     })
     const startTime = nextNotes[0]?.time ?? 0
     const endTime = nextNotes.reduce((maxValue, note) => Math.max(maxValue, note.time + note.duration), startTime)
@@ -174,14 +165,15 @@ export class ImportProjectService {
         const scaledDurationTicks = Math.max(1, Math.round((note?.durationTicks || 1) * tickScale))
         const startTime = axis.tickToTime(scaledTick)
         const endTime = axis.tickToTime(scaledTick + scaledDurationTicks)
-        return {
+        return createPreviewNoteDocument({
+          ...note,
           time: startTime,
           duration: Math.max(0.05, endTime - startTime),
           tick: scaledTick,
           durationTicks: scaledDurationTicks,
           midi: clampMidi(note?.midi),
           velocity: clampVelocity(note?.velocity),
-        }
+        })
       })
       const stats = buildPreviewStats(previewNotes)
       const sourcePhrases = buildRetimedSourcePhrases(track.sourcePhrases, previewNotes)

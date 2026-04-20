@@ -7,6 +7,7 @@ import audioEngine from './AudioEngine.js'
 import renderPriorityStrategy from './RenderPriorityStrategy.js'
 import renderScheduler from './RenderScheduler.js'
 import { EVENTS } from '../config/constants.js'
+import { createVibratoDocument } from '../shared/noteDocument.js'
 
 const MODE = {
   LYRIC: 'lyric',
@@ -40,6 +41,24 @@ const SUPPORT_POINT_MAX_EXTRA = 4
 const HOLD_BOUNDARY_RATIO = 0.18
 const HOLD_BOUNDARY_MAX_TICK = 40
 const HISTORY_LIMIT = 100
+const DEFAULT_PORTAMENTO = Object.freeze({
+  start: -40,
+  length: 80,
+})
+const DEFAULT_VIBRATO = Object.freeze({
+  length: 75,
+  period: 175,
+  depth: 25,
+  in: 10,
+  out: 10,
+  shift: 0,
+  drift: 0,
+  volLink: 0,
+})
+const DISABLED_VIBRATO = Object.freeze({
+  ...DEFAULT_VIBRATO,
+  length: 0,
+})
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value))
@@ -123,6 +142,38 @@ function dedupeSortedPoints(points) {
   return deduped
 }
 
+function createNormalizedVibrato(vibrato, { enabled = false } = {}) {
+  const base = enabled ? DEFAULT_VIBRATO : DISABLED_VIBRATO
+  return createVibratoDocument({
+    ...base,
+    ...(vibrato || {}),
+  }) || { ...base }
+}
+
+function cloneVibrato(vibrato) {
+  return vibrato ? { ...vibrato } : null
+}
+
+function buildVibratoSignature(vibrato) {
+  const normalized = createNormalizedVibrato(vibrato)
+  return [
+    normalized.length,
+    normalized.period,
+    normalized.depth,
+    normalized.in,
+    normalized.out,
+    normalized.shift,
+    normalized.drift,
+    normalized.volLink,
+  ].join(':')
+}
+
+function resolveSharedValue(values = [], transform = (value) => value) {
+  if (!Array.isArray(values) || values.length === 0) return null
+  const first = transform(values[0])
+  return values.every((value) => transform(value) === first) ? first : null
+}
+
 class PitchEditor {
   constructor() {
     this._mode = MODE.LYRIC
@@ -134,6 +185,7 @@ class PitchEditor {
     this._originalPitchData = null
     this._originalJobId = null
     this._serverNoteControls = []
+    this._serverNoteMetaByKey = new Map()
     this._noteControls = []
     this._originalNoteControls = []
     this._noteKeyByRef = new WeakMap()
@@ -154,6 +206,7 @@ class PitchEditor {
       this._originalPitchData = null
       this._originalJobId = null
       this._serverNoteControls = []
+      this._serverNoteMetaByKey = new Map()
       this._noteControls = []
       this._originalNoteControls = []
       this._noteKeyByRef = new WeakMap()
@@ -183,7 +236,9 @@ class PitchEditor {
       }
 
       this._noteControls = controls
+      this._rebuildNoteKeyMap(controls)
       this._serverNoteControls = this._cloneNoteControls(controls)
+      this._serverNoteMetaByKey = this._captureNoteMetaByKey(controls)
 
       if (jobId !== this._originalJobId || this._originalPitchData == null) {
         this._originalPitchData = this._clonePitchData(cloned)
@@ -456,6 +511,172 @@ class PitchEditor {
     return this.commitPreview(`boundary-mode:${mode}`)
   }
 
+  getTuningStateForNoteEntries(noteEntries = []) {
+    const entries = this._collectControlsForNoteEntries(noteEntries)
+    if (entries.length === 0) {
+      return {
+        count: 0,
+        value: null,
+        mixed: false,
+      }
+    }
+    const tunings = entries.map(({ note }) => (Number.isFinite(note?.tuning) ? Math.round(note.tuning) : 0))
+    const value = resolveSharedValue(tunings, (candidate) => candidate)
+    return {
+      count: entries.length,
+      value,
+      mixed: value == null,
+    }
+  }
+
+  async setTuningForNoteEntries(noteEntries = [], value) {
+    if (!Number.isFinite(value)) return null
+    return this._applyNoteMutationsForNoteEntries(noteEntries, () => ({
+      tuning: clamp(Math.round(value), -100, 100),
+    }), 'tuning')
+  }
+
+  getPortamentoStateForNoteEntries(noteEntries = []) {
+    const entries = this._collectControlsForNoteEntries(noteEntries)
+    if (entries.length === 0) {
+      return {
+        count: 0,
+        simple: false,
+        mixed: false,
+        values: {
+          start: null,
+          length: null,
+        },
+      }
+    }
+
+    const portamentos = entries.map(({ control }) => this._extractPortamentoFromControl(control))
+    const simple = portamentos.every(Boolean)
+    const starts = simple ? portamentos.map((value) => Math.round(value.start)) : []
+    const lengths = simple ? portamentos.map((value) => Math.round(value.length)) : []
+    const start = simple ? resolveSharedValue(starts, (candidate) => candidate) : null
+    const length = simple ? resolveSharedValue(lengths, (candidate) => candidate) : null
+
+    return {
+      count: entries.length,
+      simple,
+      mixed: !simple || start == null || length == null,
+      values: {
+        start,
+        length,
+      },
+    }
+  }
+
+  async setPortamentoForNoteEntries(noteEntries = [], updates = {}) {
+    const noteKeys = new Set((Array.isArray(noteEntries) ? noteEntries : [])
+      .map((entry) => this._noteKeyByRef.get(entry?.note))
+      .filter(Boolean))
+    if (noteKeys.size === 0) return null
+
+    const nextControls = this._cloneNoteControls(this._noteControls)
+    let changed = false
+
+    for (const control of nextControls) {
+      if (!noteKeys.has(control.noteKey)) continue
+      const current = this._extractPortamentoFromControl(control) || DEFAULT_PORTAMENTO
+      const nextStart = Number.isFinite(updates?.start)
+        ? clamp(Math.round(updates.start), -200, 200)
+        : current.start
+      const nextLength = Number.isFinite(updates?.length)
+        ? clamp(Math.round(updates.length), 2, 320)
+        : current.length
+      if (!this._applyPortamentoToControl(control, {
+        start: nextStart,
+        length: nextLength,
+      })) {
+        continue
+      }
+      changed = true
+    }
+
+    if (!changed) return null
+    this.previewControlState(nextControls, {})
+    return this.commitPreview('portamento')
+  }
+
+  getVibratoStateForNoteEntries(noteEntries = []) {
+    const entries = this._collectControlsForNoteEntries(noteEntries)
+    if (entries.length === 0) {
+      return {
+        count: 0,
+        enabled: false,
+        mixed: false,
+        values: {
+          length: null,
+          period: null,
+          depth: null,
+          in: null,
+          out: null,
+          shift: null,
+          drift: null,
+          volLink: null,
+        },
+      }
+    }
+
+    const vibratos = entries.map(({ note }) => createNormalizedVibrato(note?.vibrato))
+    const enabledStates = vibratos.map((vibrato) => vibrato.length > 0)
+    const enabled = enabledStates.every(Boolean)
+      ? true
+      : enabledStates.every((value) => !value)
+        ? false
+        : null
+    const resolveSharedValue = (field) => vibratos.every((vibrato) => vibrato[field] === vibratos[0][field])
+      ? vibratos[0][field]
+      : null
+
+    return {
+      count: entries.length,
+      enabled,
+      mixed: enabled === null,
+      values: {
+        length: resolveSharedValue('length'),
+        period: resolveSharedValue('period'),
+        depth: resolveSharedValue('depth'),
+        in: resolveSharedValue('in'),
+        out: resolveSharedValue('out'),
+        shift: resolveSharedValue('shift'),
+        drift: resolveSharedValue('drift'),
+        volLink: resolveSharedValue('volLink'),
+      },
+    }
+  }
+
+  async setVibratoEnabledForNoteEntries(noteEntries = [], enabled) {
+    return this._applyNoteMutationsForNoteEntries(noteEntries, ({ note }) => {
+      const nextVibrato = createNormalizedVibrato(note?.vibrato, { enabled })
+      nextVibrato.length = enabled
+        ? Math.max(1, nextVibrato.length || DEFAULT_VIBRATO.length)
+        : 0
+      return { vibrato: nextVibrato }
+    }, enabled ? 'vibrato-enable' : 'vibrato-disable')
+  }
+
+  async setVibratoValueForNoteEntries(noteEntries = [], field, value) {
+    if (!['length', 'period', 'depth', 'in', 'out', 'shift', 'drift', 'volLink'].includes(field) || !Number.isFinite(value)) return null
+    return this.setVibratoValuesForNoteEntries(noteEntries, { [field]: value })
+  }
+
+  async setVibratoValuesForNoteEntries(noteEntries = [], values = {}) {
+    const fields = Object.entries(values || {})
+      .filter(([field, value]) => ['length', 'period', 'depth', 'in', 'out', 'shift', 'drift', 'volLink'].includes(field) && Number.isFinite(value))
+    if (fields.length === 0) return null
+    return this._applyNoteMutationsForNoteEntries(noteEntries, ({ note }) => {
+      const current = createNormalizedVibrato(note?.vibrato, { enabled: true })
+      fields.forEach(([field, value]) => {
+        current[field] = Number(value)
+      })
+      const nextVibrato = createNormalizedVibrato(current, { enabled: current.length > 0 })
+      return { vibrato: nextVibrato }
+    }, `vibrato-${fields.map(([field]) => field).join('-')}`)
+  }
+
   async addPointForNote(noteRef, timeSeconds, midiPitch) {
     const noteKey = this._noteKeyByRef.get(noteRef)
     if (!noteKey) return null
@@ -589,18 +810,14 @@ class PitchEditor {
     if (!jobId) throw new Error('No active job')
 
     const currentPitchData = this._serverPitchData || phraseStore.getPitchData()
-    const compiledDeviation = this._mergeCompiledDeviationWithServer(this._noteControls, currentPitchData)
-    const payload = compiledDeviation.map((point) => ({ tick: point.tick, cent: point.cent }))
+    const notePayload = this._buildNoteParamPayloadFromControls(this._noteControls)
     const historySnapshot = this._captureCommittedSnapshot()
-    if (
-      historySnapshot?.pitchData
-      && this._buildPitchPayloadSignature(payload) !== this._buildPitchSnapshotSignature(historySnapshot.pitchData)
-    ) {
+    if (historySnapshot?.noteControls && this._buildControlSignature(this._noteControls) !== this._buildControlSignature(historySnapshot.noteControls)) {
       this._pushUndoSnapshot(historySnapshot)
     }
-    return this._applyPitchDeviationPayload({
+    return this._applyNoteParamsPayload({
       jobId,
-      payload,
+      notePayload,
       controls: this._cloneNoteControls(this._noteControls),
       selectedPointId: this._selectedPointId,
       selectedSegmentId: this._selectedSegmentId,
@@ -724,7 +941,29 @@ class PitchEditor {
     return { noteEntries, noteKeyByRef }
   }
 
+  _rebuildNoteKeyMap(controls = this._noteControls) {
+    const noteKeyByRef = new WeakMap()
+    const keyByLocation = new Map((Array.isArray(controls) ? controls : []).map((control) => [
+      `${control.phraseIndex}:${control.noteIndex}`,
+      control.noteKey,
+    ]))
+    for (const phrase of phraseStore.getPhrases()) {
+      const notes = Array.isArray(phrase?.notes) ? phrase.notes : []
+      for (let noteIndex = 0; noteIndex < notes.length; noteIndex += 1) {
+        const noteKey = keyByLocation.get(`${phrase.index}:${noteIndex}`)
+        if (noteKey) {
+          noteKeyByRef.set(notes[noteIndex], noteKey)
+        }
+      }
+    }
+    this._noteKeyByRef = noteKeyByRef
+  }
+
   _buildControlForNote(noteEntry, pitchData) {
+    const notePitch = noteEntry?.noteRef?.pitch
+    if (Array.isArray(notePitch?.data) && notePitch.data.length > 0) {
+      return this._buildControlFromNotePitch(noteEntry, pitchData)
+    }
     const rawPoints = this._sampleNotePitch(noteEntry, pitchData)
     const simplified = this._simplifyNoteSamples(rawPoints)
     const startReferenceCent = clamp(Math.round(rawPoints[0]?.cent || 0), PITCH_CENT_MIN, PITCH_CENT_MAX)
@@ -758,6 +997,61 @@ class PitchEditor {
         shape: point.shape || DEFAULT_SHAPE,
         kind: index === 0 ? 'anchor-start' : index === simplified.length - 1 ? 'anchor-end' : 'normal',
         source: index === 0 || index === simplified.length - 1 ? 'structural' : 'auto',
+      })),
+    }
+  }
+
+  _buildControlFromNotePitch(noteEntry, pitchData) {
+    const rawPoints = this._sampleNotePitch(noteEntry, pitchData)
+    const note = noteEntry?.noteRef || {}
+    const tuning = Number.isFinite(note?.tuning) ? Math.round(note.tuning) : 0
+    const noteDurationMs = Math.max(1, (noteEntry.endTime - noteEntry.startTime) * 1000)
+    const mappedPoints = dedupeSortedPoints((Array.isArray(note?.pitch?.data) ? note.pitch.data : [])
+      .map((point) => ({
+        tick: Math.round((Number(point?.x || 0) / noteDurationMs) * noteEntry.durationTick),
+        cent: clamp(Math.round(tuning + (Number(point?.y || 0) * 10)), PITCH_CENT_MIN, PITCH_CENT_MAX),
+        shape: point?.shape || DEFAULT_SHAPE,
+      }))
+      .sort((left, right) => left.tick - right.tick))
+      .map((point) => ({
+        relTick: point.tick,
+        cent: point.cent,
+        shape: point.shape || DEFAULT_SHAPE,
+      }))
+    const points = mappedPoints.length > 0
+      ? this._normalizeExplicitPitchPoints(mappedPoints, noteEntry.durationTick)
+      : this._simplifyNoteSamples(rawPoints)
+    const startReferenceCent = clamp(Math.round(points[0]?.cent ?? rawPoints[0]?.cent ?? 0), PITCH_CENT_MIN, PITCH_CENT_MAX)
+    const endReferenceCent = clamp(
+      Math.round(points[points.length - 1]?.cent ?? rawPoints[rawPoints.length - 1]?.cent ?? startReferenceCent),
+      PITCH_CENT_MIN,
+      PITCH_CENT_MAX,
+    )
+
+    return {
+      noteKey: noteEntry.noteKey,
+      phraseIndex: noteEntry.phraseIndex,
+      noteIndex: noteEntry.noteIndex,
+      startTick: noteEntry.startTick,
+      endTick: noteEntry.endTick,
+      durationTick: noteEntry.durationTick,
+      midi: noteEntry.midi,
+      startTime: noteEntry.startTime,
+      endTime: noteEntry.endTime,
+      boundaryMode: note?.pitch?.snapFirst === false ? PITCH_BOUNDARY_MODES.GLIDE : PITCH_BOUNDARY_MODES.SNAP,
+      startReferenceCent,
+      endReferenceCent,
+      referenceSamples: rawPoints.map((point) => ({
+        relTick: point.relTick,
+        cent: clamp(Math.round(point.cent), PITCH_CENT_MIN, PITCH_CENT_MAX),
+      })),
+      points: points.map((point, index) => ({
+        id: this._createPointId(),
+        relTick: point.relTick,
+        cent: clamp(Math.round(point.cent), PITCH_CENT_MIN, PITCH_CENT_MAX),
+        shape: point.shape || DEFAULT_SHAPE,
+        kind: index === 0 ? 'anchor-start' : index === points.length - 1 ? 'anchor-end' : 'normal',
+        source: index === 0 || index === points.length - 1 ? 'structural' : 'user',
       })),
     }
   }
@@ -867,6 +1161,30 @@ class PitchEditor {
       return [
         { ...points[0], relTick: 0 },
         { ...points[0], relTick: Math.max(5, points[0].relTick), shape: DEFAULT_SHAPE },
+      ]
+    }
+    return points.map((point, index) => ({
+      ...point,
+      shape: index === points.length - 1 ? DEFAULT_SHAPE : point.shape || DEFAULT_SHAPE,
+    }))
+  }
+
+  _normalizeExplicitPitchPoints(points, durationTick) {
+    if (!Array.isArray(points) || points.length === 0) {
+      return this._ensureBoundaryPoints([])
+    }
+    if (points.length === 1) {
+      const single = {
+        ...points[0],
+        shape: points[0].shape || DEFAULT_SHAPE,
+      }
+      return [
+        single,
+        {
+          ...single,
+          relTick: single.relTick + Math.max(1, Math.round((durationTick || 1) / 8)),
+          shape: DEFAULT_SHAPE,
+        },
       ]
     }
     return points.map((point, index) => ({
@@ -1226,6 +1544,285 @@ class PitchEditor {
       .map(([tick, cent]) => ({ tick, cent }))
   }
 
+  _resolveNoteForControl(control, phrases = phraseStore.getPhrases()) {
+    const phrase = (Array.isArray(phrases) ? phrases : []).find((entry) => entry?.index === control?.phraseIndex)
+    if (!phrase) return null
+    const notes = Array.isArray(phrase?.notes) ? phrase.notes : []
+    return notes[control.noteIndex] || null
+  }
+
+  _buildNoteMetaForControl(control, phrases = phraseStore.getPhrases()) {
+    const note = this._resolveNoteForControl(control, phrases)
+    return {
+      tuning: Number.isFinite(note?.tuning) ? Math.round(note.tuning) : 0,
+      vibrato: createNormalizedVibrato(note?.vibrato),
+    }
+  }
+
+  _captureNoteMetaByKey(controls = this._noteControls, phrases = phraseStore.getPhrases()) {
+    return new Map((Array.isArray(controls) ? controls : []).map((control) => [
+      control.noteKey,
+      this._buildNoteMetaForControl(control, phrases),
+    ]))
+  }
+
+  _extractPortamentoFromControl(control) {
+    if (!control || !Array.isArray(control.points) || control.points.length !== 2) return null
+    const [startPoint, endPoint] = control.points
+    if (!startPoint || !endPoint) return null
+    const start = this._convertRelTickToMilliseconds(control, startPoint.relTick)
+    const end = this._convertRelTickToMilliseconds(control, endPoint.relTick)
+    return {
+      start: Math.round(start),
+      length: Math.max(2, Math.round(end - start)),
+    }
+  }
+
+  _applyPortamentoToControl(control, portamento = {}) {
+    if (!control) return false
+    const start = Number.isFinite(portamento?.start)
+      ? clamp(Math.round(portamento.start), -200, 200)
+      : DEFAULT_PORTAMENTO.start
+    const length = Number.isFinite(portamento?.length)
+      ? clamp(Math.round(portamento.length), 2, 320)
+      : DEFAULT_PORTAMENTO.length
+    const startRelTick = this._convertMillisecondsToRelTick(control, start)
+    let endRelTick = this._convertMillisecondsToRelTick(control, start + length)
+    if (endRelTick <= startRelTick) endRelTick = startRelTick + 1
+
+    const nextPoints = [
+      {
+        id: this._createPointId(),
+        relTick: startRelTick,
+        cent: 0,
+        shape: DEFAULT_SHAPE,
+        kind: 'anchor-start',
+        source: 'structural',
+      },
+      {
+        id: this._createPointId(),
+        relTick: endRelTick,
+        cent: 0,
+        shape: DEFAULT_SHAPE,
+        kind: 'anchor-end',
+        source: 'structural',
+      },
+    ]
+
+    const unchanged = Array.isArray(control.points)
+      && control.points.length === 2
+      && control.points.every((point, index) => (
+        point?.relTick === nextPoints[index].relTick
+          && (point?.cent || 0) === nextPoints[index].cent
+          && (point?.shape || DEFAULT_SHAPE) === nextPoints[index].shape
+          && point?.kind === nextPoints[index].kind
+      ))
+      && (control.boundaryMode || DEFAULT_BOUNDARY_MODE) === PITCH_BOUNDARY_MODES.SNAP
+      && (control.startReferenceCent || 0) === 0
+      && (control.endReferenceCent || 0) === 0
+    if (unchanged) return false
+
+    control.points = nextPoints
+    control.boundaryMode = PITCH_BOUNDARY_MODES.SNAP
+    control.startReferenceCent = 0
+    control.endReferenceCent = 0
+    return true
+  }
+
+  _collectControlsForNoteEntries(noteEntries = []) {
+    const noteKeys = new Set((Array.isArray(noteEntries) ? noteEntries : [])
+      .map((entry) => this._noteKeyByRef.get(entry?.note))
+      .filter(Boolean))
+    if (noteKeys.size === 0) return []
+
+    return this._noteControls
+      .filter((control) => noteKeys.has(control.noteKey))
+      .map((control) => ({
+        control,
+        note: this._resolveNoteForControl(control),
+      }))
+      .filter((entry) => Boolean(entry.note))
+  }
+
+  _captureNoteParamState(note) {
+    return {
+      tuning: Number.isFinite(note?.tuning) ? Math.round(note.tuning) : 0,
+      vibrato: createNormalizedVibrato(note?.vibrato),
+    }
+  }
+
+  _restoreNoteParamState(note, snapshot) {
+    if (!note || !snapshot) return
+    note.tuning = snapshot.tuning
+    note.vibrato = cloneVibrato(snapshot.vibrato)
+  }
+
+  async _applyNoteMutationsForNoteEntries(noteEntries = [], updateNote, reason) {
+    const selected = this._collectControlsForNoteEntries(noteEntries)
+    if (selected.length === 0 || typeof updateNote !== 'function') return null
+
+    const rollback = []
+    const changedKeys = new Set()
+
+    for (const entry of selected) {
+      const snapshot = this._captureNoteParamState(entry.note)
+      const nextState = updateNote(entry) || {}
+      let changed = false
+
+      if (Object.prototype.hasOwnProperty.call(nextState, 'tuning')) {
+        const nextTuning = Number.isFinite(nextState.tuning) ? Math.round(nextState.tuning) : 0
+        if ((entry.note?.tuning || 0) !== nextTuning) {
+          entry.note.tuning = nextTuning
+          changed = true
+        }
+      }
+
+      if (Object.prototype.hasOwnProperty.call(nextState, 'vibrato')) {
+        const nextVibrato = createNormalizedVibrato(nextState.vibrato, {
+          enabled: Number(nextState?.vibrato?.length) > 0,
+        })
+        if (buildVibratoSignature(entry.note?.vibrato) !== buildVibratoSignature(nextVibrato)) {
+          entry.note.vibrato = nextVibrato
+          changed = true
+        }
+      }
+
+      if (changed) {
+        rollback.push({
+          note: entry.note,
+          snapshot,
+        })
+        changedKeys.add(entry.control.noteKey)
+      }
+    }
+
+    if (changedKeys.size === 0) return null
+
+    eventBus.emit(EVENTS.PHRASES_EDITED, { phrases: phraseStore.getPhrases() })
+
+    const jobId = phraseStore.getJobId()
+    if (!jobId) throw new Error('No active job')
+
+    const notePayload = this._buildNoteParamPayloadFromControls(this._noteControls, { targetNoteKeys: changedKeys })
+    if (notePayload.length === 0) {
+      rollback.forEach(({ note, snapshot }) => this._restoreNoteParamState(note, snapshot))
+      eventBus.emit(EVENTS.PHRASES_EDITED, { phrases: phraseStore.getPhrases() })
+      return null
+    }
+
+    try {
+      return await this._applyNoteParamsPayload({
+        jobId,
+        notePayload,
+        controls: this._cloneNoteControls(this._noteControls),
+        selectedPointId: this._selectedPointId,
+        selectedSegmentId: this._selectedSegmentId,
+        currentPitchData: this._serverPitchData || phraseStore.getPitchData(),
+        reason,
+      })
+    } catch (error) {
+      rollback.forEach(({ note, snapshot }) => this._restoreNoteParamState(note, snapshot))
+      eventBus.emit(EVENTS.PHRASES_EDITED, { phrases: phraseStore.getPhrases() })
+      throw error
+    }
+  }
+
+  _buildControlSignature(controls = []) {
+    return (Array.isArray(controls) ? controls : [])
+      .map((control) => {
+        const points = control.points
+          .map((point) => `${point.relTick}:${point.cent}:${point.shape}:${point.kind}`)
+          .join(',')
+        return [
+          control.noteKey,
+          control.boundaryMode || DEFAULT_BOUNDARY_MODE,
+          control.startReferenceCent || 0,
+          control.endReferenceCent || 0,
+          points,
+        ].join('|')
+      })
+      .join('||')
+  }
+
+  _convertRelTickToMilliseconds(control, relTick) {
+    const durationMs = Math.max(1, (control.endTime - control.startTime) * 1000)
+    if (!Number.isFinite(control.durationTick) || control.durationTick <= 0) return 0
+    return (Number(relTick || 0) / control.durationTick) * durationMs
+  }
+
+  _convertMillisecondsToRelTick(control, milliseconds) {
+    const durationMs = Math.max(1, (control.endTime - control.startTime) * 1000)
+    if (!Number.isFinite(control.durationTick) || control.durationTick <= 0) return 0
+    return Math.round((Number(milliseconds || 0) / durationMs) * control.durationTick)
+  }
+
+  _buildPitchPayloadForControl(control, note, controls = this._noteControls) {
+    const tuning = Number.isFinite(note?.tuning) ? Math.round(note.tuning) : 0
+    const points = this._getRenderableControlPoints(control, controls)
+      .map((point, index, list) => ({
+        x: this._convertRelTickToMilliseconds(control, point.relTick),
+        y: (clamp(Math.round(point.cent), PITCH_CENT_MIN, PITCH_CENT_MAX) - tuning) / 10,
+        shape: index === list.length - 1 ? DEFAULT_SHAPE : (point.shape || DEFAULT_SHAPE),
+      }))
+    return {
+      snapFirst: (control.boundaryMode || DEFAULT_BOUNDARY_MODE) === PITCH_BOUNDARY_MODES.SNAP,
+      data: points,
+    }
+  }
+
+  _buildNoteParamPayloadFromControls(controls = this._noteControls, options = {}) {
+    const baselineMap = new Map(this._serverNoteControls.map((control) => [control.noteKey, control]))
+    const targetNoteKeys = options?.targetNoteKeys instanceof Set
+      ? options.targetNoteKeys
+      : Array.isArray(options?.targetNoteKeys)
+        ? new Set(options.targetNoteKeys)
+        : null
+    const payload = []
+    for (const control of controls) {
+      if (targetNoteKeys && !targetNoteKeys.has(control.noteKey)) continue
+      const note = this._resolveNoteForControl(control)
+      if (!note) continue
+
+      const baselineMeta = this._serverNoteMetaByKey.get(control.noteKey) || {
+        tuning: 0,
+        vibrato: createNormalizedVibrato(null),
+      }
+      const tuning = Number.isFinite(note?.tuning) ? Math.round(note.tuning) : 0
+      const vibrato = createNormalizedVibrato(note?.vibrato)
+      const pitchChanged = !areControlsEquivalent(control, baselineMap.get(control.noteKey))
+      const tuningChanged = tuning !== baselineMeta.tuning
+      const vibratoChanged = buildVibratoSignature(vibrato) !== buildVibratoSignature(baselineMeta.vibrato)
+      if (!pitchChanged && !tuningChanged && !vibratoChanged) continue
+
+      const entry = {
+        position: Number.isFinite(note?.tick) ? Math.max(0, Math.round(note.tick)) : control.startTick,
+        duration: Number.isFinite(note?.durationTicks) ? Math.max(1, Math.round(note.durationTicks)) : Math.max(1, control.durationTick),
+        tone: Number.isFinite(note?.midi) ? Math.round(note.midi) : control.midi,
+        clearPitchDeviation: pitchChanged,
+      }
+      if (pitchChanged || tuningChanged) {
+        entry.tuning = tuning
+      }
+      if (pitchChanged) {
+        entry.pitch = this._buildPitchPayloadForControl(control, note, controls)
+      }
+      if (vibratoChanged) {
+        entry.vibrato = {
+          length: vibrato.length,
+          period: vibrato.period,
+          depth: vibrato.depth,
+          in: vibrato.in,
+          out: vibrato.out,
+          shift: vibrato.shift,
+          drift: vibrato.drift,
+          volLink: vibrato.volLink,
+        }
+      }
+      payload.push(entry)
+    }
+    return payload
+  }
+
   _pushCompiledPoint(points, tick, cent) {
     const roundedTick = Math.round(tick)
     const nextPoint = {
@@ -1276,6 +1873,29 @@ class PitchEditor {
       const phraseStartTick = this.getTickForTime(phrase.startTime)
       const phraseEndTick = this.getTickForTime(phrase.endTime)
       if (changedRanges.some((range) => range.endTick >= phraseStartTick && range.startTick <= phraseEndTick)) {
+        affected.push(phrase.index)
+      }
+    }
+    return [...new Set(affected)].sort((left, right) => left - right)
+  }
+
+  _getAffectedPhraseIndicesForNotePayload(notePayload = []) {
+    if (!Array.isArray(notePayload) || notePayload.length === 0) return []
+    const ranges = notePayload
+      .map((note) => ({
+        startTick: Number.isFinite(note?.position) ? Math.max(0, Math.round(note.position)) : 0,
+        endTick: Number.isFinite(note?.position) && Number.isFinite(note?.duration)
+          ? Math.max(0, Math.round(note.position + note.duration))
+          : 0,
+      }))
+      .filter((range) => range.endTick >= range.startTick)
+    if (ranges.length === 0) return []
+
+    const affected = []
+    for (const phrase of phraseStore.getPhrases()) {
+      const phraseStartTick = this.getTickForTime(phrase.startTime)
+      const phraseEndTick = this.getTickForTime(phrase.endTime)
+      if (ranges.some((range) => range.endTick >= phraseStartTick && range.startTick <= phraseEndTick)) {
         affected.push(phrase.index)
       }
     }
@@ -1417,9 +2037,9 @@ class PitchEditor {
       selectedPointId: snapshot.selectedPointId || null,
       selectedSegmentId: snapshot.selectedSegmentId || null,
     }
-    const nextSignature = this._buildPitchSnapshotSignature(normalized.pitchData)
+    const nextSignature = this._buildControlSignature(normalized.noteControls)
     const lastSignature = this._undoStack.length > 0
-      ? this._buildPitchSnapshotSignature(this._undoStack[this._undoStack.length - 1].pitchData)
+      ? this._buildControlSignature(this._undoStack[this._undoStack.length - 1].noteControls)
       : null
     if (nextSignature === lastSignature) return
     this._undoStack.push(normalized)
@@ -1460,21 +2080,123 @@ class PitchEditor {
   async _applyHistorySnapshot(snapshot, { reason = 'history-restore' } = {}) {
     const pitchData = this._clonePitchData(snapshot?.pitchData)
     if (!pitchData) return false
-    const payload = (pitchData.pitchDeviation?.xs || []).map((tick, index) => ({
-      tick,
-      cent: pitchData.pitchDeviation?.ys?.[index] || 0,
-    }))
     const jobId = phraseStore.getJobId()
     if (!jobId) throw new Error('No active job')
-    return this._applyPitchDeviationPayload({
+    return this._applyNoteParamsPayload({
       jobId,
-      payload,
+      notePayload: this._buildNoteParamPayloadFromControls(snapshot.noteControls),
       controls: this._cloneNoteControls(snapshot.noteControls),
       selectedPointId: snapshot.selectedPointId || null,
       selectedSegmentId: snapshot.selectedSegmentId || null,
       currentPitchData: this._serverPitchData || phraseStore.getPitchData(),
       reason,
     })
+  }
+
+  _applyNoteParamsPayload({
+    jobId,
+    notePayload,
+    controls,
+    selectedPointId = null,
+    selectedSegmentId = null,
+    currentPitchData,
+    reason = 'pitch-edit',
+  }) {
+    const requestVersion = this._previewVersion
+    const optimisticAffected = this._getAffectedPhraseIndices(controls)
+    const optimisticFromPayload = this._getAffectedPhraseIndicesForNotePayload(notePayload)
+    const affectedSeed = [...new Set([...optimisticAffected, ...optimisticFromPayload])]
+    if (affectedSeed.length === 0 || !Array.isArray(notePayload) || notePayload.length === 0) {
+      return Promise.resolve({
+        affectedIndices: [],
+        phrases: [],
+        pitchCurve: currentPitchData?.pitchCurve || [],
+        pitchDeviation: currentPitchData?.pitchDeviation || { xs: [], ys: [] },
+        midiPpq: currentPitchData?.midiPpq || 480,
+        pitchStepTick: currentPitchData?.pitchStepTick || 5,
+      })
+    }
+
+    const previewPitchData = this._buildPitchDataFromControls(controls)
+    const renderVersion = this._buildRenderVersion((previewPitchData?.pitchDeviation?.xs || []).map((tick, index) => ({
+      tick,
+      cent: previewPitchData?.pitchDeviation?.ys?.[index] || 0,
+    })))
+    const phraseHashSnapshot = phraseStore.capturePhraseHashes(affectedSeed)
+    const cacheSnapshot = renderCache.capture(affectedSeed)
+    const interactiveEditToken = renderJobManager.beginInteractiveEdit(affectedSeed)
+
+    phraseStore.applyPitchRenderVersion(affectedSeed, renderVersion)
+    renderCache.clearIndices(affectedSeed)
+    affectedSeed.forEach((phraseIndex) => {
+      eventBus.emit(EVENTS.CACHE_INVALIDATED, { phraseIndex })
+    })
+    audioEngine.cancelPhrases(affectedSeed)
+    renderJobManager.incrementGeneration()
+    this._prioritizeDirtyPhrase()
+
+    const task = this._commitQueue.then(async () => {
+      const response = await renderApi.applyNoteParams(jobId, notePayload)
+      const nextPitchData = this._extractPitchDataFromResponse(response)
+      const nextPhrases = Array.isArray(response?.phrases) ? response.phrases : []
+      const serverAffected = Array.isArray(response?.affectedIndices)
+        ? response.affectedIndices.filter((index) => Number.isInteger(index) && index >= 0)
+        : []
+      const affectedIndices = [...new Set(serverAffected.length > 0 ? serverAffected : optimisticAffected)]
+
+      this._serverPitchData = this._clonePitchData(nextPitchData)
+
+      if (requestVersion === this._previewVersion) {
+        const restoredIndices = affectedSeed.filter((index) => !affectedIndices.includes(index))
+        if (restoredIndices.length > 0) {
+          phraseStore.restorePhraseHashes(phraseHashSnapshot.filter((entry) => restoredIndices.includes(entry.phraseIndex)))
+          renderCache.restore(cacheSnapshot.filter((entry) => restoredIndices.includes(entry.phraseIndex)))
+        }
+
+        if (nextPhrases.length > 0) {
+          phraseStore.rebuildFromEdit(nextPhrases)
+        }
+        if (affectedIndices.length > 0) {
+          phraseStore.applyPitchRenderVersion(affectedIndices, renderVersion)
+        }
+      }
+
+      if (affectedIndices.length > 0) {
+        renderJobManager.restartForEdit(phraseStore.getPhrases().length)
+        this._prioritizeDirtyPhrase()
+      }
+      renderJobManager.endInteractiveEdit(interactiveEditToken)
+
+      if (requestVersion === this._previewVersion) {
+        this._noteControls = this._cloneNoteControls(controls)
+        this._selectedPointId = selectedPointId
+        this._selectedSegmentId = selectedSegmentId
+        this._serverNoteControls = this._cloneNoteControls(controls)
+        this._serverNoteMetaByKey = this._captureNoteMetaByKey(controls)
+        this._pendingServerSync = {
+          jobId,
+          controls: this._cloneNoteControls(controls),
+          selectedPointId,
+          selectedSegmentId,
+        }
+        phraseStore.setPitchData(nextPitchData)
+      }
+
+      return response
+    }).catch((error) => {
+      if (requestVersion === this._previewVersion) {
+        phraseStore.restorePhraseHashes(phraseHashSnapshot)
+        renderCache.restore(cacheSnapshot)
+      }
+      renderJobManager.endInteractiveEdit(interactiveEditToken)
+      if (requestVersion === this._previewVersion && this._serverPitchData) {
+        phraseStore.setPitchData(this._serverPitchData)
+      }
+      throw error
+    })
+
+    this._commitQueue = task.catch(() => {})
+    return task
   }
 
   _applyPitchDeviationPayload({

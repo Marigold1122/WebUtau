@@ -19,8 +19,8 @@ class RenderJobManager {
     this._pollInFlight = false
   }
 
-  async submitMidi(midiFile, singerId, language) {
-    const { jobId } = await renderApi.submitJob(midiFile, singerId, language)
+  async submitMidi(midiFile, singerId, language, options = {}) {
+    const { jobId } = await renderApi.submitJob(midiFile, singerId, language, options)
     phraseStore.setJobId(jobId)
     this._jobStatus = null
     this._knownCompleted.clear()

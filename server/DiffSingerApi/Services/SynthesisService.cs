@@ -87,7 +87,7 @@ public class SynthesisService : IHostedService {
         return Task.CompletedTask;
     }
 
-    public string EnqueueJob(string midiPath, string singerId, string? defaultLanguageCode) {
+    public string EnqueueJob(string midiPath, string singerId, string? defaultLanguageCode, List<NoteParamsEdit>? initialNoteParams = null) {
         // 不再自动取消其它 job —— 多用户并发下每个 job 独立运行。
         // 前端若需要放弃旧任务，应显式调用 DELETE /api/jobs/{id}。
 
@@ -96,7 +96,8 @@ public class SynthesisService : IHostedService {
             MidiPath = midiPath,
             SingerId = singerId,
             DefaultLanguageCode = DiffSingerPhonemizerSelector.NormalizeLanguageCode(defaultLanguageCode),
-            Status = "queued"
+            Status = "queued",
+            InitialNoteParams = initialNoteParams ?? new List<NoteParamsEdit>(),
         };
         _jobs[job.JobId] = job;
         _queue.Enqueue(job.JobId);
@@ -462,6 +463,12 @@ public class SynthesisService : IHostedService {
             track.RendererSettings.renderer = rendererName;
         }
 
+        var voiceParts = project.parts.OfType<UVoicePart>().ToList();
+        if (job.InitialNoteParams.Count > 0) {
+            var initialNoteParams = ConvertNoteParamsToInternalPpq(job.InitialNoteParams, job.MidiPPQ);
+            ApplyNoteParamsToNotes(job, voiceParts, initialNoteParams, clearPitchDeviation: false);
+        }
+
         // NOTE: Do NOT call LoadProjectNotification here. DocManager.Inst.Project
         // is a global singleton and mutating it from concurrent PrepareJob calls
         // would race. After the PhonemizerRunner fix (project/track carried in the
@@ -471,7 +478,6 @@ public class SynthesisService : IHostedService {
         job.Progress = "Phonemizing...";
         project.ValidateFull();
 
-        var voiceParts = project.parts.OfType<UVoicePart>().ToList();
         Log.Information("Job {JobId}: waiting for phonemization, {Parts} voice part(s)...", job.JobId, voiceParts.Count);
         WaitForPhonemization(voiceParts, 120, 1000, "prepare");
         Log.Information("Job {JobId}: phonemization complete.", job.JobId);
@@ -1024,6 +1030,187 @@ public class SynthesisService : IHostedService {
         pitchCurve.ys = localPoints.Values.ToList();
     }
 
+    private static string BuildNoteKey(int position, int duration, int tone) {
+        return $"{position}:{duration}:{tone}";
+    }
+
+    private static PitchPointShape ParsePitchPointShape(string? shape) {
+        return Enum.TryParse<PitchPointShape>(shape ?? string.Empty, true, out var parsed)
+            ? parsed
+            : PitchPointShape.io;
+    }
+
+    private static UPitch BuildPitchData(NotePitchData pitchData, UPitch? current = null) {
+        var pitch = current?.Clone() ?? new UPitch();
+        pitch.snapFirst = pitchData.SnapFirst;
+        pitch.data = (pitchData.Data ?? new List<NotePitchPointData>())
+            .OrderBy(point => point.X)
+            .Select(point => new OpenUtau.Core.Ustx.PitchPoint(point.X, point.Y, ParsePitchPointShape(point.Shape)))
+            .ToList();
+        return pitch;
+    }
+
+    private static UVibrato BuildVibratoData(NoteVibratoData vibratoData, UVibrato? current = null) {
+        var vibrato = current?.Clone() ?? new UVibrato();
+        vibrato.length = vibratoData.Length;
+        vibrato.period = vibratoData.Period;
+        vibrato.depth = vibratoData.Depth;
+        vibrato.@in = vibratoData.In;
+        vibrato.@out = vibratoData.Out;
+        vibrato.shift = vibratoData.Shift;
+        vibrato.drift = vibratoData.Drift;
+        vibrato.volLink = vibratoData.VolLink;
+        return vibrato;
+    }
+
+    private static List<NoteParamsEdit> ConvertNoteParamsToInternalPpq(IEnumerable<NoteParamsEdit> updates, int sourcePpq) {
+        int safePpq = sourcePpq > 0 ? sourcePpq : 480;
+        if (safePpq == 480) {
+            return updates.Select(update => new NoteParamsEdit {
+                Position = update.Position,
+                Duration = Math.Max(1, update.Duration),
+                Tone = update.Tone,
+                Tuning = update.Tuning,
+                Pitch = update.Pitch,
+                Vibrato = update.Vibrato,
+                ClearPitchDeviation = update.ClearPitchDeviation,
+            }).ToList();
+        }
+        return updates.Select(update => new NoteParamsEdit {
+            Position = update.Position * 480 / safePpq,
+            Duration = Math.Max(1, update.Duration * 480 / safePpq),
+            Tone = update.Tone,
+            Tuning = update.Tuning,
+            Pitch = update.Pitch,
+            Vibrato = update.Vibrato,
+            ClearPitchDeviation = update.ClearPitchDeviation,
+        }).ToList();
+    }
+
+    private static List<(int StartTick, int EndTick)> MergeTickRanges(IEnumerable<(int StartTick, int EndTick)> ranges) {
+        var sorted = ranges
+            .Select(range => (
+                StartTick: Math.Max(0, Math.Min(range.StartTick, range.EndTick)),
+                EndTick: Math.Max(range.StartTick, range.EndTick)))
+            .OrderBy(range => range.StartTick)
+            .ToList();
+        if (sorted.Count == 0) {
+            return new List<(int StartTick, int EndTick)>();
+        }
+        var merged = new List<(int StartTick, int EndTick)> { sorted[0] };
+        for (int index = 1; index < sorted.Count; index++) {
+            var current = sorted[index];
+            var previous = merged[^1];
+            if (current.StartTick <= previous.EndTick) {
+                merged[^1] = (previous.StartTick, Math.Max(previous.EndTick, current.EndTick));
+            } else {
+                merged.Add(current);
+            }
+        }
+        return merged;
+    }
+
+    private static Dictionary<string, Queue<(UVoicePart Part, UNote Note)>> BuildNoteTargetLookup(List<UVoicePart> voiceParts) {
+        var lookup = new Dictionary<string, Queue<(UVoicePart Part, UNote Note)>>();
+        foreach (var part in voiceParts) {
+            foreach (var note in part.notes.OrderBy(note => note.position).ThenBy(note => note.tone)) {
+                var key = BuildNoteKey(part.position + note.position, note.duration, note.tone);
+                if (!lookup.TryGetValue(key, out var queue)) {
+                    queue = new Queue<(UVoicePart Part, UNote Note)>();
+                    lookup[key] = queue;
+                }
+                queue.Enqueue((part, note));
+            }
+        }
+        return lookup;
+    }
+
+    private void ClearPitchDeviationRanges(UProject project, List<UVoicePart> voiceParts, IEnumerable<(int StartTick, int EndTick)> ranges) {
+        if (!project.expressions.TryGetValue(Ustx.PITD, out var pitdDescriptor)) {
+            return;
+        }
+        var mergedRanges = MergeTickRanges(ranges);
+        if (mergedRanges.Count == 0) {
+            return;
+        }
+
+        foreach (var part in voiceParts) {
+            var pitchCurve = part.curves.FirstOrDefault(curve => curve.abbr == Ustx.PITD);
+            if (pitchCurve == null) {
+                continue;
+            }
+
+            var nextPoints = pitchCurve.xs
+                .Zip(pitchCurve.ys, (x, y) => new KeyValuePair<int, int>(part.position + x, y))
+                .Where(point => !mergedRanges.Any(range => point.Key >= range.StartTick && point.Key <= range.EndTick))
+                .ToList();
+
+            foreach (var range in mergedRanges) {
+                int start = Math.Max(part.position, range.StartTick);
+                int end = Math.Min(part.End, range.EndTick);
+                if (end < start) {
+                    continue;
+                }
+                nextPoints.Add(new KeyValuePair<int, int>(start, 0));
+                nextPoints.Add(new KeyValuePair<int, int>(end, 0));
+            }
+
+            ReplacePitchDeviationCurve(part, pitchCurve, pitdDescriptor, ToSortedPitchPoints(nextPoints));
+        }
+    }
+
+    private List<(int StartTick, int EndTick)> ApplyNoteParamsToNotes(
+        SynthesisJob job,
+        List<UVoicePart> voiceParts,
+        List<NoteParamsEdit> updates,
+        bool clearPitchDeviation) {
+        var lookup = BuildNoteTargetLookup(voiceParts);
+        var affectedRanges = new List<(int StartTick, int EndTick)>();
+        bool shouldClearPitchDeviation = false;
+
+        foreach (var update in updates) {
+            var key = BuildNoteKey(update.Position, update.Duration, update.Tone);
+            if (!lookup.TryGetValue(key, out var queue) || queue.Count == 0) {
+                Log.Warning("Job {JobId}: note-params target not found for {Key}", job.JobId, key);
+                continue;
+            }
+
+            var (part, note) = queue.Dequeue();
+            if (update.Tuning.HasValue) {
+                note.tuning = update.Tuning.Value;
+            }
+            if (update.Pitch != null) {
+                note.pitch = BuildPitchData(update.Pitch, note.pitch);
+            }
+            if (update.Vibrato != null) {
+                note.vibrato = BuildVibratoData(update.Vibrato, note.vibrato);
+            }
+
+            affectedRanges.Add((part.position + note.position, part.position + note.End));
+            shouldClearPitchDeviation |= clearPitchDeviation || update.ClearPitchDeviation;
+        }
+
+        var mergedRanges = MergeTickRanges(affectedRanges);
+        if (shouldClearPitchDeviation && job.Project != null && mergedRanges.Count > 0) {
+            ClearPitchDeviationRanges(job.Project, voiceParts, mergedRanges);
+        }
+        return mergedRanges;
+    }
+
+    private static List<int> CollectAffectedPhraseIndices(List<RenderPhrase> allPhrases, IEnumerable<(int StartTick, int EndTick)> ranges) {
+        var mergedRanges = MergeTickRanges(ranges);
+        var affected = new List<int>();
+        for (int index = 0; index < allPhrases.Count; index++) {
+            var phrase = allPhrases[index];
+            int phraseStart = phrase.position - phrase.leading;
+            int phraseEnd = phrase.position + phrase.duration;
+            if (mergedRanges.Any(range => phraseEnd >= range.StartTick && phraseStart <= range.EndTick)) {
+                affected.Add(index);
+            }
+        }
+        return affected;
+    }
+
     /// <summary>
     /// 接收前端的 PITD 偏移数据，写入 UCurve，重新 Validate 并重渲染受影响的短语
     /// </summary>
@@ -1151,6 +1338,90 @@ public class SynthesisService : IHostedService {
     /// 增量编辑音符：直接操作内存中的 UProject，重新音素化，
     /// 只对受影响的短语重新音高预测+渲染。PITD 曲线保留不动。
     /// </summary>
+    public void ApplyNoteParamsAndRerender(SynthesisJob job, List<NoteParamsEdit> updates, out List<int> affectedOut) {
+        affectedOut = new List<int>();
+        if (job.Project == null || job.VoiceParts == null || job.AllPhrases == null || job.Renderer == null) {
+            Log.Warning("Job {JobId}: no render context for note-params re-render.", job.JobId);
+            return;
+        }
+
+        string previousStatus = job.Status;
+        string? previousProgress = job.Progress;
+        bool phaseStateResolved = false;
+        EnterInteractivePreparationPhase(job, "Waiting for current render to yield...");
+        PauseRenderLoopAndAwaitQuietPhrase(job, "Waiting for current render to yield...");
+
+        try {
+            var project = job.Project;
+            var voiceParts = job.VoiceParts;
+            var affectedRanges = ApplyNoteParamsToNotes(job, voiceParts, updates, clearPitchDeviation: false);
+            if (affectedRanges.Count == 0) {
+                Log.Information("Job {JobId}: note-params edit is a no-op, skipped.", job.JobId);
+                return;
+            }
+
+            job.Progress = "Refreshing note parameters...";
+            project.Validate(new ValidateOptions { SkipPhonemizer = true });
+
+            var allPhrases = CollectAllPhrases(voiceParts);
+            job.AllPhrases = allPhrases;
+            ExtractPitchCurve(job, voiceParts);
+
+            var affectedIndices = CollectAffectedPhraseIndices(allPhrases, affectedRanges);
+            if (affectedIndices.Count == 0) {
+                RestoreInteractivePhaseState(job, previousStatus, previousProgress);
+                phaseStateResolved = true;
+                return;
+            }
+            affectedOut = affectedIndices;
+
+            lock (job.RenderLock) {
+                foreach (int idx in affectedIndices) {
+                    job.RenderedSet.Remove(idx);
+                    if (job.Phrases != null && idx < job.Phrases.Count) {
+                        job.Phrases[idx].Status = "pending";
+                        job.Phrases[idx].Error = null;
+                    }
+                }
+                job.PriorityPhraseIndex = affectedIndices.Min();
+            }
+
+            bool shouldStartDetachedRender = previousStatus == "completed" || previousStatus == "ready";
+            TransitionToBackgroundRenderPhase(job, affectedIndices.Count, allPhrases.Count);
+            phaseStateResolved = true;
+
+            if (shouldStartDetachedRender) {
+                var currentPhrases = allPhrases;
+                var currentRenderer = job.Renderer;
+                Task.Run(() => {
+                    try {
+                        RenderPhrases(job, currentPhrases, currentRenderer!);
+                        lock (job.RenderLock) {
+                            if (job.RenderedSet.Count >= (job.AllPhrases?.Count ?? 0)) {
+                                try {
+                                    var fullOutputPath = Path.Combine(_outputDir, $"{job.JobId}.wav");
+                                    MergePhrasesToWav(job, fullOutputPath, 44100);
+                                    job.OutputPath = fullOutputPath;
+                                } catch (Exception ex) {
+                                    Log.Warning("Job {JobId}: full WAV merge after note-params edit failed: {Error}", job.JobId, ex.Message);
+                                }
+                                job.Status = "completed";
+                                job.Progress = null;
+                            }
+                        }
+                    } catch (Exception ex) {
+                        Log.Error(ex, "Job {JobId}: re-render after note-params edit failed.", job.JobId);
+                    }
+                });
+            }
+        } finally {
+            if (!phaseStateResolved) {
+                RestoreInteractivePhaseState(job, previousStatus, previousProgress);
+            }
+            job.RenderGate.Set();
+        }
+    }
+
     public void ApplyNoteEdits(SynthesisJob job, List<NoteEdit> edits, out List<int> affectedOut) {
         affectedOut = new List<int>();
         try {

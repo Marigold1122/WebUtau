@@ -1,6 +1,8 @@
 using DiffSingerApi.Models;
 using DiffSingerApi.Services;
 using Microsoft.AspNetCore.Mvc;
+using OpenUtau.Core.Ustx;
+using System.Text.Json;
 
 namespace DiffSingerApi.Controllers;
 
@@ -19,7 +21,7 @@ public class SynthesisController : ControllerBase {
         int pitchStepTick = Math.Max(1, (int)Math.Round(5.0 * ppq / 480.0));
 
         return new PitchResponse {
-            PitchCurve = (job.PitchCurve ?? new List<PitchPoint>())
+            PitchCurve = (job.PitchCurve ?? new List<DiffSingerApi.Models.PitchPoint>())
                 .Select(p => new PitchCurvePointResponse {
                     Tick = p.Tick * ppq / 480,
                     Pitch = p.Pitch,
@@ -35,16 +37,137 @@ public class SynthesisController : ControllerBase {
         };
     }
 
+    private static string BuildNoteKey(int position, int duration, int tone) {
+        return $"{position}:{duration}:{tone}";
+    }
+
+    private static NotePitchData? BuildPitchDataResponse(UPitch? pitch) {
+        if (pitch == null) {
+            return null;
+        }
+        return new NotePitchData {
+            SnapFirst = pitch.snapFirst,
+            Data = pitch.data.Select(point => new NotePitchPointData {
+                X = point.X,
+                Y = point.Y,
+                Shape = point.shape.ToString(),
+            }).ToList(),
+        };
+    }
+
+    private static NoteVibratoData? BuildVibratoDataResponse(UVibrato? vibrato) {
+        if (vibrato == null) {
+            return null;
+        }
+        return new NoteVibratoData {
+            Length = vibrato.length,
+            Period = vibrato.period,
+            Depth = vibrato.depth,
+            In = vibrato.@in,
+            Out = vibrato.@out,
+            Shift = vibrato.shift,
+            Drift = vibrato.drift,
+            VolLink = vibrato.volLink,
+        };
+    }
+
+    private static Dictionary<string, Queue<UNote>> BuildNoteLookup(SynthesisJob job) {
+        var lookup = new Dictionary<string, Queue<UNote>>();
+        foreach (var part in job.VoiceParts ?? new List<UVoicePart>()) {
+            foreach (var note in part.notes.OrderBy(note => note.position).ThenBy(note => note.tone)) {
+                var key = BuildNoteKey(part.position + note.position, note.duration, note.tone);
+                if (!lookup.TryGetValue(key, out var queue)) {
+                    queue = new Queue<UNote>();
+                    lookup[key] = queue;
+                }
+                queue.Enqueue(note);
+            }
+        }
+        return lookup;
+    }
+
+    private List<PhraseDetailResponse> BuildPhraseResponses(SynthesisJob job) {
+        var noteLookup = BuildNoteLookup(job);
+        var responses = new List<PhraseDetailResponse>();
+        lock (job.RenderLock) {
+            if (job.Phrases == null) {
+                return responses;
+            }
+            for (int index = 0; index < job.Phrases.Count; index++) {
+                var phraseJob = job.Phrases[index];
+                var renderPhrase = (job.AllPhrases != null && index < job.AllPhrases.Count)
+                    ? job.AllPhrases[index]
+                    : null;
+                var notes = new List<NoteDetailResponse>();
+                if (renderPhrase?.notes != null) {
+                    foreach (var renderNote in renderPhrase.notes) {
+                        int absolutePosition = renderPhrase.position + renderNote.position;
+                        var key = BuildNoteKey(absolutePosition, renderNote.duration, renderNote.tone);
+                        UNote? sourceNote = null;
+                        if (noteLookup.TryGetValue(key, out var queue) && queue.Count > 0) {
+                            sourceNote = queue.Dequeue();
+                        }
+                        notes.Add(new NoteDetailResponse {
+                            Position = absolutePosition,
+                            Duration = renderNote.duration,
+                            Tone = renderNote.tone,
+                            Lyric = sourceNote?.lyric ?? renderNote.lyric,
+                            Tuning = sourceNote?.tuning ?? renderNote.tuning,
+                            Pitch = BuildPitchDataResponse(sourceNote?.pitch),
+                            Vibrato = BuildVibratoDataResponse(sourceNote?.vibrato),
+                        });
+                    }
+                }
+                responses.Add(new PhraseDetailResponse {
+                    Index = phraseJob.Index,
+                    StartMs = phraseJob.StartMs,
+                    DurationMs = phraseJob.DurationMs,
+                    Status = phraseJob.Status,
+                    Notes = notes,
+                });
+            }
+        }
+        return responses;
+    }
+
+    private NoteParamsResponse BuildNoteParamsResponse(SynthesisJob job, List<int>? affectedIndices = null) {
+        var pitchResponse = BuildPitchResponse(job, affectedIndices);
+        return new NoteParamsResponse {
+            Ok = true,
+            AffectedIndices = pitchResponse.AffectedIndices,
+            PitchCurve = pitchResponse.PitchCurve,
+            PitchDeviation = pitchResponse.PitchDeviation,
+            MidiPpq = pitchResponse.MidiPpq,
+            PitchStepTick = pitchResponse.PitchStepTick,
+            Phrases = BuildPhraseResponses(job),
+        };
+    }
+
     [HttpPost("synthesize")]
     [RequestSizeLimit(50_000_000)] // 50MB max for MIDI
-    public IActionResult Synthesize([FromForm] IFormFile midi, [FromForm] string singerId, [FromForm] string? defaultLanguageCode) {
+    public IActionResult Synthesize(
+        [FromForm] IFormFile midi,
+        [FromForm] string singerId,
+        [FromForm] string? defaultLanguageCode,
+        [FromForm] string? noteParamsJson) {
         if (midi == null || midi.Length == 0)
             return BadRequest(new { error = "No MIDI file provided." });
         if (string.IsNullOrWhiteSpace(singerId))
             return BadRequest(new { error = "No singerId provided." });
 
+        List<NoteParamsEdit> initialNoteParams = new();
+        if (!string.IsNullOrWhiteSpace(noteParamsJson)) {
+            try {
+                initialNoteParams = JsonSerializer.Deserialize<List<NoteParamsEdit>>(noteParamsJson, new JsonSerializerOptions {
+                    PropertyNameCaseInsensitive = true,
+                }) ?? new List<NoteParamsEdit>();
+            } catch (JsonException ex) {
+                return BadRequest(new { error = $"Invalid noteParamsJson: {ex.Message}" });
+            }
+        }
+
         var midiPath = _synthesis.SaveUploadedMidi(midi.OpenReadStream(), midi.FileName);
-        var jobId = _synthesis.EnqueueJob(midiPath, singerId, defaultLanguageCode);
+        var jobId = _synthesis.EnqueueJob(midiPath, singerId, defaultLanguageCode, initialNoteParams);
 
         return Ok(new { jobId });
     }
@@ -168,8 +291,44 @@ public class SynthesisController : ControllerBase {
         return Ok(BuildPitchResponse(job, affectedIndices));
     }
 
+    [HttpPost("jobs/{id}/note-params")]
+    public IActionResult ApplyNoteParams(string id, [FromBody] NoteParamsRequest req) {
+        var job = _synthesis.GetJob(id);
+        if (job == null)
+            return NotFound(new { error = "Job not found." });
+        if (req.Notes == null || req.Notes.Count == 0)
+            return BadRequest(new { error = "No note params provided." });
+        if (job.Project == null)
+            return BadRequest(new { error = "Job has no render context (not yet prepared)." });
+
+        int ppq = job.MidiPPQ > 0 ? job.MidiPPQ : (short)480;
+        var updates = req.Notes.Select(note => new NoteParamsEdit {
+            Position = note.Position * 480 / ppq,
+            Duration = Math.Max(1, note.Duration * 480 / ppq),
+            Tone = note.Tone,
+            Tuning = note.Tuning,
+            Pitch = note.Pitch,
+            Vibrato = note.Vibrato,
+            ClearPitchDeviation = note.ClearPitchDeviation,
+        }).ToList();
+
+        try {
+            _synthesis.ApplyNoteParamsAndRerender(job, updates, out var affectedIndices);
+            return Ok(BuildNoteParamsResponse(job, affectedIndices));
+        } catch (Exception ex) {
+            return StatusCode(500, new {
+                error = $"note-params internal error: {ex.Message}",
+                stackTrace = ex.StackTrace,
+            });
+        }
+    }
+
     public class PitchDeviationRequest {
         public List<PitchDeviationPoint>? Deviation { get; set; }
+    }
+
+    public class NoteParamsRequest {
+        public List<NoteParamsEdit>? Notes { get; set; }
     }
 
     public class PitchDeviationPoint {
@@ -183,6 +342,29 @@ public class SynthesisController : ControllerBase {
         public int MidiPpq { get; set; }
         public int PitchStepTick { get; set; }
         public List<int>? AffectedIndices { get; set; }
+    }
+
+    public class NoteParamsResponse : PitchResponse {
+        public bool Ok { get; set; }
+        public List<PhraseDetailResponse> Phrases { get; set; } = new();
+    }
+
+    public class PhraseDetailResponse {
+        public int Index { get; set; }
+        public double StartMs { get; set; }
+        public double DurationMs { get; set; }
+        public string Status { get; set; } = "pending";
+        public List<NoteDetailResponse> Notes { get; set; } = new();
+    }
+
+    public class NoteDetailResponse {
+        public int Position { get; set; }
+        public int Duration { get; set; }
+        public int Tone { get; set; }
+        public string Lyric { get; set; } = "a";
+        public int Tuning { get; set; }
+        public NotePitchData? Pitch { get; set; }
+        public NoteVibratoData? Vibrato { get; set; }
     }
 
     public class PitchCurvePointResponse {
@@ -212,30 +394,7 @@ public class SynthesisController : ControllerBase {
             _synthesis.ApplyNoteEdits(job, req.Edits, out var affectedIndices);
 
             // 返回更新后的 phrases 列表（短语划分可能变了）+ note-level 结构
-            object result;
-            lock (job.RenderLock) {
-                result = new {
-                    ok = true,
-                    affectedIndices,
-                    phrases = job.Phrases?.Select((p, i) => {
-                        var rp = (job.AllPhrases != null && i < job.AllPhrases.Count)
-                            ? job.AllPhrases[i] : null;
-                        return new {
-                            index = p.Index,
-                            startMs = p.StartMs,
-                            durationMs = p.DurationMs,
-                            status = p.Status,
-                            notes = rp?.notes?.Select(n => new {
-                                position = n.position + rp.position,
-                                duration = n.duration,
-                                tone = n.tone,
-                                lyric = n.lyric
-                            })
-                        };
-                    }).ToList()
-                };
-            }
-            return Ok(result);
+            return Ok(BuildNoteParamsResponse(job, affectedIndices));
         } catch (EditNotesRejectedException ex) {
             return Conflict(new { error = ex.Message });
         } catch (Exception ex) {

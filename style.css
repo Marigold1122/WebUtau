@@ -1652,6 +1652,82 @@ body {
   gap: 4px;
 }
 
+.editor-runtime-tools .piano-roll-editor-property-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 1px solid rgba(163, 160, 151, 0.52);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.editor-runtime-tools .piano-roll-editor-property-title {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(43, 40, 37, 0.08);
+  color: var(--text-main);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.editor-runtime-tools .piano-roll-editor-vibrato-group {
+  gap: 6px;
+}
+
+.editor-runtime-tools .piano-roll-editor-number {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 2px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.editor-runtime-tools .piano-roll-editor-number-label {
+  min-width: 10px;
+}
+
+.editor-runtime-tools .piano-roll-editor-number-input {
+  width: 54px;
+  height: 24px;
+  padding: 0 7px;
+  border: 1px solid rgba(163, 160, 151, 0.72);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--text-main);
+  font: 600 11px/1 "JetBrains Mono", monospace;
+}
+
+.editor-runtime-tools .piano-roll-editor-select {
+  min-width: 108px;
+  height: 24px;
+  padding: 0 24px 0 8px;
+  border: 1px solid rgba(163, 160, 151, 0.72);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--text-main);
+  font: 600 10px/1 "JetBrains Mono", monospace;
+  outline: none;
+}
+
+.editor-runtime-tools .piano-roll-editor-number-input:disabled {
+  color: var(--text-faint);
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.editor-runtime-tools .piano-roll-editor-select:disabled {
+  color: var(--text-faint);
+  background: rgba(255, 255, 255, 0.6);
+}
+
 .editor-runtime-tools .piano-roll-editor-btn {
   min-width: 58px;
   height: 26px;
