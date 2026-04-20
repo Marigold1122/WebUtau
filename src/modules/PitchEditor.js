@@ -1459,10 +1459,21 @@ class PitchEditor {
         const delta = start.shape === PITCH_POINT_SHAPES.LINEAR
           ? this._interpolateLinear(start.relTick, end.relTick, startDelta, endDelta, sample.relTick)
           : this._interpolateShape(start.relTick, end.relTick, startDelta, endDelta, sample.relTick, start.shape)
+        // 坐标系转换：sample.cent 是"相对 note.midi 的 cent 偏差"（UI 友好），
+        // 但 PITD 的物理意义是"相对 pitchesBeforeDeviation 的 cent 偏差"。
+        // 在 note 内部两者等价（pitchesBeforeDeviation ≈ note.midi * 100），
+        // 但在 note 边界，pitchesBeforeDeviation 会从 A.midi*100 跳到 B.midi*100。
+        // 如果直接发 sample.cent 作为 PITD，在 A 和 B 高度不同的边界处会错位
+        // (B.midi - A.midi) * 100 cent，视觉上就是"所有有高度差的音符边缘被制造
+        // 峰谷"。这里把 cent 转换到 base 坐标系：compiled = sample.cent - (base
+        // 相对 note.midi 的 cent 偏移)，等价于"final - base"，即正确的 PITD 值。
+        const absoluteTick = control.startTick + sample.relTick
+        const basePitch = this.getBasePitchAtTick(absoluteTick, pitchData)
+        const baseCentOffset = (basePitch - control.midi) * 100
         this._pushCompiledPoint(
           compiled,
-          control.startTick + sample.relTick,
-          sample.cent + delta,
+          absoluteTick,
+          sample.cent + delta - baseCentOffset,
         )
       }
     }
@@ -1509,56 +1520,16 @@ class PitchEditor {
       pitchStepTick: 5,
     }
 
-    const deviation = this._mergeCompiledDeviationWithServer(controls, current)
+    // Preview 直接走全量重算，和 commit 时 `_buildCompiledDeviation(all controls)`
+    // 完全同语义，避免增量合并在相邻 note 边界（A.endTick == B.startTick）处
+    // 归属不一致造成的"拖动时峰谷跳高、commit 后又恢复"的视觉跳动。
+    // 代价：每个 preview tick 全量重算，N 个 note × ~100 sample ≈ 几 ms，可接受。
+    const deviation = this._buildCompiledDeviation(controls, current)
     current.pitchDeviation = {
       xs: deviation.map((point) => point.tick),
       ys: deviation.map((point) => point.cent),
     }
     return current
-  }
-
-  _mergeCompiledDeviationWithServer(controls, pitchData) {
-    const baselineControls = this._serverNoteControls
-    if (!Array.isArray(baselineControls) || baselineControls.length === 0) {
-      return this._buildCompiledDeviation(controls, pitchData)
-    }
-
-    const baselinePoints = this._normalizeDeviationPoints(
-      (pitchData?.pitchDeviation?.xs || []).map((tick, index) => ({
-        tick,
-        cent: pitchData?.pitchDeviation?.ys?.[index] || 0,
-      })),
-    )
-    if (baselinePoints.length === 0) {
-      return this._buildCompiledDeviation(controls, pitchData)
-    }
-
-    const baselineMap = new Map(baselineControls.map((control) => [control.noteKey, control]))
-    const changedControls = controls.filter((control) => {
-      const baseline = baselineMap.get(control.noteKey)
-      return !areControlsEquivalent(control, baseline)
-    })
-
-    if (changedControls.length === 0) {
-      return baselinePoints
-    }
-
-    const ranges = changedControls.map((control) => ({
-      startTick: control.startTick,
-      endTick: control.endTick,
-    }))
-    const merged = baselinePoints.filter((point) => (
-      !ranges.some((range) => point.tick >= range.startTick && point.tick <= range.endTick)
-    ))
-
-    for (const control of changedControls) {
-      const compiled = this._compileNoteDeviation(control, pitchData, controls)
-      for (const point of compiled) {
-        merged.push(point)
-      }
-    }
-
-    return this._normalizeDeviationPoints(merged)
   }
 
   _normalizeDeviationPoints(points) {
