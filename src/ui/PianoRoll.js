@@ -222,12 +222,17 @@ class PianoRoll {
           this._updateEditorToolbar()
           return
         }
+        // 故意不在这里 _restoreEditorFocus()：
+        //   number input 是连续微调场景（长/周/深），每次 change 后把焦点抢到
+        //   canvas 会让用户 Tab/方向键等无法在 input 间穿梭，且重渲染期间 canvas
+        //   重绘/选中重映射会干扰视觉。让焦点跟随浏览器自然逻辑：
+        //     - Enter → input 主动 blur，焦点到 body
+        //     - 点其他 input → 焦点转移到新 input
+        //     - 点 canvas → canvas 本身会获得焦点
         try {
           await pitchEditor.setVibratoValueForNoteEntries(noteSelection.getSelected(), field, value)
         } catch (error) {
           console.error(`[PianoRoll] \u8bbe\u7f6e\u98a4\u97f3\u53c2\u6570\u5931\u8d25 ${field}:`, error)
-        } finally {
-          this._restoreEditorFocus()
         }
       })
 

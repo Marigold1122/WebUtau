@@ -326,8 +326,13 @@ class PhraseStore {
       }
     })
 
+    // 注意：createPhraseDocuments 会 map(createNoteDocument) 深拷贝所有 note，
+    // 产生新的对象引用。下游（NoteSelection / PianoRollNotes）必须收到 **_phrases 本身**，
+    // 否则 note 引用分叉：NoteSelection 在 rebuilt 上 remap，但 phraseStore.getPhrases()
+    // 返回的是 _phrases，两套 note 对象引用不同，导致后续点击 isSelected() 永远 miss，
+    // 表现为"点击音符无选中高亮"。所以这里 emit 的是权威副本 _phrases。
     this._phrases = createPhraseDocuments(rebuilt).map((phrase) => this._normalizePhraseHashes(phrase))
-    eventBus.emit(EVENTS.PHRASES_EDITED, { phrases: rebuilt })
+    eventBus.emit(EVENTS.PHRASES_EDITED, { phrases: this._phrases })
     console.log(`[数据中心] 编辑重建完成 | ${rebuilt.length}句`)
     return true
   }
