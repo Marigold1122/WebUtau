@@ -810,11 +810,39 @@ class PitchEditor {
     if (!jobId) throw new Error('No active job')
 
     const currentPitchData = this._serverPitchData || phraseStore.getPitchData()
-    const notePayload = this._buildNoteParamPayloadFromControls(this._noteControls)
     const historySnapshot = this._captureCommittedSnapshot()
     if (historySnapshot?.noteControls && this._buildControlSignature(this._noteControls) !== this._buildControlSignature(historySnapshot.noteControls)) {
       this._pushUndoSnapshot(historySnapshot)
     }
+
+    // 分流：纯 pitch 节点编辑（拖点 / 加点 / 删点 / 改形状）走 PITD 路径，
+    // 只把 compiled deviation 写入后端的 PITD 曲线，note.pitch.data 保持不变。
+    // 这样不会覆盖 DiffSinger 预测的精细 base curve，用户的微调呈现为"对该段
+    // 自然曲线的小偏差"，符合局部编辑的直觉。
+    //
+    // 需要走 noteParams 的场景（会覆盖 note.pitch.data 重建 base）：
+    //   - boundary-mode:*    结构性变 snapFirst / pitch.data 起手段
+    //   - portamento         改 pitch.data 整体形态（2 点直线模式）
+    //   - restore-range / restore-all  回到原始 pitch 形态，必须重建 pitch.data
+    const kind = String(reason || '').split(':')[0]
+    const pitchOnlyReasons = new Set([
+      'pitch-edit', 'move-point', 'add-point', 'delete-point', 'change-shape',
+    ])
+    if (pitchOnlyReasons.has(kind)) {
+      const compiled = this._buildCompiledDeviation(this._noteControls, currentPitchData)
+      const payload = compiled.map((point) => ({ tick: point.tick, cent: point.cent }))
+      return this._applyPitchDeviationPayload({
+        jobId,
+        payload,
+        controls: this._cloneNoteControls(this._noteControls),
+        selectedPointId: this._selectedPointId,
+        selectedSegmentId: this._selectedSegmentId,
+        currentPitchData,
+        reason,
+      })
+    }
+
+    const notePayload = this._buildNoteParamPayloadFromControls(this._noteControls)
     return this._applyNoteParamsPayload({
       jobId,
       notePayload,
