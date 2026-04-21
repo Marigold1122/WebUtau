@@ -13,6 +13,12 @@ public class SynthesisJob {
     public string? OutputPath { get; set; }
     public string? Error { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    /// <summary>
+    /// 客户端最近一次心跳的时间（UTC）。用于服务端 idle TTL：
+    /// 超过配置阈值没收到心跳就认为客户端断线，自动取消 job 释放资源。
+    /// 默认等于 CreatedAt，避免刚创建的 job 还没来得及第一次心跳就被误杀。
+    /// </summary>
+    public DateTime LastHeartbeatAt { get; set; } = DateTime.UtcNow;
     public List<PhraseJob>? Phrases { get; set; }
     public int SampleRate { get; set; } = 44100;
     /// <summary>

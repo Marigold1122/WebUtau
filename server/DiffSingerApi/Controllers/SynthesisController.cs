@@ -259,6 +259,19 @@ public class SynthesisController : ControllerBase {
     }
 
     /// <summary>
+    /// 客户端心跳。客户端（网页 / Tauri / 其它嵌入方式）每 15 秒左右调一次，
+    /// 服务端超过 JobIdleTimeoutSeconds（默认 60s）没收到心跳就自动取消 job，
+    /// 防止用户关闭页面后仍占用 GPU。
+    /// 返回 404 表示服务端已经没这个 job，客户端应停止后续心跳。
+    /// </summary>
+    [HttpPost("jobs/{id}/heartbeat")]
+    public IActionResult Heartbeat(string id) {
+        return _synthesis.Heartbeat(id)
+            ? Ok(new { ok = true })
+            : NotFound(new { error = "Job not found or already finished." });
+    }
+
+    /// <summary>
     /// 获取音高曲线数据（基础音高 + PITD 偏差）
     /// </summary>
     [HttpGet("jobs/{id}/pitch")]

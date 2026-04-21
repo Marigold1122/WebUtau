@@ -37,6 +37,12 @@ public class SynthesisService : IHostedService {
     // submit together. Jobs beyond this cap wait at the semaphore then proceed.
     private readonly SemaphoreSlim _jobConcurrency;
 
+    /// <summary>
+    /// 心跳 idle 超时秒数。客户端超过这个时间没发心跳就自动取消 job。
+    /// 0 或负数表示禁用（本地调试时方便）。
+    /// </summary>
+    private readonly int _jobIdleTimeoutSeconds;
+
     public SynthesisService(IConfiguration config) {
         var basePath = AppContext.BaseDirectory;
         var configuredVoicebanksPath = config.GetValue<string>("VoicebanksPath");
@@ -63,9 +69,11 @@ public class SynthesisService : IHostedService {
         jobSlots = Math.Max(1, jobSlots);
         _jobConcurrency = new SemaphoreSlim(jobSlots, jobSlots);
 
+        _jobIdleTimeoutSeconds = config.GetValue<int?>("JobIdleTimeoutSeconds") ?? 20;
+
         Log.Information(
-            "SynthesisService concurrency: MaxConcurrentJobs={Jobs}, MaxConcurrentPhraseRenders={Renders}",
-            jobSlots, renderSlots);
+            "SynthesisService concurrency: MaxConcurrentJobs={Jobs}, MaxConcurrentPhraseRenders={Renders}, JobIdleTimeoutSeconds={Idle}",
+            jobSlots, renderSlots, _jobIdleTimeoutSeconds);
     }
 
     public string VoicebanksDir => _voicebanksDir;
@@ -110,6 +118,19 @@ public class SynthesisService : IHostedService {
         return job;
     }
 
+    /// <summary>
+    /// 客户端心跳：更新 LastHeartbeatAt 告诉服务端"我还在"。
+    /// 找不到 job 返回 false（前端据此停止后续心跳）。
+    /// 已进入终态（completed/failed）的 job 也不再响应心跳 —— 它没必要"保活"，
+    /// 后续清理由 CleanupOldJobs（1 小时 TTL）接管。
+    /// </summary>
+    public bool Heartbeat(string jobId) {
+        if (!_jobs.TryGetValue(jobId, out var job)) return false;
+        if (job.Status is "completed" or "failed") return false;
+        job.LastHeartbeatAt = DateTime.UtcNow;
+        return true;
+    }
+
     public bool DeleteJob(string jobId) {
         if (!_jobs.TryRemove(jobId, out var job)) return false;
         // 取消进行中的准备/渲染。worker 线程检测到后会把状态置为 failed，
@@ -143,7 +164,9 @@ public class SynthesisService : IHostedService {
         // multiple jobs can run in parallel. Concurrency is bounded by _jobConcurrency
         // and individual phrase renders are bounded by _renderConcurrency.
         while (!_cts.IsCancellationRequested) {
-            _signal.Wait(_cts.Token);
+            // 带超时 —— 没有新 job 也定期 tick 一下，执行 idle / 过期清理。
+            // 5s 和 idle 阈值（20s）匹配：idle 触达后最多再拖 5s 就 kill。
+            _signal.Wait(5_000, _cts.Token);
             _signal.Reset();
 
             while (_queue.TryDequeue(out var jobId)) {
@@ -154,6 +177,7 @@ public class SynthesisService : IHostedService {
             }
 
             CleanupOldJobs();
+            CancelIdleJobs();
         }
     }
 
@@ -1828,6 +1852,27 @@ public class SynthesisService : IHostedService {
         var expired = _jobs.Where(kv => kv.Value.CreatedAt < cutoff
             && kv.Value.Status is "completed" or "failed").ToList();
         foreach (var kv in expired) {
+            DeleteJob(kv.Key);
+        }
+    }
+
+    /// <summary>
+    /// 取消客户端已经断线（心跳超时）的活跃 job，释放 GPU / CPU。
+    /// 活跃定义 = 非 completed / failed。
+    /// _jobIdleTimeoutSeconds ≤ 0 时禁用（本地调试方便）。
+    /// </summary>
+    private void CancelIdleJobs() {
+        if (_jobIdleTimeoutSeconds <= 0) return;
+        var threshold = DateTime.UtcNow.AddSeconds(-_jobIdleTimeoutSeconds);
+        var stale = _jobs
+            .Where(kv => kv.Value.Status is not "completed" and not "failed"
+                && kv.Value.LastHeartbeatAt < threshold)
+            .ToList();
+        foreach (var kv in stale) {
+            var age = (DateTime.UtcNow - kv.Value.LastHeartbeatAt).TotalSeconds;
+            Log.Information(
+                "Idle job cancelled (no heartbeat). jobId={JobId}, status={Status}, sinceLastHeartbeatSec={Age:F1}",
+                kv.Key, kv.Value.Status, age);
             DeleteJob(kv.Key);
         }
     }

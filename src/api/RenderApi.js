@@ -93,6 +93,18 @@ const renderApi = {
       throw new Error(`deleteJob failed: ${response.status}`)
     }
   },
+  /**
+   * 心跳：告诉后端这个 job 的客户端还在。
+   * 返回 true = 心跳被后端接受；false = 404（job 已结束或被清理），前端应停止后续心跳。
+   */
+  async heartbeat(jobId) {
+    const response = await fetch(buildRenderApiUrl(`/api/jobs/${jobId}/heartbeat`), {
+      method: 'POST',
+    })
+    if (response.status === 404) return false
+    if (!response.ok) throw new Error(`heartbeat failed: ${response.status}`)
+    return true
+  },
   async editNotes(jobId, edits) {
     const response = await fetch(buildRenderApiUrl(`/api/jobs/${jobId}/edit-notes`), {
       method: 'POST',
