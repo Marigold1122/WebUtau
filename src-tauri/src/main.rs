@@ -3,6 +3,7 @@
 mod backend;
 mod local_server;
 mod tunnel;
+mod updater;
 
 use std::{
     io,
@@ -28,10 +29,12 @@ fn main() {
     let manage_ctx = Arc::clone(&ctx);
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             tunnel_get_status,
             tunnel_start,
             tunnel_stop,
+            updater::check_for_updates,
         ])
         .setup(move |app| {
             app.manage(backend::BackendState::default());

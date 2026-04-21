@@ -1,6 +1,7 @@
 ﻿import { fetchVoicebanks } from '../../api/VoicebankApi.js'
 import { getLanguageLabel } from '../../config/languageOptions.js'
 import { PLAYHEAD_FOLLOW_MODE_LABELS, PLAYHEAD_FOLLOW_MODES, normalizePlayheadFollowMode } from '../../shared/playheadFollowMode.js'
+import { AboutPanelView } from './AboutPanelView.js'
 import { InspectorVoiceConversionSection } from './InspectorVoiceConversionSection.js'
 import { MenubarTransportView } from './MenubarTransportView.js'
 import { PlaybackToastView } from './PlaybackToastView.js'
@@ -75,6 +76,7 @@ export class ShellLayoutView {
     this.instrumentEditorView = new InstrumentEditorView(this.refs.instrumentEditorRoot, handlers)
     this.reverbDockView = new ReverbDockView(this.refs, handlers)
     this.trackTonePanelView = new TrackTonePanelView(this.refs, handlers)
+    this.aboutPanelView = new AboutPanelView({ logger: this.logger })
     this.workspaceSplitController = new WorkspaceSplitController(this.refs)
     this.reverbDockVisible = false
     this.editorPlaceholderActive = false
@@ -123,6 +125,7 @@ export class ShellLayoutView {
     this.instrumentEditorView.init()
     this.reverbDockView.init()
     this.trackTonePanelView.init()
+    this.aboutPanelView.init()
     this._bindEvents()
     this.trackViewportController.init()
     this._updateInspectorToggleButton(false)
