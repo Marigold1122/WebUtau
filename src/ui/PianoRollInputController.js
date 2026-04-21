@@ -262,6 +262,9 @@ class PianoRollInputController {
       this._hasDragged = false
       this._resetPitchGestureState()
     }
+
+    // 浮窗的显隐统一由 PITCH_EDITOR_SELECTION_CHANGED 事件驱动，
+    // 这里不再主动 open / close —— 见 PitchShapePopover / NoteEditPopover。
   }
 
   _onDblClick(e) {
@@ -637,6 +640,7 @@ class PianoRollInputController {
     this._queuedPitchPreview = null
     this._pitchBaseState = null
     this._pitchDragPointId = null
+    this._pitchClickSegmentId = null
   }
 
   _queuePitchPreview(preview) {
