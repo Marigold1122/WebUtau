@@ -1,10 +1,24 @@
+/**
+ * SOS 凉宫 v2 · 配色（鲜亮）
+ * --wu-yellow  #FFCB2F  春日黄    主角色
+ * --wu-sky     #7FBFE8  夏空青    次主色
+ * --wu-red     #D43A3A  赤领巾红  点缀
+ * --wu-navy    #1E3A5F  制服深蓝  文字重色
+ * --wu-cream   #FBF9F3  纸页米    底色
+ */
+
 .wu-onboarding {
   position: fixed;
   inset: 0;
   z-index: 2000;
   pointer-events: none;
   font-family: 'Inter', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  color: #2b2825;
+  color: #1E3A5F;
+  --wu-yellow: #FFCB2F;
+  --wu-sky: #7FBFE8;
+  --wu-red: #D43A3A;
+  --wu-navy: #1E3A5F;
+  --wu-cream: #FBF9F3;
 }
 
 .wu-onboarding__backdrop {
@@ -22,7 +36,7 @@
   box-shadow:
     0 0 0 9999px rgba(20, 18, 14, 0.18),
     0 0 0 2px rgba(255, 255, 255, 0.92),
-    0 0 14px 2px rgba(61, 220, 132, 0.45);
+    0 0 14px 2px rgba(255, 203, 47, 0.55);
   transition:
     top 180ms cubic-bezier(0.4, 0, 0.2, 1),
     left 180ms cubic-bezier(0.4, 0, 0.2, 1),
@@ -36,74 +50,167 @@
   opacity: 1;
 }
 
-/* 聚光灯可见时，淡化底层 backdrop，避免高亮框内被双层叠加再次变暗 */
 .wu-onboarding:has(.wu-onboarding__spotlight--visible) .wu-onboarding__backdrop {
   opacity: 0;
 }
 
+/* ──────────────────────────────────────────── */
+/* 气泡主体 · 磨砂玻璃 + 极光渐变边框            */
+/* ──────────────────────────────────────────── */
 .wu-onboarding__popover {
   position: absolute;
   pointer-events: auto;
-  width: min(260px, calc(100vw - 32px));
-  max-height: calc(100vh - 40px);
-  overflow-y: auto;
-  background: #fbf9f3;
-  border-radius: 14px;
-  border: 1px solid rgba(43, 40, 37, 0.08);
+  width: min(300px, calc(100vw - 32px));
+  background: rgba(251, 249, 243, 0.82);
+  backdrop-filter: blur(22px) saturate(1.15);
+  -webkit-backdrop-filter: blur(22px) saturate(1.15);
+  border-radius: 16px;
   box-shadow:
-    0 18px 40px -12px rgba(20, 18, 14, 0.28),
-    0 6px 14px -6px rgba(20, 18, 14, 0.18);
-  padding: 20px 22px 16px;
+    0 20px 48px -14px rgba(30, 58, 95, 0.28),
+    0 8px 18px -8px rgba(30, 58, 95, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  padding: 22px 22px 16px;
   font-size: 13px;
   line-height: 1.65;
   cursor: move;
   user-select: none;
+  overflow: visible;
   transition:
     top 200ms cubic-bezier(0.4, 0, 0.2, 1),
     left 200ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* 极光流光边框 · mask 叠合裁出只显示环的 3px 条带 */
+.wu-onboarding__popover::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  padding: 3px;
+  border-radius: 19px;
+  background: linear-gradient(
+    120deg,
+    var(--wu-yellow) 0%,
+    var(--wu-sky) 22%,
+    var(--wu-yellow) 42%,
+    var(--wu-red) 58%,
+    var(--wu-sky) 78%,
+    var(--wu-yellow) 100%
+  );
+  background-size: 300% 100%;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: wu-aurora-pan 20s linear infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+@keyframes wu-aurora-pan {
+  from { background-position: 0% 50%; }
+  to { background-position: 300% 50%; }
+}
+
 .wu-onboarding__popover--dragging {
   transition: none;
   box-shadow:
-    0 22px 48px -10px rgba(20, 18, 14, 0.34),
-    0 8px 16px -6px rgba(20, 18, 14, 0.22);
+    0 26px 56px -10px rgba(30, 58, 95, 0.36),
+    0 10px 20px -6px rgba(30, 58, 95, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
 .wu-onboarding__popover button {
   cursor: pointer;
 }
 
+/* Step 1 欢迎屏：气泡自身额外发光 */
 .wu-onboarding__popover--glow {
   box-shadow:
-    0 18px 40px -12px rgba(20, 18, 14, 0.28),
-    0 6px 14px -6px rgba(20, 18, 14, 0.18),
-    0 0 0 2px rgba(61, 220, 132, 0.55),
-    0 0 22px 4px rgba(61, 220, 132, 0.35);
+    0 20px 48px -14px rgba(30, 58, 95, 0.28),
+    0 8px 18px -8px rgba(30, 58, 95, 0.16),
+    0 0 0 2px rgba(255, 203, 47, 0.55),
+    0 0 26px 6px rgba(255, 203, 47, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
+/* ──────────────────────────────────────────── */
+/* 春日发箍 · 左上角标志装饰 · 发箍弧 + 两端蝴蝶结 + V 尾  */
+/* ──────────────────────────────────────────── */
+.wu-onboarding__bow {
+  position: absolute;
+  top: -22px;
+  left: -8px;
+  width: 108px;
+  height: 62px;
+  pointer-events: none;
+  transform-origin: 50% 80%;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 92'><path d='M 32 50 C 32 12 128 12 128 50' stroke='%23FFCB2F' stroke-width='10' fill='none' stroke-linecap='round'/><path d='M 38 45 C 38 20 122 20 122 45' stroke='%23FFE270' stroke-width='2.5' fill='none' stroke-linecap='round' opacity='0.85'/><ellipse cx='14' cy='50' rx='13' ry='7.5' fill='%23FFCB2F' transform='rotate(-24 14 50)'/><ellipse cx='36' cy='50' rx='13' ry='7.5' fill='%23FFCB2F' transform='rotate(24 36 50)'/><ellipse cx='25' cy='50' rx='4' ry='6' fill='%23E0A820'/><path d='M 19 56 L 14 84 L 18 86 L 22 80 L 24 56 Z' fill='%23FFCB2F'/><path d='M 26 56 L 30 78 L 34 82 L 33 56 Z' fill='%23FFCB2F'/><ellipse cx='124' cy='50' rx='13' ry='7.5' fill='%23FFCB2F' transform='rotate(-24 124 50)'/><ellipse cx='146' cy='50' rx='13' ry='7.5' fill='%23FFCB2F' transform='rotate(24 146 50)'/><ellipse cx='135' cy='50' rx='4' ry='6' fill='%23E0A820'/><path d='M 127 56 L 126 82 L 130 78 L 134 56 Z' fill='%23FFCB2F'/><path d='M 136 56 L 138 80 L 142 86 L 146 84 L 141 56 Z' fill='%23FFCB2F'/></svg>");
+  background-repeat: no-repeat;
+  background-size: contain;
+  filter: drop-shadow(0 2px 4px rgba(30, 58, 95, 0.3));
+  z-index: 3;
+}
+
+/* 发箍随切步轻摆 · 钉在布上被风吹的感觉 */
+.wu-onboarding__bow--swing {
+  animation: wu-bow-swing 520ms cubic-bezier(0.36, 1.3, 0.4, 1);
+}
+
+@keyframes wu-bow-swing {
+  0%   { transform: rotate(0deg)    scale(1);    }
+  25%  { transform: rotate(5deg)    scale(1.06); }
+  55%  { transform: rotate(-3.5deg) scale(0.98); }
+  80%  { transform: rotate(1.5deg)  scale(1.02); }
+  100% { transform: rotate(0deg)    scale(1);    }
+}
+
+/* ──────────────────────────────────────────── */
+/* 跳过按钮 · 常态就显眼                         */
+/* ──────────────────────────────────────────── */
 .wu-onboarding__skip {
   position: absolute;
-  top: 10px;
+  top: 12px;
   right: 12px;
-  background: transparent;
-  border: none;
-  color: #7a766f;
+  background: rgba(30, 58, 95, 0.08);
+  border: 1px solid rgba(30, 58, 95, 0.18);
+  color: var(--wu-navy);
   font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 6px;
-  transition: background-color 120ms ease, color 120ms ease;
+  padding: 5px 11px;
+  border-radius: 8px;
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+  z-index: 2;
+  white-space: nowrap;
 }
 
 .wu-onboarding__skip:hover {
-  background: rgba(43, 40, 37, 0.06);
-  color: #2b2825;
+  background: var(--wu-red);
+  border-color: var(--wu-red);
+  color: #fff;
 }
 
+/* ──────────────────────────────────────────── */
+/* 正文                                          */
+/* ──────────────────────────────────────────── */
 .wu-onboarding__body {
-  margin-top: 6px;
-  margin-right: 48px;
+  margin-top: 28px;
+  margin-right: 60px;
+  color: var(--wu-navy);
+  position: relative;
+  z-index: 1;
+  animation: wu-body-enter 380ms cubic-bezier(0.34, 1.3, 0.64, 1) both;
+}
+
+/* 正文过渡：从下方浮起 + 淡入 + 轻微放大回弹 */
+@keyframes wu-body-enter {
+  0%   { opacity: 0; transform: translateY(10px) scale(0.97); }
+  55%  { opacity: 1; transform: translateY(-2px) scale(1.01); }
+  100% { opacity: 1; transform: translateY(0)    scale(1);    }
 }
 
 .wu-onboarding__body p {
@@ -115,39 +222,64 @@
 }
 
 .wu-onboarding__body b {
-  font-weight: 600;
+  font-weight: 700;
 }
 
+/* ──────────────────────────────────────────── */
+/* 进度星 · 四角星形状                           */
+/* ──────────────────────────────────────────── */
 .wu-onboarding__footer {
   margin-top: 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  position: relative;
+  z-index: 1;
 }
 
 .wu-onboarding__dots {
   display: flex;
-  gap: 6px;
+  gap: 7px;
+  align-items: center;
 }
 
 .wu-onboarding__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: rgba(43, 40, 37, 0.15);
+  width: 11px;
+  height: 11px;
+  background: rgba(30, 58, 95, 0.2);
+  clip-path: polygon(
+    50% 0%, 60% 40%,
+    100% 50%, 60% 60%,
+    50% 100%, 40% 60%,
+    0% 50%, 40% 40%
+  );
   transition: background-color 160ms ease, transform 160ms ease;
 }
 
 .wu-onboarding__dot--done {
-  background: rgba(61, 140, 100, 0.55);
+  background: var(--wu-sky);
 }
 
 .wu-onboarding__dot--current {
-  background: #3ddc84;
-  transform: scale(1.25);
+  /* 背景色由 JS 按子阶段插值为 rgba(255, 203, 47, α) */
+  background: var(--wu-yellow);
+  transform: scale(1.35);
+  filter: drop-shadow(0 0 4px rgba(255, 203, 47, 0.6));
+  animation: wu-dot-pop 460ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 
+/* 当前进度星：从小跃到大然后回落定位，伴随黄色光晕闪亮 */
+@keyframes wu-dot-pop {
+  0%   { transform: scale(0.6);  filter: drop-shadow(0 0 0   rgba(255, 203, 47, 0)); }
+  40%  { transform: scale(1.65); filter: drop-shadow(0 0 10px rgba(255, 203, 47, 0.95)); }
+  70%  { transform: scale(1.28); filter: drop-shadow(0 0 6px rgba(255, 203, 47, 0.7)); }
+  100% { transform: scale(1.35); filter: drop-shadow(0 0 4px rgba(255, 203, 47, 0.6)); }
+}
+
+/* ──────────────────────────────────────────── */
+/* 按钮                                          */
+/* ──────────────────────────────────────────── */
 .wu-onboarding__nav {
   display: flex;
   gap: 8px;
@@ -156,35 +288,60 @@
 .wu-onboarding__btn {
   font: inherit;
   padding: 6px 14px;
-  border-radius: 8px;
+  border-radius: 9px;
   border: 1px solid transparent;
   cursor: pointer;
-  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: 66px;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease, transform 120ms ease;
 }
 
 .wu-onboarding__btn--ghost {
   background: transparent;
-  color: #5f5a53;
-  border-color: rgba(43, 40, 37, 0.18);
+  color: rgba(30, 58, 95, 0.7);
+  border-color: rgba(30, 58, 95, 0.22);
 }
 
 .wu-onboarding__btn--ghost:hover:not(:disabled) {
-  background: rgba(43, 40, 37, 0.06);
-  color: #2b2825;
+  background: rgba(127, 191, 232, 0.18);
+  border-color: var(--wu-sky);
+  color: var(--wu-navy);
 }
 
 .wu-onboarding__btn--ghost:disabled {
-  opacity: 0.4;
+  opacity: 0.35;
   cursor: default;
 }
 
 .wu-onboarding__btn--primary {
-  background: #2b2825;
-  color: #fbf9f3;
-  border-color: #2b2825;
+  background: var(--wu-yellow);
+  color: var(--wu-navy);
+  border-color: var(--wu-yellow);
+  font-weight: 600;
+  box-shadow: 0 2px 8px -2px rgba(255, 203, 47, 0.55);
 }
 
 .wu-onboarding__btn--primary:hover {
-  background: #403b36;
-  border-color: #403b36;
+  background: #FFD95A;
+  border-color: #FFD95A;
+  transform: translateY(-0.5px);
+  box-shadow: 0 4px 12px -2px rgba(255, 203, 47, 0.7);
+}
+
+.wu-onboarding__btn--primary:active {
+  transform: translateY(0);
+}
+
+/* ──────────────────────────────────────────── */
+/* 小字签名                                      */
+/* ──────────────────────────────────────────── */
+.wu-onboarding__signature {
+  margin-top: 10px;
+  font-size: 10px;
+  color: rgba(30, 58, 95, 0.4);
+  text-align: right;
+  letter-spacing: 0.02em;
+  position: relative;
+  z-index: 1;
 }
