@@ -453,6 +453,7 @@ export class ShellLayoutView {
     this.btnQuickLyric = document.createElement('button')
     this.btnQuickLyric.type = 'button'
     this.btnQuickLyric.className = 'piano-roll-editor-btn piano-roll-editor-btn--secondary'
+    this.btnQuickLyric.dataset.tour = 'quick-lyric-open'
     this.btnQuickLyric.textContent = '快速填词'
     this.btnQuickLyric.addEventListener('click', () => this.handlers.onQuickLyricOpen?.())
     actions.appendChild(this.btnQuickLyric)
@@ -460,6 +461,7 @@ export class ShellLayoutView {
     this.btnRenderTrackAsVoice = document.createElement('button')
     this.btnRenderTrackAsVoice.type = 'button'
     this.btnRenderTrackAsVoice.className = 'piano-roll-editor-btn piano-roll-editor-btn--secondary'
+    this.btnRenderTrackAsVoice.dataset.tour = 'render-as-voice'
     this.btnRenderTrackAsVoice.textContent = '将该轨道渲染为人声'
     this.btnRenderTrackAsVoice.addEventListener('click', () => {
       const trackId = this.refs.editorPanel?.dataset?.trackId || null
@@ -586,6 +588,7 @@ export class ShellLayoutView {
     if (tracks.length === 0) {
       this.refs.emptyHint.innerHTML = ''
       const line1 = document.createElement('div')
+      line1.dataset.tour = 'empty-hint-primary'
       line1.textContent = '点击左侧加号新建轨道，通过钢琴卷帘或MIDI设备进行编辑'
       const line2 = document.createElement('div')
       line2.className = 'track-empty-hint-import'
@@ -601,6 +604,7 @@ export class ShellLayoutView {
       if (demoFiles.length > 0) {
         const line3 = document.createElement('div')
         line3.className = 'track-empty-hint-import'
+        line3.dataset.tour = 'demo-row'
         const demoLabel = document.createElement('span')
         demoLabel.textContent = '也可加载示例midi快速体验'
         const loadDemo = (button, url, fileName) => {
@@ -621,6 +625,8 @@ export class ShellLayoutView {
           const demoBtn = document.createElement('button')
           demoBtn.type = 'button'
           demoBtn.className = 'track-empty-hint-import-button'
+          demoBtn.dataset.tour = 'demo-btn'
+          demoBtn.dataset.tourDemo = demo.label
           demoBtn.textContent = demo.label
           demoBtn.addEventListener('click', () => loadDemo(demoBtn, demo.file, demo.file))
           line3.appendChild(demoBtn)

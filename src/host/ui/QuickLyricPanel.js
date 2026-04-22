@@ -56,6 +56,7 @@ export class QuickLyricPanel {
   _build(container, onClose) {
     const el = document.createElement('div')
     el.className = 'quick-lyric-panel'
+    el.dataset.tour = 'quick-lyric-panel'
     el.addEventListener('mousedown', (e) => e.stopPropagation())
     el.addEventListener('pointerdown', (e) => e.stopPropagation())
 
@@ -106,6 +107,7 @@ export class QuickLyricPanel {
     this._btnSave = document.createElement('button')
     this._btnSave.type = 'button'
     this._btnSave.className = 'modal-btn primary'
+    this._btnSave.dataset.tour = 'quick-lyric-save'
     this._btnSave.textContent = '保存'
     this._btnSave.disabled = true
     this._btnSave.addEventListener('click', () => this._handleSave())
