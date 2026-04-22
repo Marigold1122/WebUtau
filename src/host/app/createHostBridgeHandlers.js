@@ -6,6 +6,8 @@ import {
   getPredictionProgressPercent,
 } from './trackPredictionProgress.js'
 import { hasPredictedPitch, isTrackPrepReady } from '../project/trackPrepState.js'
+import eventBus from '../../core/EventBus.js'
+import { EVENTS } from '../../config/constants.js'
 
 function getTrackName(store, trackId) {
   return store.getTrack(trackId)?.name || '当前轨道'
@@ -97,6 +99,7 @@ export function createHostBridgeHandlers({
       if (!hasPredictedPitch(snapshot)) return
       store.updateTrackPrepState(snapshot.trackId, { status: 'ready', progress: 100, error: null })
       render('bridge-prediction-ready')
+      eventBus.emit(EVENTS.PREDICTION_READY, { trackId: snapshot.trackId })
       if (getActiveGateTrackId() !== snapshot.trackId) return
       view.updateTrackSynthesisOverlay(buildPredictionOverlayText(100), 1)
       prepWaiters.resolve(snapshot.trackId, { ok: true, snapshot })

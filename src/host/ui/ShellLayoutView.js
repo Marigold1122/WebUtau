@@ -38,15 +38,10 @@ import sharePanel from '../../ui/SharePanel.js'
 
 const TRACK_HEADER_FALLBACK_WIDTH = 240
 
-function _parseDemoMidiFiles() {
-  try {
-    const raw = import.meta.env.VITE_DEMO_MIDI_FILES
-    if (!raw) return []
-    const list = JSON.parse(raw)
-    if (!Array.isArray(list)) return []
-    return list.filter((item) => item && typeof item.label === 'string' && typeof item.file === 'string')
-  } catch { return [] }
-}
+const DEMO_MIDI_FILES = [
+  { label: 'God Knows', file: '[凉宫]God knows.mid' },
+  { label: '海阔天空', file: '海阔天空.mid' },
+]
 export class ShellLayoutView {
   constructor(handlers = {}, options = {}) {
     this.handlers = handlers
@@ -603,7 +598,7 @@ export class ShellLayoutView {
       btn.textContent = '导入'
       btn.addEventListener('click', () => this.refs.fileInput?.click())
       line2.append(label, btn)
-      const demoFiles = _parseDemoMidiFiles()
+      const demoFiles = DEMO_MIDI_FILES
       if (demoFiles.length > 0) {
         const line3 = document.createElement('div')
         line3.className = 'track-empty-hint-import'

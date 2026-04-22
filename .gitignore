@@ -74,7 +74,7 @@ dist-release/
 artifacts/
 
 # Demo MIDI files in public (configured via .env)
-public/*.mid
+
 
 # System files
 .DS_Store

@@ -30,8 +30,8 @@ export const BRANCH_CONFIG = {
     languageLabel: '日语',
   },
   '海阔天空': {
-    vocalTrackCandidates: ['主旋律1', '主旋律 1', '主旋律', 'vocal', '人声'],
-    vocalTrackLabel: '主旋律 1',
+    vocalTrackCandidates: ['主弦律1', '主弦律 1', '主弦律', 'vocal', '人声'],
+    vocalTrackLabel: '主弦律 1',
     languageLabel: '中文',
   },
 }
@@ -61,7 +61,7 @@ const dblclickTrackBody = {
     <p>God Knows 的人声轨道是「轨道 10」，您可以通过<b>双击</b>轨道 10 来编辑它。</p>
   `,
   '海阔天空': `
-    <p>海阔天空的人声轨道是「主旋律 1」，您可以通过<b>双击</b>主旋律 1 来编辑它。</p>
+    <p>海阔天空的人声轨道是「主弦律 1」，您可以通过<b>双击</b>主弦律 1 来编辑它。</p>
   `,
 }
 
@@ -70,7 +70,7 @@ const renderVoiceBody = {
     <p>然后点击「将该轨道渲染为人声」按钮，来使轨道 10 由钢琴渲染为人声。</p>
   `,
   '海阔天空': `
-    <p>然后点击「将该轨道渲染为人声」按钮，来使主旋律 1 由钢琴渲染为人声。</p>
+    <p>然后点击「将该轨道渲染为人声」按钮，来使主弦律 1 由钢琴渲染为人声。</p>
   `,
 }
 
@@ -81,9 +81,14 @@ const chooseLanguageBody = {
   `,
   '海阔天空': `
     <p>「歌曲语言」推荐您选择<b>中文</b>，如果您没有自己的声库，则暂时只能使用 WebUtau 内置的 yousa 声库。</p>
-    <p>当渲染结束后，再次播放，主旋律 1 就会变为人声啦～</p>
+    <p>当渲染结束后，再次播放，主弦律 1 就会变为人声啦～</p>
   `,
 }
+
+const waitPredictionBody = `
+  <p>WebUtau 正在根据乐谱<b>预测音高</b>，请稍候…</p>
+  <p>预测完成后，教程会自动进入下一步。</p>
+`
 
 const quickLyricOpenBody = `
   <p>您会发现，人声并没有唱出歌词，而是使用「a」来代替每一个<b>音</b>。</p>
@@ -164,6 +169,14 @@ export const ONBOARDING_SCREENS = [
     highlight: { selector: '#track-language-modal .modal-dialog' },
     body: chooseLanguageBody,
     advanceOn: { type: 'dom-click', selector: '#btn-track-language-confirm' },
+  },
+  {
+    id: 'wait-prediction',
+    stepNum: 3,
+    anchor: { type: 'center' },
+    highlight: null,
+    body: waitPredictionBody,
+    advanceOn: { type: 'eventbus', event: 'prediction:ready' },
   },
   {
     id: 'lyric-open',

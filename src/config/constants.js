@@ -49,6 +49,7 @@ export const EVENTS = {
   PITCH_CHANGED: 'pitch:changed',
   PITCH_EDITOR_MODE_CHANGED: 'pitch:editor-mode-changed',
   PITCH_EDITOR_SELECTION_CHANGED: 'pitch:editor-selection-changed',
+  PREDICTION_READY: 'prediction:ready',
 }
 
 export const JOB_STATUS = {
