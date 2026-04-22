@@ -28,13 +28,15 @@ export function installAdvanceListener(screen, { onAdvance, onBranchCaptured }) 
   }
 
   if (advance.type === 'dom-dblclick-track') {
-    const handler = (event) => {
-      const row = event.target?.closest?.('.track-shell-row')
-      if (!row) return
-      onAdvance?.()
-    }
-    document.addEventListener('dblclick', handler, true)
-    return () => document.removeEventListener('dblclick', handler, true)
+    // 改用 MutationObserver 监视编辑面板的可见性变化：
+    // 原生 dblclick 在单击引发轨道列表重绘时可能不派发，观察"打开结果"比观察"输入手势"更稳。
+    const panel = document.querySelector('#editor-panel')
+    if (!panel) return null
+    const isEditorVisible = () => !panel.classList.contains('hidden')
+    const check = () => { if (isEditorVisible()) onAdvance?.() }
+    const observer = new MutationObserver(check)
+    observer.observe(panel, { attributes: true, attributeFilter: ['class'] })
+    return () => observer.disconnect()
   }
 
   if (advance.type === 'eventbus' && advance.event) {

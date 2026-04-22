@@ -48,6 +48,10 @@ const importDemoBody = `
   <p>如果您没有使用类似工具的经验，我们<b style="color:${BRAND_GREEN}">强烈建议</b>您点击下方的「God Knows」或「海阔天空」，来通过示例快速体验 WebUtau！</p>
 `
 
+const syncImportBody = `
+  <p>加载示例后会弹出「导入时序信息」窗口，点击<b>同步应用</b>按钮以套用示例的节拍与速度。</p>
+`
+
 const playBody = `
   <p>所有轨道的乐器默认都为钢琴，您可以先不急着调整乐器，先点击最上方的播放键来<b>试听</b>一下效果。</p>
 `
@@ -111,6 +115,14 @@ export const ONBOARDING_SCREENS = [
       selector: '[data-tour="demo-btn"]',
       captureBranchAttr: 'tourDemo',
     },
+  },
+  {
+    id: 'try-sync-import',
+    stepNum: 3,
+    anchor: { type: 'near-bottom' },
+    highlight: { selector: '#project-timing-import-modal .modal-dialog' },
+    body: syncImportBody,
+    advanceOn: { type: 'dom-click', selector: '#btn-project-timing-sync' },
   },
   {
     id: 'try-play',

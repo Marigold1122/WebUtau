@@ -201,11 +201,18 @@ export class OnboardingController {
   _renderProgress(currentStepNum) {
     if (!this._progressDots) return
     this._progressDots.innerHTML = ''
+    // 计算当前屏在所属大步内的位置，据此将当前圆点的绿色从浅到深插值。
+    const subs = this._screens.filter((s) => s.stepNum === currentStepNum)
+    const subIdx = subs.indexOf(this._screens[this._index])
+    const subAlpha = subs.length > 1 ? 0.35 + 0.65 * (subIdx / (subs.length - 1)) : 1
     for (let i = 1; i <= TOTAL_STEPS; i += 1) {
       const dot = document.createElement('span')
       dot.className = 'wu-onboarding__dot'
       if (i < currentStepNum) dot.classList.add('wu-onboarding__dot--done')
-      if (i === currentStepNum) dot.classList.add('wu-onboarding__dot--current')
+      if (i === currentStepNum) {
+        dot.classList.add('wu-onboarding__dot--current')
+        dot.style.backgroundColor = `rgba(61, 220, 132, ${subAlpha.toFixed(2)})`
+      }
       this._progressDots.appendChild(dot)
     }
   }
@@ -236,9 +243,14 @@ export class OnboardingController {
   _queryTarget(screen) {
     const hl = screen.highlight
     if (!hl || hl === 'self') return null
-    if (hl.selector) return document.querySelector(hl.selector)
-    if (hl.byTrackName) return findTrackRowByBranch(this._branch)
-    return null
+    let el = null
+    if (hl.selector) el = document.querySelector(hl.selector)
+    else if (hl.byTrackName) el = findTrackRowByBranch(this._branch)
+    if (!el) return null
+    // 元素在 DOM 中但尚未布局（例如 display:none 的模态框）时尺寸为 0，视作未就绪以触发重试
+    const rect = el.getBoundingClientRect()
+    if (rect.width < 2 || rect.height < 2) return null
+    return el
   }
 
   _layout(screen, target) {
