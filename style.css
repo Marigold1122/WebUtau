@@ -1652,6 +1652,82 @@ body {
   gap: 4px;
 }
 
+.editor-runtime-tools .piano-roll-editor-property-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 1px solid rgba(163, 160, 151, 0.52);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.editor-runtime-tools .piano-roll-editor-property-title {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(43, 40, 37, 0.08);
+  color: var(--text-main);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.editor-runtime-tools .piano-roll-editor-vibrato-group {
+  gap: 6px;
+}
+
+.editor-runtime-tools .piano-roll-editor-number {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 2px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.editor-runtime-tools .piano-roll-editor-number-label {
+  min-width: 10px;
+}
+
+.editor-runtime-tools .piano-roll-editor-number-input {
+  width: 54px;
+  height: 24px;
+  padding: 0 7px;
+  border: 1px solid rgba(163, 160, 151, 0.72);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--text-main);
+  font: 600 11px/1 "JetBrains Mono", monospace;
+}
+
+.editor-runtime-tools .piano-roll-editor-select {
+  min-width: 108px;
+  height: 24px;
+  padding: 0 24px 0 8px;
+  border: 1px solid rgba(163, 160, 151, 0.72);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--text-main);
+  font: 600 10px/1 "JetBrains Mono", monospace;
+  outline: none;
+}
+
+.editor-runtime-tools .piano-roll-editor-number-input:disabled {
+  color: var(--text-faint);
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.editor-runtime-tools .piano-roll-editor-select:disabled {
+  color: var(--text-faint);
+  background: rgba(255, 255, 255, 0.6);
+}
+
 .editor-runtime-tools .piano-roll-editor-btn {
   min-width: 58px;
   height: 26px;
@@ -2492,6 +2568,34 @@ body {
 .about-app-name { font-family: 'Oswald', sans-serif; font-size: 18px; font-weight: 600; color: var(--text-main); letter-spacing: 0.5px; margin-bottom: 6px; }
 .about-description { font-size: 11px; color: var(--text-muted); font-weight: 500; }
 
+.about-update { padding: 12px 16px 16px; border-top: 1px solid var(--border-light); display: flex; flex-direction: column; gap: 10px; font-size: 12px; }
+.about-version-row { display: flex; justify-content: space-between; align-items: baseline; color: var(--text-muted); }
+.about-version-label { font-weight: 500; }
+.about-version-value { color: var(--text-main); font-family: 'Oswald', monospace; font-size: 13px; letter-spacing: 0.3px; }
+.about-update-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.about-update-btn {
+  appearance: none; border: 1px solid var(--border-light); background: var(--bg-2); color: var(--text-main);
+  padding: 6px 12px; border-radius: 4px; font-size: 12px; cursor: pointer; transition: background 0.12s ease, border-color 0.12s ease;
+}
+.about-update-btn:hover:not(:disabled) { background: var(--bg-3); border-color: var(--border-color); }
+.about-update-btn:disabled { opacity: 0.55; cursor: default; }
+.about-update-btn.primary { background: var(--accent-color, #3b82f6); color: #fff; border-color: transparent; }
+.about-update-btn.primary:hover:not(:disabled) { filter: brightness(1.08); }
+.about-update-btn.ghost { background: transparent; color: var(--text-muted); }
+.about-update-status { font-size: 11px; color: var(--text-muted); min-height: 16px; }
+.about-update-status[data-updateStatus="error"] { color: #d64545; }
+.about-update-status[data-updateStatus="ok"] { color: #3a8f3a; }
+.about-update-status[data-updateStatus="update"] { color: var(--accent-color, #3b82f6); font-weight: 600; }
+.about-update-status[data-updateStatus="loading"] { color: var(--text-muted); font-style: italic; }
+.about-update-notes {
+  max-height: 180px; overflow-y: auto; white-space: pre-wrap; padding: 8px 10px;
+  background: var(--bg-1); border: 1px solid var(--border-light); border-radius: 4px;
+  font-size: 11px; line-height: 1.5; color: var(--text-main);
+}
+.about-links { display: flex; gap: 12px; font-size: 11px; margin-top: 2px; }
+.about-links a { color: var(--accent-color, #3b82f6); text-decoration: none; }
+.about-links a:hover { text-decoration: underline; }
+
 #status-bar {
   min-height: 24px; display: flex; align-items: center; padding: 0 12px; background: var(--bg-1); border-top: 1px solid var(--border-light);
   color: var(--text-muted); font-size: 10px; font-weight: 500; letter-spacing: 0.2px; transition: min-height 0.15s ease, padding 0.15s ease, opacity 0.15s ease;
@@ -2776,3 +2880,296 @@ body {
 .share-hint:empty {
   display: none;
 }
+
+/* ============================================================
+   Inline Popover（音高节点 / 音符 等内联浮窗的通用层）
+   ============================================================ */
+
+/* 不再渲染 backdrop：右下角浮窗使用 modeless 交互，不拦外部点击。
+   保留类名以防历史样式泄漏。 */
+.inline-popover-backdrop { display: none; }
+
+.inline-popover {
+  position: fixed;
+  top: 0; left: 0;
+  z-index: 960;
+  min-width: 0;
+  max-width: min(640px, calc(100vw - 24px));
+  padding: 4px;
+  border: 1px solid rgba(163, 160, 151, 0.5);
+  border-radius: 8px;
+  background: rgba(253, 251, 245, 0.98);
+  backdrop-filter: saturate(140%) blur(6px);
+  -webkit-backdrop-filter: saturate(140%) blur(6px);
+  color: var(--text-main, #2B2825);
+  box-shadow:
+    0 1px 2px rgba(30, 25, 18, 0.06),
+    0 6px 16px rgba(30, 25, 18, 0.10);
+  outline: none;
+  font-size: 11px;
+  /* transform 由 JS 定位；content 进场动画走 inline-popover-content */
+  will-change: transform;
+}
+.inline-popover.is-closing {
+  opacity: 0;
+  transition: opacity 90ms ease-out, transform 90ms ease-out;
+  transform: translateY(4px);
+}
+
+.inline-popover-content {
+  animation: inline-popover-content-in 140ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes inline-popover-content-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* 不再用箭头 */
+.inline-popover-arrow { display: none; }
+
+/* ---- 浮窗内部（Notion 内联工具栏风格：紧凑一行 + 分组分隔） ---- */
+
+.inline-popover-section {
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: 2px;
+  padding: 2px 2px;
+}
+.inline-popover-section + .inline-popover-section {
+  margin-left: 4px;
+  padding-left: 6px;
+  border-left: 1px solid rgba(163, 160, 151, 0.3);
+}
+.inline-popover-header {
+  display: none;
+}
+.inline-popover-header-title,
+.inline-popover-header-dot { display: none; }
+
+.inline-popover-close {
+  appearance: none;
+  width: 22px; height: 22px;
+  margin-left: 2px;
+  border: none; border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted, #666158);
+  cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.inline-popover-close:hover { background: rgba(163, 160, 151, 0.2); color: var(--text-main, #2B2825); }
+
+.inline-popover-row {
+  display: inline-flex; align-items: center;
+  gap: 2px;
+}
+.inline-popover-row--dense { gap: 2px; }
+
+/* ---- 内联按钮（纯文字/图标，无底，hover 才显色） ---- */
+.inline-popover-btn-group {
+  display: inline-flex; align-items: stretch;
+  gap: 1px;
+}
+.inline-popover-btn {
+  appearance: none;
+  height: 26px;
+  min-width: 32px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-main, #2B2825);
+  font-size: 11px; font-weight: 500;
+  cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+.inline-popover-btn:hover:not(:disabled):not(.is-active) {
+  background: rgba(43, 40, 37, 0.06);
+}
+.inline-popover-btn:active:not(:disabled) { background: rgba(43, 40, 37, 0.1); }
+.inline-popover-btn.is-active {
+  background: rgba(59, 139, 136, 0.14);
+  color: var(--accent-color, #3B8B88);
+  font-weight: 600;
+}
+.inline-popover-btn:disabled { opacity: 0.4; cursor: default; }
+
+/* 形状按钮：只图标，hover 再出文字（tooltip 效果） */
+.inline-popover-btn-shape {
+  min-width: 32px; height: 26px;
+  padding: 0 6px;
+  gap: 0;
+}
+.inline-popover-btn-shape svg { display: block; flex-shrink: 0; }
+.inline-popover-btn-shape-label {
+  font-size: 10px; font-weight: 500;
+  margin-left: 4px;
+  color: var(--text-muted, #666158);
+  opacity: 0;
+  max-width: 0;
+  overflow: hidden;
+  transition: opacity 0.12s ease, max-width 0.16s cubic-bezier(0.2, 0.8, 0.2, 1), margin-left 0.16s ease;
+  white-space: nowrap;
+}
+.inline-popover-btn-shape:hover .inline-popover-btn-shape-label,
+.inline-popover-btn-shape.is-active .inline-popover-btn-shape-label {
+  opacity: 1;
+  max-width: 48px;
+  margin-left: 4px;
+}
+.inline-popover-btn-shape.is-active .inline-popover-btn-shape-label {
+  color: var(--accent-color, #3B8B88);
+}
+
+/* ---- 字段：紧凑 label + input ---- */
+.inline-popover-field {
+  display: inline-flex; align-items: center; gap: 2px;
+  padding: 0 3px;
+}
+.inline-popover-field-label {
+  color: var(--text-muted, #666158);
+  font-size: 10px; font-weight: 500;
+}
+.inline-popover-number-input {
+  width: 40px; height: 22px;
+  padding: 0 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-main, #2B2825);
+  font: 500 11px/1 "JetBrains Mono", monospace;
+  outline: none;
+  text-align: center;
+  transition: background 0.12s ease, border-color 0.12s ease;
+  -moz-appearance: textfield;
+}
+.inline-popover-number-input::-webkit-inner-spin-button,
+.inline-popover-number-input::-webkit-outer-spin-button {
+  -webkit-appearance: none; margin: 0;
+}
+.inline-popover-number-input:hover:not(:disabled) { background: rgba(43, 40, 37, 0.05); }
+.inline-popover-number-input:focus {
+  background: #FFFFFF;
+  border-color: var(--accent-color, #3B8B88);
+  box-shadow: 0 0 0 2px rgba(59, 139, 136, 0.15);
+}
+.inline-popover-number-input:disabled { opacity: 0.4; cursor: default; }
+
+.inline-popover-select {
+  min-width: 84px; height: 22px;
+  padding: 0 20px 0 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-main, #2B2825);
+  font: 500 10px/1 system-ui, sans-serif;
+  outline: none;
+  transition: background 0.12s ease, border-color 0.12s ease;
+  cursor: pointer;
+}
+.inline-popover-select:hover:not(:disabled) { background: rgba(43, 40, 37, 0.05); }
+.inline-popover-select:focus {
+  background: #FFFFFF;
+  border-color: var(--accent-color, #3B8B88);
+  box-shadow: 0 0 0 2px rgba(59, 139, 136, 0.15);
+}
+.inline-popover-select:disabled { opacity: 0.4; cursor: default; }
+
+.inline-popover-count {
+  display: inline-flex; align-items: center;
+  padding: 0 6px;
+  color: var(--text-muted, #666158);
+  font-size: 10px; font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+body.inline-popover-active { }
+
+/* ---- 子分区 subheader（内联 chip 风） ---- */
+.inline-popover-subheader {
+  display: inline-flex; align-items: center;
+  padding: 0 4px;
+  color: var(--text-muted, #666158);
+  font-size: 10px; font-weight: 600;
+}
+.inline-popover-subheader--with-action { gap: 4px; }
+
+/* ---- 颤音开关（紧凑 toggle 文字按钮） ---- */
+.inline-popover-switch {
+  appearance: none;
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 22px; padding: 0 8px;
+  border: none; border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted, #666158);
+  font-size: 10px; font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.inline-popover-switch:hover:not(:disabled) { background: rgba(43, 40, 37, 0.06); }
+.inline-popover-switch:disabled { opacity: 0.4; cursor: default; }
+.inline-popover-switch-track {
+  position: relative;
+  width: 22px; height: 12px;
+  background: rgba(43, 40, 37, 0.22);
+  border-radius: 999px;
+  transition: background 0.18s ease;
+}
+.inline-popover-switch-thumb {
+  position: absolute; top: 1px; left: 1px;
+  width: 10px; height: 10px;
+  background: #FFFFFF;
+  border-radius: 50%;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.15);
+  transition: transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.inline-popover-switch.is-on .inline-popover-switch-track { background: var(--accent-color, #3B8B88); }
+.inline-popover-switch.is-on .inline-popover-switch-thumb { transform: translateX(10px); }
+.inline-popover-switch.is-on { color: var(--accent-color, #3B8B88); }
+.inline-popover-switch.is-mixed .inline-popover-switch-track {
+  background: linear-gradient(90deg, rgba(43, 40, 37, 0.22) 0 50%, var(--accent-color, #3B8B88) 50% 100%);
+}
+
+/* ---- 高级参数（更像一个触发按钮，点开后内容直接换行追加） ---- */
+.inline-popover-advanced {
+  display: inline-flex; align-items: center;
+}
+.inline-popover-advanced-toggle {
+  appearance: none;
+  display: inline-flex; align-items: center; gap: 3px;
+  height: 22px; padding: 0 6px;
+  background: transparent;
+  border: none; border-radius: 4px;
+  color: var(--text-muted, #666158);
+  font-size: 10px; font-weight: 500;
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+.inline-popover-advanced-toggle:hover { background: rgba(43, 40, 37, 0.06); color: var(--text-main, #2B2825); }
+.inline-popover-advanced-toggle svg { transition: transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.inline-popover-advanced.is-open .inline-popover-advanced-toggle svg { transform: rotate(180deg); }
+.inline-popover-advanced.is-open .inline-popover-advanced-toggle {
+  color: var(--accent-color, #3B8B88);
+  background: rgba(59, 139, 136, 0.12);
+}
+.inline-popover-advanced-body { display: none; }
+
+/* 音符浮窗：主行 + 可选的"展开行"（高级参数）。
+   高级参数点开后作为第二行追加到面板底部，保持一致的紧凑感。 */
+.note-edit-popover {
+  display: flex; flex-direction: column;
+  min-width: 0;
+}
+.note-edit-popover-body {
+  display: flex; flex-direction: row; align-items: center;
+  flex-wrap: wrap;
+  gap: 0;
+}
+.note-edit-popover-advanced-row {
+  width: 100%;
+  margin-top: 2px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(163, 160, 151, 0.3);
+  display: none;
+}
+.note-edit-popover-advanced-row.is-open { display: flex; }

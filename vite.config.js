@@ -1,7 +1,18 @@
 ﻿import { resolve, join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { readFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
+import { readFile as readFilePromise } from 'node:fs/promises'
 import { defineConfig } from 'vite'
+
+// 读取 package.json 的 version，注入给前端用于「关于」页显示
+const PACKAGE_VERSION = (() => {
+  try {
+    const raw = readFileSync(resolve(__dirname, 'package.json'), 'utf8')
+    return JSON.parse(raw).version || '0.0.0'
+  } catch {
+    return '0.0.0'
+  }
+})()
 
 const TUNNEL_STATUS_FILE = process.env.MELODY_TUNNEL_STATUS_FILE
   || join(tmpdir(), 'webutau-tunnel-status.json')
@@ -59,7 +70,7 @@ function tunnelStatusPlugin() {
     }
     let payload
     try {
-      const text = await readFile(TUNNEL_STATUS_FILE, 'utf8')
+      const text = await readFilePromise(TUNNEL_STATUS_FILE, 'utf8')
       JSON.parse(text)
       payload = text
     } catch {
@@ -83,6 +94,9 @@ function tunnelStatusPlugin() {
 }
 
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(PACKAGE_VERSION),
+  },
   plugins: [audioInlinePlugin(), tunnelStatusPlugin()],
   server: {
     port: resolveFrontendPort(),

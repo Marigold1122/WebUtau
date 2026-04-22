@@ -25,8 +25,8 @@ function updatePredictionProgress(store, view, trackId, payload) {
     progress,
     error: null,
   })
-  view.updateTrackSynthesisOverlay(buildPredictionOverlayText(progress), progress / 100)
-  view.setStatus(buildPredictionStatusText(getTrackName(store, trackId), progress))
+  view.updateTrackSynthesisOverlay(buildPredictionOverlayText(progress, payload), progress / 100)
+  view.setStatus(buildPredictionStatusText(getTrackName(store, trackId), progress, payload))
 }
 
 function invalidateVoiceConversion(onVoiceConversionInvalidated, trackId, reason) {

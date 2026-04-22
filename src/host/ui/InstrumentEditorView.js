@@ -1,5 +1,6 @@
 import { PIANO_ROLL } from '../../config/constants.js'
 import { createHorizontalDragAutoScroller } from '../../shared/horizontalDragAutoScroll.js'
+import { buildNoteDocumentSignature, createPreviewNoteDocument } from '../../shared/noteDocument.js'
 import { computeFollowScrollLeft, normalizePlayheadFollowMode } from '../../shared/playheadFollowMode.js'
 import { createTimelineAxis } from '../../shared/timelineAxis.js'
 import { getTrackColorById } from './tracks/trackColorPalette.js'
@@ -53,12 +54,7 @@ function formatMidiLabel(midi) {
 
 function buildNoteSignature(notes = []) {
   return (Array.isArray(notes) ? notes : [])
-    .map((note) => [
-      Math.round(clampNonNegative(note.tick)),
-      Math.max(1, Math.round(clampNonNegative(note.durationTicks, 1))),
-      clampMidi(note.midi),
-      clampVelocity(note.velocity).toFixed(3),
-    ].join(':'))
+    .map((note) => buildNoteDocumentSignature(note))
     .join('|')
 }
 
@@ -71,14 +67,15 @@ function sortNotes(notes = []) {
 }
 
 function cloneNote(note = {}) {
-  return {
+  return createPreviewNoteDocument({
+    ...note,
     time: clampNonNegative(note.time),
     duration: Math.max(0.05, clampNonNegative(note.duration, 0.05)),
     tick: Math.round(clampNonNegative(note.tick)),
     durationTicks: Math.max(1, Math.round(clampNonNegative(note.durationTicks, 1))),
     midi: clampMidi(note.midi),
     velocity: clampVelocity(note.velocity),
-  }
+  })
 }
 
 function computeTotalTicks(track = null, notes = [], ppq = DEFAULT_PPQ, viewportWidth = 0, tempoData = null) {

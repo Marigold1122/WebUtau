@@ -6,7 +6,10 @@ import noteSelection from './NoteSelection.js'
 import viewport from './PianoRollViewport.js'
 import grid from './PianoRollGrid.js'
 import notes from './PianoRollNotes.js'
-import pitchEditor, { PITCH_EDITOR_MODE, PITCH_POINT_SHAPES, PITCH_BOUNDARY_MODES } from '../modules/PitchEditor.js'
+import pitchEditor, { PITCH_EDITOR_MODE } from '../modules/PitchEditor.js'
+import noteEditPopover from './NoteEditPopover.js'
+import pitchShapePopover from './PitchShapePopover.js'
+import inlinePopover from './InlinePopover.js'
 
 class PianoRoll {
   constructor() {
@@ -23,8 +26,6 @@ class PianoRoll {
     this.btnPitchMode = null
     this.btnResetPitchSelection = null
     this.btnResetPitchAll = null
-    this.shapeButtons = new Map()
-    this.boundaryButtons = new Map()
     this.isInitialized = false
   }
 
@@ -57,6 +58,8 @@ class PianoRoll {
     this.canvasWrapper.addEventListener('wheel', (event) => this._onWheel(event), { passive: false })
     this.timeRulerCanvas.addEventListener('click', (event) => this._onTimeRulerClick(event))
     inputController.bindTo(this.canvasWrapper, this.noteCanvas)
+    noteEditPopover.activate(this.noteCanvas)
+    pitchShapePopover.activate(this.noteCanvas)
     grid.draw()
     this._updateEditorToolbar()
     this.isInitialized = true
@@ -71,6 +74,7 @@ class PianoRoll {
     this.editorToolbar.addEventListener('mousedown', (event) => event.stopPropagation())
     this.editorToolbar.addEventListener('pointerdown', (event) => event.stopPropagation())
 
+    // 模式切换（歌词 / 音高）
     const modeGroup = document.createElement('div')
     modeGroup.className = 'piano-roll-editor-mode-group'
 
@@ -97,60 +101,9 @@ class PianoRoll {
       notes.requestDraw()
       this._restoreEditorFocus()
     })
-
     modeGroup.append(this.btnLyricMode, this.btnPitchMode)
 
-    const shapeGroup = document.createElement('div')
-    shapeGroup.className = 'piano-roll-editor-control-group'
-    for (const [shape, label] of [
-      [PITCH_POINT_SHAPES.IN_OUT, '平滑'],
-      [PITCH_POINT_SHAPES.LINEAR, '直线'],
-      [PITCH_POINT_SHAPES.IN, '缓入'],
-      [PITCH_POINT_SHAPES.OUT, '缓出'],
-    ]) {
-      const button = document.createElement('button')
-      button.type = 'button'
-      button.className = 'piano-roll-editor-btn piano-roll-editor-btn--compact'
-      button.textContent = label
-      this._wireToolbarButton(button)
-      button.addEventListener('click', async () => {
-        try {
-          await pitchEditor.setSelectedSegmentShape(shape)
-        } catch (error) {
-          console.error('[PianoRoll] 设置音高段形失败:', error)
-        } finally {
-          this._restoreEditorFocus()
-        }
-      })
-      this.shapeButtons.set(shape, button)
-      shapeGroup.appendChild(button)
-    }
-
-    const boundaryGroup = document.createElement('div')
-    boundaryGroup.className = 'piano-roll-editor-control-group'
-    for (const [mode, label] of [
-      [PITCH_BOUNDARY_MODES.SNAP, '吸附'],
-      [PITCH_BOUNDARY_MODES.GLIDE, '滑入'],
-      [PITCH_BOUNDARY_MODES.HOLD, '保持'],
-    ]) {
-      const button = document.createElement('button')
-      button.type = 'button'
-      button.className = 'piano-roll-editor-btn piano-roll-editor-btn--compact'
-      button.textContent = label
-      this._wireToolbarButton(button)
-      button.addEventListener('click', async () => {
-        try {
-          await pitchEditor.setBoundaryModeForNoteEntries(noteSelection.getSelected(), mode)
-        } catch (error) {
-          console.error('[PianoRoll] 设置起始连接失败:', error)
-        } finally {
-          this._restoreEditorFocus()
-        }
-      })
-      this.boundaryButtons.set(mode, button)
-      boundaryGroup.appendChild(button)
-    }
-
+    // 恢复按钮（只剩两个；原本的线形/连接/滑音/颤音已迁移到内联浮窗）
     this.btnResetPitchSelection = document.createElement('button')
     this.btnResetPitchSelection.type = 'button'
     this.btnResetPitchSelection.className = 'piano-roll-editor-btn piano-roll-editor-btn--secondary'
@@ -188,8 +141,6 @@ class PianoRoll {
 
     this.editorToolbar.append(
       modeGroup,
-      shapeGroup,
-      boundaryGroup,
       this.btnResetPitchSelection,
       this.btnResetPitchAll,
       this.editorHint,
@@ -225,25 +176,22 @@ class PianoRoll {
     const pitchMode = pitchEditor.getMode() === PITCH_EDITOR_MODE.PITCH
     const hasOriginalPitch = pitchEditor.hasOriginalPitch()
     const hasSelection = noteSelection.count() > 0
-    const selectedShape = pitchEditor.getSelectedSegmentShape()
-    const selectedBoundaryMode = pitchEditor.getBoundaryModeForNoteEntries(noteSelection.getSelected())
 
     this.btnLyricMode.classList.toggle('active', !pitchMode)
     this.btnPitchMode.classList.toggle('active', pitchMode)
     this.btnPitchMode.disabled = !canPitchEdit
     this.btnResetPitchSelection.disabled = !(canPitchEdit && hasOriginalPitch && hasSelection)
     this.btnResetPitchAll.disabled = !(canPitchEdit && hasOriginalPitch)
-    for (const [shape, button] of this.shapeButtons.entries()) {
-      button.disabled = !(canPitchEdit && pitchMode && pitchEditor.hasSelectedSegment())
-      button.classList.toggle('active', pitchMode && selectedShape === shape)
+
+    if (!hasSelection) {
+      this.editorHint.textContent = pitchMode
+        ? '点线段 / 节点可编辑曲线形状'
+        : '双击音符可编辑歌词'
+    } else if (pitchMode) {
+      this.editorHint.textContent = '点节点改曲线；所选音符浮窗可调滑音、颤音、起始连接'
+    } else {
+      this.editorHint.textContent = '双击音符编辑歌词；音符浮窗可调滑音、颤音、音准'
     }
-    for (const [mode, button] of this.boundaryButtons.entries()) {
-      button.disabled = !(canPitchEdit && pitchMode && hasSelection)
-      button.classList.toggle('active', pitchMode && selectedBoundaryMode === mode)
-    }
-    this.editorHint.textContent = pitchMode
-      ? '点线段改形，所选音符可切换起始连接'
-      : '双击音符编辑歌词'
   }
 
   setEditorMode(mode) {
@@ -265,6 +213,7 @@ class PianoRoll {
   refreshViewportAfterScroll() {
     grid.draw()
     notes.draw()
+    this._notifyViewportChanged()
   }
 
   _resize() {
@@ -306,6 +255,7 @@ class PianoRoll {
         grid.draw()
         notes.draw()
         playheadController.setPosition(playheadController.getPosition())
+        this._notifyViewportChanged()
       }
       return
     }
@@ -320,6 +270,14 @@ class PianoRoll {
     grid.draw()
     notes.draw()
     playheadController.setPosition(playheadController.getPosition())
+    this._notifyViewportChanged()
+  }
+
+  _notifyViewportChanged() {
+    // canvas 滚动 / 缩放不是真 DOM scroll 事件，InlinePopover 的全局 scroll
+    // 监听抓不到。这里主动让它重新定位。
+    inlinePopover.requestReposition('pitch-shape')
+    inlinePopover.requestReposition('note-edit')
   }
 
   _resolveWheelScrollDeltas(event) {
@@ -387,6 +345,7 @@ class PianoRoll {
 
     eventBus.on(EVENTS.NOTE_SELECTION_CHANGED, () => this._updateEditorToolbar())
     eventBus.on(EVENTS.PITCH_LOADED, () => this._updateEditorToolbar())
+    eventBus.on(EVENTS.PITCH_CHANGED, () => this._updateEditorToolbar())
     eventBus.on(EVENTS.PITCH_EDITOR_MODE_CHANGED, () => this._updateEditorToolbar())
     eventBus.on(EVENTS.PITCH_EDITOR_SELECTION_CHANGED, () => this._updateEditorToolbar())
 

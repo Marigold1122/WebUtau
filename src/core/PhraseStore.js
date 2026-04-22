@@ -1,5 +1,7 @@
 import eventBus from './EventBus.js'
 import { EVENTS } from '../config/constants.js'
+import { createPhraseDocuments } from '../shared/phraseDocument.js'
+import { createNoteDocument } from '../shared/noteDocument.js'
 import { createTimelineAxis } from '../shared/timelineAxis.js'
 import { createTempoDocument } from '../shared/tempoDocument.js'
 
@@ -15,7 +17,7 @@ class PhraseStore {
 
   setPhrases(phrases) {
     this._phrases = Array.isArray(phrases)
-      ? phrases.map((phrase) => this._normalizePhraseHashes(phrase))
+      ? createPhraseDocuments(phrases).map((phrase) => this._normalizePhraseHashes(phrase))
       : []
     eventBus.emit(EVENTS.PHRASES_UPDATED)
   }
@@ -260,15 +262,20 @@ class PhraseStore {
       }, 0),
     })
     const previousVelocityByKey = new Map()
+    const previousNoteStateByKey = new Map()
     for (const phrase of this._phrases) {
       for (const note of phrase?.notes || []) {
         const startTick = Math.max(0, Math.round(axis.timeToTick(note?.time || 0)))
         const endTick = Math.max(startTick, Math.round(axis.timeToTick((note?.time || 0) + (note?.duration || 0))))
         const durationTick = Math.max(1, endTick - startTick)
-        previousVelocityByKey.set(
-          `${startTick}:${durationTick}:${Math.round(note?.midi || 60)}`,
-          Number.isFinite(note?.velocity) ? note.velocity : 0.8,
-        )
+        const key = `${startTick}:${durationTick}:${Math.round(note?.midi || 60)}`
+        previousVelocityByKey.set(key, Number.isFinite(note?.velocity) ? note.velocity : 0.8)
+        previousNoteStateByKey.set(key, {
+          lyric: note?.lyric || 'a',
+          tuning: Number.isFinite(note?.tuning) ? Math.round(note.tuning) : 0,
+          pitch: note?.pitch || null,
+          vibrato: note?.vibrato || null,
+        })
       }
     }
 
@@ -284,14 +291,21 @@ class PhraseStore {
           const startTime = axis.tickToTime(startTick)
           const endTime = axis.tickToTime(startTick + durationTick)
           const midi = Number.isFinite(note?.tone) ? Math.round(note.tone) : 60
-          const velocity = previousVelocityByKey.get(`${startTick}:${durationTick}:${midi}`) ?? 0.8
-          return {
+          const key = `${startTick}:${durationTick}:${midi}`
+          const velocity = previousVelocityByKey.get(key) ?? 0.8
+          const previousState = previousNoteStateByKey.get(key) || null
+          return createNoteDocument({
             time: startTime,
             duration: Math.max(0.05, endTime - startTime),
+            tick: startTick,
+            durationTicks: durationTick,
             midi,
             velocity,
-            lyric: note?.lyric || 'a',
-          }
+            lyric: note?.lyric || previousState?.lyric || 'a',
+            tuning: Number.isFinite(note?.tuning) ? note.tuning : (previousState?.tuning ?? 0),
+            pitch: note?.pitch ?? previousState?.pitch ?? null,
+            vibrato: note?.vibrato ?? previousState?.vibrato ?? null,
+          })
         })
         .sort((left, right) => {
           if (left.time !== right.time) return left.time - right.time
@@ -312,8 +326,13 @@ class PhraseStore {
       }
     })
 
-    this._phrases = rebuilt
-    eventBus.emit(EVENTS.PHRASES_EDITED, { phrases: rebuilt })
+    // 注意：createPhraseDocuments 会 map(createNoteDocument) 深拷贝所有 note，
+    // 产生新的对象引用。下游（NoteSelection / PianoRollNotes）必须收到 **_phrases 本身**，
+    // 否则 note 引用分叉：NoteSelection 在 rebuilt 上 remap，但 phraseStore.getPhrases()
+    // 返回的是 _phrases，两套 note 对象引用不同，导致后续点击 isSelected() 永远 miss，
+    // 表现为"点击音符无选中高亮"。所以这里 emit 的是权威副本 _phrases。
+    this._phrases = createPhraseDocuments(rebuilt).map((phrase) => this._normalizePhraseHashes(phrase))
+    eventBus.emit(EVENTS.PHRASES_EDITED, { phrases: this._phrases })
     console.log(`[数据中心] 编辑重建完成 | ${rebuilt.length}句`)
     return true
   }

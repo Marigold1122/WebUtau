@@ -12,13 +12,16 @@
     "tauri:build": "tauri build",
     "tauri:prepare-assets": "node ./scripts/prepare-tauri-assets.mjs",
     "tauri:dev:frontend": "node ./scripts/run-tauri-frontend.mjs dev --prepare-assets",
-    "tauri:build:frontend": "node ./scripts/run-tauri-frontend.mjs build --prepare-assets"
+    "tauri:build:frontend": "node ./scripts/run-tauri-frontend.mjs build --prepare-assets",
+    "release": "node ./scripts/release.mjs",
+    "release:dry-run": "node ./scripts/release.mjs --dry-run"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",
     "vite": "6.4.1"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.705.0",
     "@sglkc/kuromoji": "^1.1.0",
     "@tonejs/midi": "^2.0.28",
     "tone": "^14.7.77",

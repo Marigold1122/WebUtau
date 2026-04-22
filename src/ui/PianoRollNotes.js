@@ -55,6 +55,10 @@ class PianoRollNotes {
         this.ctx.beginPath()
         this.ctx.roundRect(x, y, width, height, PIANO_ROLL.NOTE_CORNER_RADIUS)
         this.ctx.stroke()
+        // 注意：不在这里再画颤音白线。后端 OpenUtau RenderPhrase 已经把 note.vibrato
+        // 波形合进 pitchesBeforeDeviation（见 RenderPhrase.cs:254-268, :383），
+        // 而 _drawPitchCurve 画的就是这个数组 → 颤音已经体现在音高线上。
+        // 再单独画一条本地计算的白线只会跟真正的音高线错位，且不会跟随音高编辑更新。
         if (note.lyric && width > 14) {
           this.ctx.fillStyle = '#f8f5ee'
           this.ctx.font = '600 10px "Inter", sans-serif'

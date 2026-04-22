@@ -1,30 +1,7 @@
-function clampNonNegative(value, fallback = 0) {
-  return Number.isFinite(value) ? Math.max(0, value) : fallback
-}
-
-function clampMidi(value, fallback = 60) {
-  const midi = Number.isFinite(value) ? Math.round(value) : fallback
-  return Math.max(0, Math.min(127, midi))
-}
-
-function clampVelocity(value) {
-  if (!Number.isFinite(value)) return 0.8
-  return Math.max(0, Math.min(1, value))
-}
+import { clampMidi, clampNonNegative, clampVelocity, createPreviewNoteDocument } from '../../shared/noteDocument.js'
 
 function normalizePreviewNote(note = {}) {
-  const time = clampNonNegative(note.time)
-  const duration = Math.max(0.05, clampNonNegative(note.duration, 0.05))
-  const tick = Math.round(clampNonNegative(note.tick))
-  const durationTicks = Math.max(1, Math.round(clampNonNegative(note.durationTicks, 1)))
-  return {
-    time,
-    duration,
-    tick,
-    durationTicks,
-    midi: clampMidi(note.midi),
-    velocity: clampVelocity(note.velocity),
-  }
+  return createPreviewNoteDocument(note)
 }
 
 function sortNotes(notes = []) {

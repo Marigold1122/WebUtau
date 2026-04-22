@@ -16,6 +16,7 @@ import { DEFAULT_LANGUAGE_CODE } from '../../config/languageOptions.js'
 import { EVENTS, PLAYHEAD_STATE } from '../../config/constants.js'
 import { HOST_SHORTCUT_INTENTS, getHostShortcutIntent } from '../../shared/hostShortcutIntents.js'
 import { isKeyboardShortcutTargetEditable } from '../../shared/isKeyboardShortcutTargetEditable.js'
+import { createTimelineAxis } from '../../shared/timelineAxis.js'
 import { createRuntimeEventBindings } from './createRuntimeEventBindings.js'
 import phraseRenderStateStore from './phraseRenderStateStore.js'
 import { EmbeddedPlaybackMirror } from './embeddedPlaybackMirror.js'
@@ -59,6 +60,57 @@ function resetRuntimeState() {
 
 function getPhraseDuration(phrases = []) {
   return phrases.reduce((maxValue, phrase) => Math.max(maxValue, phrase?.endTime || 0), 0)
+}
+
+function buildSubmitNoteParams(phrases = [], tempoData = null, ppq = 480) {
+  const axis = createTimelineAxis({
+    tempoData,
+    ppq: Number.isFinite(ppq) && ppq > 0 ? Math.round(ppq) : 480,
+    totalTicks: 0,
+  })
+  return (Array.isArray(phrases) ? phrases : [])
+    .flatMap((phrase) => phrase?.notes || [])
+    .map((note) => {
+      const hasParams = (Number.isFinite(note?.tuning) && Math.round(note.tuning) !== 0) || note?.pitch || note?.vibrato
+      if (!hasParams) return null
+      const startTick = Number.isFinite(note?.tick)
+        ? Math.max(0, Math.round(note.tick))
+        : Math.max(0, Math.round(axis.timeToTick(note?.time || 0)))
+      const endTick = Number.isFinite(note?.tick) && Number.isFinite(note?.durationTicks)
+        ? startTick + Math.max(1, Math.round(note.durationTicks))
+        : Math.max(startTick + 1, Math.round(axis.timeToTick((note?.time || 0) + (note?.duration || 0))))
+      return {
+        position: startTick,
+        duration: Math.max(1, endTick - startTick),
+        tone: Number.isFinite(note?.midi) ? Math.round(note.midi) : 60,
+        tuning: Number.isFinite(note?.tuning) ? Math.round(note.tuning) : 0,
+        pitch: note?.pitch
+          ? {
+            snapFirst: note.pitch?.snapFirst !== false,
+            data: Array.isArray(note.pitch?.data)
+              ? note.pitch.data.map((point) => ({
+                x: Number.isFinite(point?.x) ? point.x : 0,
+                y: Number.isFinite(point?.y) ? point.y : 0,
+                shape: typeof point?.shape === 'string' ? point.shape : 'io',
+              }))
+              : [],
+          }
+          : null,
+        vibrato: note?.vibrato
+          ? {
+            length: Number.isFinite(note.vibrato?.length) ? note.vibrato.length : 0,
+            period: Number.isFinite(note.vibrato?.period) ? note.vibrato.period : 175,
+            depth: Number.isFinite(note.vibrato?.depth) ? note.vibrato.depth : 25,
+            in: Number.isFinite(note.vibrato?.in) ? note.vibrato.in : 10,
+            out: Number.isFinite(note.vibrato?.out) ? note.vibrato.out : 10,
+            shift: Number.isFinite(note.vibrato?.shift) ? note.vibrato.shift : 0,
+            drift: Number.isFinite(note.vibrato?.drift) ? note.vibrato.drift : 0,
+            volLink: Number.isFinite(note.vibrato?.volLink) ? note.vibrato.volLink : 0,
+          }
+          : null,
+      }
+    })
+    .filter(Boolean)
 }
 
 function loadSnapshotIntoRuntime(snapshot) {
@@ -178,12 +230,13 @@ export function createVoiceRuntimeApp(callbacks = {}) {
     const bpm = tempoData?.tempos?.[0]?.bpm || phraseStore.getBpm() || 120
     const timeSignature = tempoData?.timeSignatures?.[0]?.timeSignature || [4, 4]
     const encodedMidi = midiEncoder.encode(phrases, bpm, timeSignature)
+    const noteParams = buildSubmitNoteParams(phrases, tempoData)
 
     phraseStore.setMidiFile(encodedMidi)
     state.languageCode = languageCode
     setStatus(`已提交 ${state.trackName} 的合成任务`)
     const singerId = options.singerId || await resolveSingerId()
-    await renderJobManager.submitMidi(encodedMidi, singerId, languageCode)
+    await renderJobManager.submitMidi(encodedMidi, singerId, languageCode, { noteParams })
   }
 
   async function applyNoteEdits(edits = []) {

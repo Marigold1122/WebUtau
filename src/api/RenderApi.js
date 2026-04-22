@@ -16,11 +16,14 @@ function _buildPhraseDownloadUrl(jobId, phraseIndex, versionKey = null) {
 }
 
 const renderApi = {
-  async submitJob(midiFile, singerId, language) {
+  async submitJob(midiFile, singerId, language, options = {}) {
     const formData = new FormData()
     formData.append('midi', midiFile)
     formData.append('singerId', singerId)
     formData.append('defaultLanguageCode', language)
+    if (Array.isArray(options?.noteParams) && options.noteParams.length > 0) {
+      formData.append('noteParamsJson', JSON.stringify(options.noteParams))
+    }
 
     const response = await fetch(buildRenderApiUrl('/api/synthesize'), {
       method: 'POST',
@@ -70,6 +73,18 @@ const renderApi = {
     }
     return data
   },
+  async applyNoteParams(jobId, notes) {
+    const response = await fetch(buildRenderApiUrl(`/api/jobs/${jobId}/note-params`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes }),
+    })
+    const data = await response.json().catch(() => null)
+    if (!response.ok) {
+      throw new Error(data?.error || `applyNoteParams failed: ${response.status}`)
+    }
+    return data
+  },
   async deleteJob(jobId) {
     const response = await fetch(buildRenderApiUrl(`/api/jobs/${jobId}`), {
       method: 'DELETE',
@@ -77,6 +92,18 @@ const renderApi = {
     if (!response.ok && response.status !== 404) {
       throw new Error(`deleteJob failed: ${response.status}`)
     }
+  },
+  /**
+   * 心跳：告诉后端这个 job 的客户端还在。
+   * 返回 true = 心跳被后端接受；false = 404（job 已结束或被清理），前端应停止后续心跳。
+   */
+  async heartbeat(jobId) {
+    const response = await fetch(buildRenderApiUrl(`/api/jobs/${jobId}/heartbeat`), {
+      method: 'POST',
+    })
+    if (response.status === 404) return false
+    if (!response.ok) throw new Error(`heartbeat failed: ${response.status}`)
+    return true
   },
   async editNotes(jobId, edits) {
     const response = await fetch(buildRenderApiUrl(`/api/jobs/${jobId}/edit-notes`), {

@@ -1,6 +1,7 @@
 import { createTempoDocument } from '../../shared/tempoDocument.js'
 import { createTimelineAxis } from '../../shared/timelineAxis.js'
 import { createPhraseDocuments } from '../../shared/phraseDocument.js'
+import { clampMidi, clampNonNegative, clampVelocity, createNoteDocument, createPreviewNoteDocument } from '../../shared/noteDocument.js'
 import { buildPreviewProjection } from '../services/PreviewProjector.js'
 import { createTrackDocument } from './createTrackDocument.js'
 import { createProjectMixState, mergeProjectMixState } from './projectMixState.js'
@@ -15,33 +16,8 @@ function cloneValue(value, fallback) {
 
 const DEFAULT_PPQ = 480
 
-function clampNonNegative(value, fallback = 0) {
-  return Number.isFinite(value) ? Math.max(0, value) : fallback
-}
-
-function clampMidi(value) {
-  const midi = Number.isFinite(value) ? Math.round(value) : 60
-  return Math.max(0, Math.min(127, midi))
-}
-
-function clampVelocity(value) {
-  if (!Number.isFinite(value)) return 0.8
-  return Math.max(0, Math.min(1, value))
-}
-
 function normalizePreviewNote(note = {}) {
-  const time = clampNonNegative(note.time)
-  const duration = Math.max(0.05, clampNonNegative(note.duration, 0.05))
-  const tick = Math.round(clampNonNegative(note.tick))
-  const durationTicks = Math.max(1, Math.round(clampNonNegative(note.durationTicks, 1)))
-  return {
-    time,
-    duration,
-    tick,
-    durationTicks,
-    midi: clampMidi(note.midi),
-    velocity: clampVelocity(note.velocity),
-  }
+  return createPreviewNoteDocument(note)
 }
 
 function sortPreviewNotes(notes = []) {
@@ -70,13 +46,7 @@ function buildTrackPlaybackDefaults(mixState = null) { const defaultConfig = mix
 
 function buildSourcePhrasesFromPreviewNotes(previewNotes = []) {
   if (!Array.isArray(previewNotes) || previewNotes.length === 0) return []
-  const phraseNotes = previewNotes.map((note) => ({
-    time: note.time,
-    duration: note.duration,
-    midi: note.midi,
-    velocity: note.velocity,
-    lyric: 'a',
-  }))
+  const phraseNotes = previewNotes.map((note) => createNoteDocument(note))
   const endTime = phraseNotes.reduce((maxValue, note) => Math.max(maxValue, note.time + note.duration), 0)
   return createPhraseDocuments([{
     index: 0,
@@ -476,7 +446,7 @@ export class ProjectDocumentStore {
     const projection = buildPreviewProjection(snapshot, this._project?.tempoData, this._project?.ppq)
     track.voiceSnapshot = cloneValue(snapshot, null)
     track.sourcePhrases = createPhraseDocuments(snapshot?.phrases)
-    track.previewNotes = cloneValue(projection.previewNotes, track.previewNotes)
+    track.previewNotes = (Array.isArray(projection.previewNotes) ? projection.previewNotes : []).map((note) => normalizePreviewNote(note))
     track.noteCount = projection.noteCount ?? snapshot.noteCount ?? track.noteCount
     track.phraseCount = snapshot.phraseCount ?? track.sourcePhrases.length ?? track.phraseCount
     track.duration = projection.duration ?? snapshot.duration ?? track.duration

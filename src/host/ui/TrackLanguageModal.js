@@ -1,6 +1,15 @@
 import { LANGUAGE_OPTIONS, normalizeOptionalLanguageCode } from '../../config/languageOptions.js'
 import { fetchVoicebanks, getDefaultSingerId } from '../../api/VoicebankApi.js'
 
+// 把后端 VoicebankInfo.singerType (DiffSinger / Classic / ...) 映射成下拉框里的简短标注
+function formatSingerTypeTag(singerType) {
+  if (!singerType) return ''
+  const t = String(singerType).toLowerCase()
+  if (t === 'diffsinger') return '[DiffSinger · 自动音高]'
+  if (t === 'classic') return '[UTAU · 手动音高]'
+  return `[${singerType}]`
+}
+
 function getRefs() {
   return {
     overlay: document.getElementById('track-language-modal'),
@@ -56,7 +65,12 @@ export class TrackLanguageModal {
       voicebanks.forEach((vb) => {
         const option = document.createElement('option')
         option.value = vb.id
-        option.textContent = vb.name || vb.id
+        // 在名称后附带音源类型标记，帮助用户区分：
+        //   DiffSinger：自动音高预测
+        //   Classic：UTAU 声库，需手画音高
+        const typeTag = formatSingerTypeTag(vb.singerType)
+        option.textContent = typeTag ? `${vb.name || vb.id}  ${typeTag}` : (vb.name || vb.id)
+        if (vb.singerType) option.dataset.singerType = vb.singerType
         select.appendChild(option)
       })
       if (currentSingerId && voicebanks.some((vb) => vb.id === currentSingerId)) {

@@ -6,6 +6,11 @@ import phraseStore from '../core/PhraseStore.js'
 
 const M = '[渲染管理]'
 
+// 心跳间隔（ms）。后端默认 idle 阈值 20s，这里取 1/4 左右提供容错：
+// 3-4 次连续心跳丢失（短暂断网 / GC pause / 后台节流初期）都不会被后端误杀。
+// 前台用户几乎无感知这个频率，服务端开销也只是哈希表查一次。
+const HEARTBEAT_INTERVAL_MS = 5_000
+
 class RenderJobManager {
   constructor() {
     this._pollingTimer = null
@@ -17,10 +22,15 @@ class RenderJobManager {
     this._rebuilt = false
     this._generation = 0
     this._pollInFlight = false
+    // 心跳定时器：submitMidi 启动，reset / 404 响应 / 进入终态时停掉。
+    // 同一时刻只有一个 heartbeat 在飞；in-flight 标志避免网络卡时堆积。
+    this._heartbeatTimer = null
+    this._heartbeatInFlight = false
+    this._heartbeatJobId = null
   }
 
-  async submitMidi(midiFile, singerId, language) {
-    const { jobId } = await renderApi.submitJob(midiFile, singerId, language)
+  async submitMidi(midiFile, singerId, language, options = {}) {
+    const { jobId } = await renderApi.submitJob(midiFile, singerId, language, options)
     phraseStore.setJobId(jobId)
     this._jobStatus = null
     this._knownCompleted.clear()
@@ -28,6 +38,7 @@ class RenderJobManager {
     this._interactiveEditBlocks.clear()
     this._rebuilt = false
     this._startPolling()
+    this._startHeartbeat(jobId)
     eventBus.emit(EVENTS.JOB_SUBMITTED, { jobId })
     console.log(`${M} 提交任务 | jobId=${jobId}`)
   }
@@ -41,6 +52,10 @@ class RenderJobManager {
   stopPolling() {
     if (this._pollingTimer) clearInterval(this._pollingTimer)
     this._pollingTimer = null
+    // 所有"停止轮询"的触发点都对应 job 已进入终态或被废弃，心跳也就失去意义。
+    // restartForEdit 场景走 _startPolling（内部先 clear 旧 interval）不经过这里，
+    // 所以心跳不会被误停。
+    this._stopHeartbeat()
   }
 
   getStatus() {
@@ -115,6 +130,54 @@ class RenderJobManager {
   _startPolling() {
     if (this._pollingTimer) clearInterval(this._pollingTimer)
     this._pollingTimer = setInterval(() => this._poll(), 500)
+  }
+
+  // ---- 心跳 ----
+  // 每 HEARTBEAT_INTERVAL_MS 调一次 POST /api/jobs/:id/heartbeat。
+  // 后端若超过 JobIdleTimeoutSeconds 没收到心跳就 cancel 该 job。
+  // 心跳自动生命周期：
+  //   - submitMidi 成功后启动
+  //   - reset() 主动停止（页面离开流程会触发到 reset）
+  //   - 后端返回 404（job 已完成 / 清理）时停止，避免空调用
+  //   - 轮询观察到 status=completed/failed 时停止
+
+  _startHeartbeat(jobId) {
+    this._stopHeartbeat()
+    if (!jobId) return
+    this._heartbeatJobId = jobId
+    this._heartbeatTimer = setInterval(() => this._sendHeartbeat(), HEARTBEAT_INTERVAL_MS)
+  }
+
+  _stopHeartbeat() {
+    if (this._heartbeatTimer) {
+      clearInterval(this._heartbeatTimer)
+      this._heartbeatTimer = null
+    }
+    this._heartbeatJobId = null
+    this._heartbeatInFlight = false
+  }
+
+  async _sendHeartbeat() {
+    if (this._heartbeatInFlight) return
+    const jobId = this._heartbeatJobId
+    if (!jobId || jobId !== phraseStore.getJobId()) {
+      this._stopHeartbeat()
+      return
+    }
+    this._heartbeatInFlight = true
+    try {
+      const accepted = await renderApi.heartbeat(jobId)
+      if (!accepted) {
+        // 后端 404 —— job 已结束或被清理，无需继续心跳
+        console.log(`${M} 心跳终止（后端 404）| jobId=${jobId}`)
+        this._stopHeartbeat()
+      }
+    } catch (err) {
+      // 网络抖动等临时错误不要停心跳，下一轮再试
+      console.warn(`${M} 心跳失败（将重试）| ${err?.message || err}`)
+    } finally {
+      this._heartbeatInFlight = false
+    }
   }
 
   async _poll() {
@@ -200,6 +263,20 @@ class RenderJobManager {
         this._downloadAndCache(phraseInfo, expectedHash)
       }
 
+      // 兜底：如果后端把 job 标成 completed 但 phrase 层面全部失败（历史 backend
+      // 可能出现这种状态），按失败处理，避免前端 overlay 挂住。
+      const failedPhrases = phrases.filter((phrase) => phrase.status === 'failed')
+      if (status === 'completed' && completed === 0 && failedPhrases.length > 0) {
+        this.stopPolling()
+        const firstErr = failedPhrases.find((p) => p.error)?.error || '所有短语渲染均失败'
+        console.error(`${M} 渲染失败 | 所有 ${failedPhrases.length} 句均失败 | 首条错误=${firstErr}`)
+        for (const p of failedPhrases.slice(0, 5)) {
+          if (p.error) console.error(`${M}   第${p.index}句: ${p.error}`)
+        }
+        eventBus.emit(EVENTS.JOB_FAILED, { error: firstErr })
+        return
+      }
+
       eventBus.emit(EVENTS.JOB_PROGRESS, {
         status,
         completed,
@@ -218,6 +295,10 @@ class RenderJobManager {
       if (status === 'failed') {
         this.stopPolling()
         console.error(`${M} 渲染失败 | 错误=${data.error || '未知'}`)
+        // 把 phrase 层面的错误也打出来，方便排查
+        for (const p of failedPhrases.slice(0, 5)) {
+          if (p.error) console.error(`${M}   第${p.index}句: ${p.error}`)
+        }
         eventBus.emit(EVENTS.JOB_FAILED, { error: data.error })
       }
     } catch (error) {

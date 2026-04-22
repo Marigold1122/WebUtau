@@ -1,4 +1,5 @@
 import { createTimelineAxis } from '../../shared/timelineAxis.js'
+import { createPreviewNoteDocument } from '../../shared/noteDocument.js'
 import { isAudioTrack } from '../project/trackContentType.js'
 
 const DEFAULT_PPQ = 480
@@ -39,12 +40,13 @@ function projectNotePreview(note, axis) {
     : projectTickValue(axis, startTime + duration)
 
   return {
-    time: startTime,
-    duration,
-    tick: startTick,
-    durationTicks: duration <= 0 ? 0 : Math.max(1, endTick - startTick),
-    midi: note?.midi,
-    velocity: note?.velocity,
+    ...createPreviewNoteDocument({
+      ...note,
+      time: startTime,
+      duration,
+      tick: startTick,
+      durationTicks: duration <= 0 ? 0 : Math.max(1, endTick - startTick),
+    }),
   }
 }
 

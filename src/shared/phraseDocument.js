@@ -1,9 +1,7 @@
+import { clampNonNegative, createNoteDocument as createBaseNoteDocument } from './noteDocument.js'
+
 function normalizeNumber(value, fallback = 0) {
   return Number.isFinite(value) ? value : fallback
-}
-
-function normalizeLyric(value) {
-  return typeof value === 'string' && value.length > 0 ? value : 'a'
 }
 
 function buildPhraseText(notes, fallbackText) {
@@ -26,13 +24,7 @@ function computePhraseHash(phrase, notes, text) {
 }
 
 export function createNoteDocument(note = {}) {
-  return {
-    time: normalizeNumber(note.time),
-    duration: Math.max(0, normalizeNumber(note.duration)),
-    midi: Math.round(normalizeNumber(note.midi, 60)),
-    velocity: normalizeNumber(note.velocity, 0.8),
-    lyric: normalizeLyric(note.lyric),
-  }
+  return createBaseNoteDocument(note)
 }
 
 export function createPhraseDocument(phrase = {}, phraseIndex = 0) {
@@ -41,8 +33,8 @@ export function createPhraseDocument(phrase = {}, phraseIndex = 0) {
 
   return {
     index: Number.isInteger(phrase.index) ? phrase.index : phraseIndex,
-    startTime: normalizeNumber(phrase.startTime),
-    endTime: normalizeNumber(phrase.endTime),
+    startTime: clampNonNegative(phrase.startTime),
+    endTime: Math.max(clampNonNegative(phrase.startTime), clampNonNegative(phrase.endTime)),
     text,
     notes,
     inputHash: computePhraseHash(phrase, notes, text),
