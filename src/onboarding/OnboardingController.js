@@ -2,6 +2,7 @@ import { ONBOARDING_SCREENS, TOTAL_STEPS } from './onboardingSteps.js'
 import { hasCompleted, markCompleted, findTrackRowByBranch, resolveBody } from './onboardingUtils.js'
 import { applyPopoverPosition, applySpotlight } from './onboardingLayout.js'
 import { installAdvanceListener } from './onboardingAdvance.js'
+import { replayEntryAnimations } from './onboardingEffects.js'
 
 const TARGET_RETRY_INTERVAL_MS = 300
 const TARGET_RETRY_MAX = 20
@@ -155,24 +156,6 @@ export class OnboardingController {
     this._dragOffset = null
   }
 
-  /** 强制重启正文的入场动画：关闭 animation、读一次 offsetWidth 触发 reflow、再恢复 */
-  _restartBodyEnterAnimation() {
-    if (!this._bodyEl) return
-    this._bodyEl.style.animation = 'none'
-    // 读取 offsetWidth 强制浏览器 reflow，确保下一行的动画能重新播放
-    void this._bodyEl.offsetWidth
-    this._bodyEl.style.animation = ''
-  }
-
-  /** 切步时让左上角发箍轻摆一下 */
-  _swingBow() {
-    const bow = this._root?.querySelector('.wu-onboarding__bow')
-    if (!bow) return
-    bow.classList.remove('wu-onboarding__bow--swing')
-    void bow.offsetWidth
-    bow.classList.add('wu-onboarding__bow--swing')
-  }
-
   _unmount() {
     if (!this._mounted) return
     this._teardownActive()
@@ -202,9 +185,8 @@ export class OnboardingController {
     if (!screen) { this._finish(); return }
 
     this._bodyEl.innerHTML = resolveBody(screen.body, this._branch)
-    this._restartBodyEnterAnimation()
+    replayEntryAnimations(this._root, this._bodyEl)
     this._renderProgress(screen.stepNum)
-    this._swingBow()
 
     this._prevBtn.disabled = this._index === 0
     this._nextBtn.textContent = screen.isLast ? '完成' : '下一步'
