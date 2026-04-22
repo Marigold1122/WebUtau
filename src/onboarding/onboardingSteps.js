@@ -67,11 +67,20 @@ const dblclickTrackBody = {
 
 const renderVoiceBody = {
   'God Knows': `
-    <p>然后点击「将该轨道渲染为人声」按钮，来使轨道 10 由钢琴渲染为人声。「歌曲语言」推荐您选择<b>日语</b>，如果您没有自己的声库，则暂时只能使用 WebUtau 内置的 yousa 声库。</p>
+    <p>然后点击「将该轨道渲染为人声」按钮，来使轨道 10 由钢琴渲染为人声。</p>
+  `,
+  '海阔天空': `
+    <p>然后点击「将该轨道渲染为人声」按钮，来使主旋律 1 由钢琴渲染为人声。</p>
+  `,
+}
+
+const chooseLanguageBody = {
+  'God Knows': `
+    <p>「歌曲语言」推荐您选择<b>日语</b>，如果您没有自己的声库，则暂时只能使用 WebUtau 内置的 yousa 声库。</p>
     <p>当渲染结束后，再次播放，轨道 10 就会变为人声啦～</p>
   `,
   '海阔天空': `
-    <p>然后点击「将该轨道渲染为人声」按钮，来使主旋律 1 由钢琴渲染为人声。「歌曲语言」推荐您选择<b>中文</b>，如果您没有自己的声库，则暂时只能使用 WebUtau 内置的 yousa 声库。</p>
+    <p>「歌曲语言」推荐您选择<b>中文</b>，如果您没有自己的声库，则暂时只能使用 WebUtau 内置的 yousa 声库。</p>
     <p>当渲染结束后，再次播放，主旋律 1 就会变为人声啦～</p>
   `,
 }
@@ -147,6 +156,14 @@ export const ONBOARDING_SCREENS = [
     highlight: { selector: '[data-tour="render-as-voice"]' },
     body: renderVoiceBody,
     advanceOn: { type: 'dom-click', selector: '[data-tour="render-as-voice"]' },
+  },
+  {
+    id: 'try-choose-language',
+    stepNum: 3,
+    anchor: { type: 'near-top' },
+    highlight: { selector: '#track-language-modal .modal-dialog' },
+    body: chooseLanguageBody,
+    advanceOn: { type: 'dom-click', selector: '#btn-track-language-confirm' },
   },
   {
     id: 'lyric-open',
