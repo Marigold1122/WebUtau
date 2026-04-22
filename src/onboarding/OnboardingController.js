@@ -28,6 +28,11 @@ export class OnboardingController {
     this._lastRectUpdateAt = 0
     this._currentTarget = null
     this._onResize = () => this._scheduleRectUpdate()
+    this._userDragged = false
+    this._dragOffset = null
+    this._onPopoverMouseDown = null
+    this._onDocumentMouseMove = null
+    this._onDocumentMouseUp = null
   }
 
   autoStart() {
@@ -104,14 +109,54 @@ export class OnboardingController {
     this._prevBtn.addEventListener('click', () => this.prev())
     this._nextBtn.addEventListener('click', () => this.next())
 
+    this._installDrag()
     window.addEventListener('resize', this._onResize)
     window.addEventListener('scroll', this._onResize, true)
     this._mounted = true
   }
 
+  _installDrag() {
+    this._onPopoverMouseDown = (event) => {
+      if (event.button !== 0) return
+      if (event.target?.closest?.('button, a, input, textarea, select')) return
+      const rect = this._popover.getBoundingClientRect()
+      this._dragOffset = { x: event.clientX - rect.left, y: event.clientY - rect.top }
+      this._popover.classList.add('wu-onboarding__popover--dragging')
+      event.preventDefault()
+    }
+    this._onDocumentMouseMove = (event) => {
+      if (!this._dragOffset || !this._popover) return
+      const w = this._popover.offsetWidth
+      const h = this._popover.offsetHeight
+      const left = Math.max(0, Math.min(window.innerWidth - w, event.clientX - this._dragOffset.x))
+      const top = Math.max(0, Math.min(window.innerHeight - h, event.clientY - this._dragOffset.y))
+      this._popover.style.left = `${left}px`
+      this._popover.style.top = `${top}px`
+      this._userDragged = true
+    }
+    this._onDocumentMouseUp = () => {
+      if (!this._dragOffset) return
+      this._dragOffset = null
+      this._popover?.classList.remove('wu-onboarding__popover--dragging')
+    }
+    this._popover.addEventListener('mousedown', this._onPopoverMouseDown)
+    document.addEventListener('mousemove', this._onDocumentMouseMove)
+    document.addEventListener('mouseup', this._onDocumentMouseUp)
+  }
+
+  _uninstallDrag() {
+    if (this._popover && this._onPopoverMouseDown) {
+      this._popover.removeEventListener('mousedown', this._onPopoverMouseDown)
+    }
+    if (this._onDocumentMouseMove) document.removeEventListener('mousemove', this._onDocumentMouseMove)
+    if (this._onDocumentMouseUp) document.removeEventListener('mouseup', this._onDocumentMouseUp)
+    this._dragOffset = null
+  }
+
   _unmount() {
     if (!this._mounted) return
     this._teardownActive()
+    this._uninstallDrag()
     window.removeEventListener('resize', this._onResize)
     window.removeEventListener('scroll', this._onResize, true)
     if (this._rectTimer) {
@@ -143,6 +188,7 @@ export class OnboardingController {
     this._nextBtn.textContent = screen.isLast ? '完成' : '下一步'
     this._popover.classList.toggle('wu-onboarding__popover--glow', screen.highlight === 'self')
 
+    this._userDragged = false
     this._resolveTargetAndLayout(screen)
 
     const cleanup = installAdvanceListener(screen, {
@@ -197,7 +243,7 @@ export class OnboardingController {
 
   _layout(screen, target) {
     applySpotlight(this._spotlight, target)
-    applyPopoverPosition(this._popover, screen.anchor)
+    if (!this._userDragged) applyPopoverPosition(this._popover)
   }
 
   _scheduleRectUpdate() {
