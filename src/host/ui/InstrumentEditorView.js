@@ -4,6 +4,13 @@ import { buildNoteDocumentSignature, createPreviewNoteDocument } from '../../sha
 import { computeFollowScrollLeft, normalizePlayheadFollowMode } from '../../shared/playheadFollowMode.js'
 import { createTimelineAxis } from '../../shared/timelineAxis.js'
 import { getTrackColorById } from './tracks/trackColorPalette.js'
+import {
+  collectNotesInRect,
+  findNoteIndexByTickMidi,
+  removeSelectedNotes,
+  toggleIdsInSelection,
+  translateSelectedNotes,
+} from './instrumentEditorSelection.js'
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 const DEFAULT_BEAT_WIDTH = 40
@@ -203,6 +210,10 @@ export class InstrumentEditorView {
       hoverPreview: null,
       erasing: false,
       panDrag: null,
+      panOverride: false,
+      selectedIds: new Set(),
+      marqueeDrag: null,
+      moveDrag: null,
       trackColor: getTrackColorById(null, []),
       trackBorderColor: darkenHexColor(getTrackColorById(null, [])),
     }
@@ -236,13 +247,62 @@ export class InstrumentEditorView {
       const target = event.target
       if (target && target.matches?.('input, textarea, select, [contenteditable="true"]')) return
       const key = event.key?.toLowerCase?.()
+      // H 按住：临时抓手（押下时进入，keyup 恢复；用 capture 抢在全局空格=播放之前也安全）
+      if (key === 'h' && !event.repeat) {
+        if (!this.state.panOverride) {
+          this.state.panOverride = true
+          if (this.refs.gridViewport) this.refs.gridViewport.dataset.panOverride = '1'
+        }
+        event.preventDefault()
+        return
+      }
+      // Delete / Backspace：批量删除选中音符
+      if (key === 'delete' || key === 'backspace') {
+        if (this.state.selectedIds.size === 0) return
+        event.preventDefault()
+        this._deleteSelectedNotes()
+        return
+      }
+      // Esc：取消框选/移动/清空选中
+      if (key === 'escape') {
+        let handled = false
+        if (this.state.marqueeDrag) { this.state.marqueeDrag = null; this._hideMarquee(); handled = true }
+        if (this.state.moveDrag) {
+          this.state.notes = this.state.moveDrag.originalNotes
+          this._touchNotes()
+          this._renderMutableState({ axisChanged: false, notesChanged: true })
+          this.state.moveDrag = null
+          handled = true
+        }
+        if (this.state.selectedIds.size > 0) { this._clearSelection(); handled = true }
+        if (handled) event.preventDefault()
+        return
+      }
+      // 工具切换 V / B / E
       const tool = key === 'v' ? 'select' : key === 'b' ? 'brush' : key === 'e' ? 'eraser' : null
       if (!tool || tool === this.state.tool) return
       event.preventDefault()
       this.setTool(tool)
       this.handlers.onInstrumentEditorToolChanged?.(tool)
     }
-    document.addEventListener('keydown', this._handleToolShortcut)
+    this._handleToolShortcutUp = (event) => {
+      if (!this.root || this.root.hidden) return
+      if (event.key?.toLowerCase?.() !== 'h') return
+      if (!this.state.panOverride) return
+      this.state.panOverride = false
+      if (this.refs.gridViewport) delete this.refs.gridViewport.dataset.panOverride
+      if (this.state.panDrag) this._endPanDrag()
+    }
+    document.addEventListener('keydown', this._handleToolShortcut, true)
+    document.addEventListener('keyup', this._handleToolShortcutUp, true)
+  }
+
+  _deleteSelectedNotes() {
+    if (this.state.selectedIds.size === 0) return
+    this._pushUndoSnapshot()
+    const nextNotes = removeSelectedNotes(this.state.notes, this.state.selectedIds)
+    this._clearSelection({ rerender: false })
+    this._applyNotesSnapshot(nextNotes)
   }
 
   setVisible(visible) {
@@ -409,8 +469,20 @@ export class InstrumentEditorView {
       this._hideHoverGuide()
     }
     if (tool !== 'eraser') this.state.erasing = false
-    if (tool !== 'select') this._endPanDrag()
+    if (tool !== 'select') {
+      this._clearSelection({ rerender: false })
+      this.state.marqueeDrag = null
+      this.state.moveDrag = null
+      this._hideMarquee()
+    }
     this._renderControls()
+  }
+
+  /** 清空选中的音符并可选触发重绘 */
+  _clearSelection({ rerender = true } = {}) {
+    if (this.state.selectedIds.size === 0) return
+    this.state.selectedIds.clear()
+    if (rerender) this._renderNotes(true)
   }
 
   appendRecordedNote(note) {
@@ -536,7 +608,7 @@ export class InstrumentEditorView {
       })
       return button
     }
-    const selectButton = buildTool('select', '拖拽视角', 'v')
+    const selectButton = buildTool('select', '选择', 'v')
     const brushButton = buildTool('brush', '画笔', 'b')
     const eraserButton = buildTool('eraser', '橡皮', 'e')
 
@@ -857,10 +929,12 @@ export class InstrumentEditorView {
     this.viewportRenderState.notesKey = renderKey
     const fragment = document.createDocumentFragment()
 
+    const selected = this.state.selectedIds
     this._getVisibleNotes(renderWindow).forEach((note) => {
       const noteElement = document.createElement('button')
       noteElement.type = 'button'
       noteElement.className = 'instrument-editor-note'
+      if (selected?.has?.(note.id)) noteElement.classList.add('selected')
       noteElement.dataset.noteId = note.id
       const width = Math.max(8, Math.round(this.state.axis.tickToX(note.durationTicks) - 2))
       noteElement.style.left = `${Math.round(this.state.axis.tickToX(note.tick))}px`
@@ -958,13 +1032,24 @@ export class InstrumentEditorView {
   }
 
   _handlePointerDown(event) {
-    if (event.button !== 0 || !this.state.axis) return
-    if (this.state.tool === 'select') {
+    if (!this.state.axis) return
+    // 中键随时进入临时抓手，与当前工具无关
+    if (event.button === 1) {
+      this._beginPanDrag(event)
+      return
+    }
+    if (event.button !== 0) return
+    // H 键按住时，左键也是临时抓手
+    if (this.state.panOverride) {
       this._beginPanDrag(event)
       return
     }
     const pos = this._getLocalPointerPosition(event)
     if (!pos) return
+    if (this.state.tool === 'select') {
+      this._handleSelectPointerDown(event, pos)
+      return
+    }
     if (this.state.tool === 'eraser') {
       this.state.drawDraft = null
       this.state.hoverPreview = null
@@ -986,6 +1071,145 @@ export class InstrumentEditorView {
     this._renderHoverGuide()
   }
 
+  /** 选择工具按下：点音符=选中/移动、Shift+点=切换、空白=框选 */
+  _handleSelectPointerDown(event, pos) {
+    const tick = this.state.axis.xToTick(pos.x)
+    const midi = this._yToMidi(pos.y)
+    const hitIndex = findNoteIndexByTickMidi(this.state.notes, tick, midi)
+    const shift = Boolean(event.shiftKey)
+    if (hitIndex >= 0) {
+      const hitId = this.state.notes[hitIndex].id
+      if (shift) {
+        // Shift+点击：切换此音符的选中状态
+        this.state.selectedIds = toggleIdsInSelection(this.state.selectedIds, [hitId])
+        this._renderNotes(true)
+        return
+      }
+      if (!this.state.selectedIds.has(hitId)) {
+        // 点击未选中的音符：独选
+        this.state.selectedIds = new Set([hitId])
+        this._renderNotes(true)
+      }
+      // 开始移动（从当前状态快照）
+      this._beginMoveDrag(pos)
+      return
+    }
+    // 点空白：开始框选
+    this._beginMarquee(pos, shift)
+  }
+
+  _beginMarquee(pos, additive) {
+    const tick = this.state.axis.xToTick(pos.x)
+    const midi = this._yToMidi(pos.y)
+    this.state.marqueeDrag = {
+      startTick: tick,
+      startMidi: midi,
+      endTick: tick,
+      endMidi: midi,
+      baseSelection: additive ? new Set(this.state.selectedIds) : new Set(),
+    }
+    if (!additive) this._clearSelection()
+    this._renderMarquee()
+  }
+
+  _beginMoveDrag(pos) {
+    // 深拷贝当前音符作为撤销与计算基线
+    const originalNotes = this.state.notes.map((n) => ({ ...n }))
+    this.state.moveDrag = {
+      startTick: this.state.axis.xToTick(pos.x),
+      startMidi: this._yToMidi(pos.y),
+      originalNotes,
+      lastDeltaTicks: 0,
+      lastDeltaMidi: 0,
+    }
+  }
+
+  _updateMarquee(pos) {
+    const marquee = this.state.marqueeDrag
+    if (!marquee) return
+    marquee.endTick = this.state.axis.xToTick(pos.x)
+    marquee.endMidi = this._yToMidi(pos.y)
+    // 实时预览：把框内音符合并进 baseSelection
+    const hits = collectNotesInRect(this.state.notes, marquee)
+    const preview = new Set(marquee.baseSelection)
+    for (const id of hits) preview.add(id)
+    this.state.selectedIds = preview
+    this._renderNotes(true)
+    this._renderMarquee()
+  }
+
+  _commitMarquee() {
+    this.state.marqueeDrag = null
+    this._hideMarquee()
+    this._renderNotes(true)
+  }
+
+  _updateMoveDrag(pos) {
+    const drag = this.state.moveDrag
+    if (!drag) return
+    const snapTicks = getDefaultSnapTicks(this.state.ppq)
+    const rawDeltaTicks = this.state.axis.xToTick(pos.x) - drag.startTick
+    const deltaTicks = Math.round(rawDeltaTicks / snapTicks) * snapTicks
+    const deltaMidi = this._yToMidi(pos.y) - drag.startMidi
+    if (deltaTicks === drag.lastDeltaTicks && deltaMidi === drag.lastDeltaMidi) return
+    drag.lastDeltaTicks = deltaTicks
+    drag.lastDeltaMidi = deltaMidi
+    const nextNotes = translateSelectedNotes(
+      drag.originalNotes,
+      this.state.selectedIds,
+      deltaTicks,
+      deltaMidi,
+      PIANO_ROLL.PITCH_MIN,
+      PIANO_ROLL.PITCH_MAX,
+    )
+    this.state.notes = nextNotes
+    this._touchNotes()
+    this._renderMutableState({ axisChanged: false, notesChanged: true })
+  }
+
+  _commitMoveDrag() {
+    const drag = this.state.moveDrag
+    this.state.moveDrag = null
+    if (!drag) return
+    // 没有实际位移则不写入 undo 栈
+    if (drag.lastDeltaTicks === 0 && drag.lastDeltaMidi === 0) return
+    // 先还原到原始音符用作 undo 快照，再应用最终结果
+    const finalNotes = this.state.notes
+    this.state.notes = drag.originalNotes
+    this._pushUndoSnapshot()
+    this._applyNotesSnapshot(finalNotes)
+    this._syncDirtyState()
+  }
+
+  _renderMarquee() {
+    const marquee = this.state.marqueeDrag
+    if (!marquee || !this.refs.gridContent || !this.state.axis) return
+    let el = this.refs.marqueeOverlay
+    if (!el) {
+      el = document.createElement('div')
+      el.className = 'instrument-editor-marquee'
+      this.refs.gridContent.appendChild(el)
+      this.refs.marqueeOverlay = el
+    }
+    const x0 = this.state.axis.tickToX(Math.min(marquee.startTick, marquee.endTick))
+    const x1 = this.state.axis.tickToX(Math.max(marquee.startTick, marquee.endTick))
+    const m0 = Math.min(marquee.startMidi, marquee.endMidi)
+    const m1 = Math.max(marquee.startMidi, marquee.endMidi)
+    const top = (PIANO_ROLL.PITCH_MAX - m1) * PIANO_ROLL.KEY_HEIGHT
+    const bottom = (PIANO_ROLL.PITCH_MAX - m0 + 1) * PIANO_ROLL.KEY_HEIGHT
+    el.style.left = `${Math.round(x0)}px`
+    el.style.top = `${Math.round(top)}px`
+    el.style.width = `${Math.max(1, Math.round(x1 - x0))}px`
+    el.style.height = `${Math.max(1, Math.round(bottom - top))}px`
+  }
+
+  _hideMarquee() {
+    if (this.refs.marqueeOverlay) {
+      this.refs.marqueeOverlay.remove()
+      this.refs.marqueeOverlay = null
+    }
+  }
+
   _handlePointerMove(event) {
     if (this.state.panDrag) {
       this._updatePanDrag(event)
@@ -998,6 +1222,16 @@ export class InstrumentEditorView {
       return
     }
     if (!this.state.axis) return
+    if (this.state.marqueeDrag) {
+      const pos = this._getLocalPointerPosition(event)
+      if (pos) this._updateMarquee(pos)
+      return
+    }
+    if (this.state.moveDrag) {
+      const pos = this._getLocalPointerPosition(event)
+      if (pos) this._updateMoveDrag(pos)
+      return
+    }
     if (this.state.erasing) {
       const pos = this._getLocalPointerPosition(event)
       if (pos) this._eraseNoteAt(pos)
@@ -1026,6 +1260,14 @@ export class InstrumentEditorView {
       this.playheadDragScroller?.stop()
       this.playheadDragClientX = null
       this.handlers.onInstrumentEditorSeek?.(this.state.currentTime)
+      return
+    }
+    if (this.state.marqueeDrag) {
+      this._commitMarquee()
+      return
+    }
+    if (this.state.moveDrag) {
+      this._commitMoveDrag()
       return
     }
     if (this.state.erasing) {

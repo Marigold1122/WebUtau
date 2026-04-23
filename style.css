@@ -2236,10 +2236,15 @@ body {
 }
 
 .instrument-editor-grid-viewport[data-tool="select"] {
+  cursor: default;
+}
+
+/* 按住 H 或中键拖动进入临时抓手 —— 比工具自身光标优先级高 */
+.instrument-editor-grid-viewport[data-pan-override="1"] {
   cursor: grab;
 }
 
-.instrument-editor-grid-viewport[data-tool="select"][data-panning="1"] {
+.instrument-editor-grid-viewport[data-panning="1"] {
   cursor: grabbing;
 }
 
@@ -2324,6 +2329,21 @@ body {
 .instrument-editor-note--ghost {
   border-style: dashed;
   opacity: 0.58;
+}
+
+.instrument-editor-note.selected {
+  border-color: #FFCB2F;
+  box-shadow: 0 0 0 1px #FFCB2F, 0 0 6px rgba(255, 203, 47, 0.55);
+  z-index: 2;
+}
+
+/* 选择工具框选时的矩形覆盖层 */
+.instrument-editor-marquee {
+  position: absolute;
+  background: rgba(127, 191, 232, 0.18);
+  border: 1px dashed #3B8B88;
+  pointer-events: none;
+  z-index: 3;
 }
 
 .instrument-editor-note--ghost[hidden] {
