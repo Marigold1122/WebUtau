@@ -2211,6 +2211,14 @@ body {
   cursor: cell;
 }
 
+.instrument-editor-grid-viewport[data-tool="select"] {
+  cursor: grab;
+}
+
+.instrument-editor-grid-viewport[data-tool="select"][data-panning="1"] {
+  cursor: grabbing;
+}
+
 .instrument-editor-grid-content {
   position: relative;
   min-width: 100%;

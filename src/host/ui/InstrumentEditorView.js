@@ -146,6 +146,11 @@ function createToolIcon(name) {
 
   if (name === 'eraser') {
     path.setAttribute('d', 'M4.2 9.8 8.8 5.2c.5-.5 1.2-.5 1.7 0l2.3 2.3c.5.5.5 1.2 0 1.7L8.5 13.5H5.2L3.3 11.6c-.5-.5-.5-1.3 0-1.8Z')
+  } else if (name === 'select') {
+    // 经典鼠标光标箭头
+    path.setAttribute('d', 'M3.2 2.2 3.2 13.2 6 10.6 8 14.5 9.6 13.8 7.8 9.9 12 9.9 Z')
+    path.setAttribute('fill', 'currentColor')
+    path.setAttribute('stroke-width', '0.8')
   } else {
     path.setAttribute('d', 'm3.5 12.5 1.8-.4 6.5-6.6-1.4-1.4-6.6 6.5-.3 1.9Zm6.3-8 1.4-1.4 1.4 1.4-1.4 1.4-1.4-1.4Z')
   }
@@ -197,6 +202,7 @@ export class InstrumentEditorView {
       drawDraft: null,
       hoverPreview: null,
       erasing: false,
+      panDrag: null,
       trackColor: getTrackColorById(null, []),
       trackBorderColor: darkenHexColor(getTrackColorById(null, [])),
     }
@@ -381,15 +387,16 @@ export class InstrumentEditorView {
   }
 
   setTool(tool) {
-    if (tool !== 'brush' && tool !== 'eraser') return
+    if (tool !== 'brush' && tool !== 'eraser' && tool !== 'select') return
     this.state.tool = tool
-    if (tool === 'eraser') {
+    if (tool !== 'brush') {
       this.state.drawDraft = null
       this.state.hoverPreview = null
-      this.state.erasing = false
       this._hideGhostNote()
       this._hideHoverGuide()
     }
+    if (tool !== 'eraser') this.state.erasing = false
+    if (tool !== 'select') this._endPanDrag()
     this._renderControls()
   }
 
@@ -499,6 +506,17 @@ export class InstrumentEditorView {
     const tools = document.createElement('div')
     tools.className = 'instrument-editor-tools'
 
+    const selectButton = document.createElement('button')
+    selectButton.type = 'button'
+    selectButton.className = 'instrument-editor-tool'
+    selectButton.setAttribute('aria-label', '拖拽视角')
+    selectButton.title = '拖拽视角'
+    selectButton.appendChild(createToolIcon('select'))
+    selectButton.addEventListener('click', () => {
+      this.setTool('select')
+      this.handlers.onInstrumentEditorToolChanged?.('select')
+    })
+
     const brushButton = document.createElement('button')
     brushButton.type = 'button'
     brushButton.className = 'instrument-editor-tool'
@@ -521,7 +539,7 @@ export class InstrumentEditorView {
       this.handlers.onInstrumentEditorToolChanged?.('eraser')
     })
 
-    tools.append(brushButton, eraserButton)
+    tools.append(selectButton, brushButton, eraserButton)
 
     const actions = document.createElement('div')
     actions.className = 'instrument-editor-actions'
@@ -625,6 +643,7 @@ export class InstrumentEditorView {
       stepPrevButton,
       playButton,
       stepNextButton,
+      selectButton,
       brushButton,
       eraserButton,
       recordButton,
@@ -710,6 +729,7 @@ export class InstrumentEditorView {
 
   _renderControls() {
     if (!this.refs.toolbar) return
+    this.refs.selectButton.classList.toggle('active', this.state.tool === 'select')
     this.refs.brushButton.classList.toggle('active', this.state.tool === 'brush')
     this.refs.eraserButton.classList.toggle('active', this.state.tool === 'eraser')
     this.refs.playButton.classList.toggle('is-playing', this.state.playbackActive)
@@ -938,6 +958,10 @@ export class InstrumentEditorView {
 
   _handlePointerDown(event) {
     if (event.button !== 0 || !this.state.axis) return
+    if (this.state.tool === 'select') {
+      this._beginPanDrag(event)
+      return
+    }
     const pos = this._getLocalPointerPosition(event)
     if (!pos) return
     if (this.state.tool === 'eraser') {
@@ -962,6 +986,10 @@ export class InstrumentEditorView {
   }
 
   _handlePointerMove(event) {
+    if (this.state.panDrag) {
+      this._updatePanDrag(event)
+      return
+    }
     if (this.isPlayheadDragging) {
       this.playheadDragClientX = event.clientX
       this.playheadDragScroller?.update(event.clientX)
@@ -988,6 +1016,10 @@ export class InstrumentEditorView {
   }
 
   _handlePointerUp() {
+    if (this.state.panDrag) {
+      this._endPanDrag()
+      return
+    }
     if (this.isPlayheadDragging) {
       this.isPlayheadDragging = false
       this.playheadDragScroller?.stop()
@@ -1017,6 +1049,38 @@ export class InstrumentEditorView {
     this.state.drawDraft = null
     this._hideGhostNote()
     this._renderHoverGuide()
+  }
+
+  // 「拖拽视角」工具：记录起始点与起始滚动位置，随鼠标 1:1 反向滚动，无加速/惯性，精确且丝滑
+  _beginPanDrag(event) {
+    const viewport = this.refs.gridViewport
+    if (!viewport) return
+    this.state.panDrag = {
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startScrollLeft: viewport.scrollLeft,
+      startScrollTop: viewport.scrollTop,
+    }
+    viewport.dataset.panning = '1'
+    event.preventDefault?.()
+  }
+
+  _updatePanDrag(event) {
+    const viewport = this.refs.gridViewport
+    const drag = this.state.panDrag
+    if (!viewport || !drag) return
+    const dx = event.clientX - drag.startClientX
+    const dy = event.clientY - drag.startClientY
+    const maxLeft = Math.max(0, viewport.scrollWidth - viewport.clientWidth)
+    const maxTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight)
+    viewport.scrollLeft = Math.max(0, Math.min(maxLeft, drag.startScrollLeft - dx))
+    viewport.scrollTop = Math.max(0, Math.min(maxTop, drag.startScrollTop - dy))
+  }
+
+  _endPanDrag() {
+    if (!this.state.panDrag) return
+    this.state.panDrag = null
+    if (this.refs.gridViewport) delete this.refs.gridViewport.dataset.panning
   }
 
   _handleViewportMouseMove(event) {
