@@ -14,7 +14,6 @@ import playheadController from '../modules/PlayheadController.js'
 const DRAG_THRESHOLD = 5
 const PITCH_NOTE_HIT_PADDING_X = 4
 const PITCH_NOTE_HIT_PADDING_Y = 3
-const MARQUEE_AUTO_SCROLL_MAX_STEP = 28
 
 const STATE = {
   READY: 'ready',
@@ -41,9 +40,6 @@ class PianoRollInputController {
     this._pitchDragPointId = null
     this._pitchPreviewFrame = 0
     this._queuedPitchPreview = null
-    this._marqueeAutoScrollFrame = 0
-    this._marqueeClientX = null
-    this._marqueeClientY = null
     this._pan = null
     this._panOverride = false
   }
@@ -259,7 +255,6 @@ class PianoRollInputController {
       pianoRollNotes.requestDraw()
       this._state = STATE.READY
     }
-    this._stopMarqueeAutoScroll()
     this._downPos = null
     this._downNote = null
   }
@@ -294,7 +289,6 @@ class PianoRollInputController {
       console.error('[InputController] 音高编辑失败:', error)
     } finally {
       this._state = STATE.READY
-      this._stopMarqueeAutoScroll()
       this._downPos = null
       this._downNote = null
       this._hasDragged = false
@@ -767,78 +761,17 @@ class PianoRollInputController {
     return canvasY + PIANO_ROLL.TIME_RULER_HEIGHT
   }
 
-  _updateMarqueeDrag(pos, event) {
+  _updateMarqueeDrag(pos) {
     if (this._state !== STATE.MARQUEE || !pos) return
-    this._marqueeClientX = event?.clientX ?? null
-    this._marqueeClientY = event?.clientY ?? null
     noteSelection.updateMarquee(pos.x, pos.y)
     pianoRollNotes.requestDraw()
-    this._applyMarqueeAutoScroll()
-    this._scheduleMarqueeAutoScroll()
   }
 
-  _scheduleMarqueeAutoScroll() {
-    if (this._marqueeAutoScrollFrame || this._state !== STATE.MARQUEE) return
-    this._marqueeAutoScrollFrame = requestAnimationFrame(() => {
-      this._marqueeAutoScrollFrame = 0
-      if (this._state !== STATE.MARQUEE) return
-      const changed = this._applyMarqueeAutoScroll()
-      if (changed) this._scheduleMarqueeAutoScroll()
-    })
-  }
-
-  _stopMarqueeAutoScroll() {
-    if (this._marqueeAutoScrollFrame) {
-      cancelAnimationFrame(this._marqueeAutoScrollFrame)
-      this._marqueeAutoScrollFrame = 0
-    }
-    this._marqueeClientX = null
-    this._marqueeClientY = null
-  }
-
-  _applyMarqueeAutoScroll() {
-    const rect = this._noteCanvas?.getBoundingClientRect?.()
-    if (!rect || !Number.isFinite(this._marqueeClientX) || !Number.isFinite(this._marqueeClientY)) return false
-    const horizontalDelta = this._computeEdgeAutoScrollStep(this._marqueeClientX, rect.left, rect.right)
-    const verticalDelta = this._computeEdgeAutoScrollStep(this._marqueeClientY, rect.top, rect.bottom)
-    if (!horizontalDelta && !verticalDelta) return false
-
-    const prevScrollX = viewport.scrollX
-    const prevScrollY = viewport.scrollY
-    if (horizontalDelta) viewport.scrollByX(horizontalDelta)
-    if (verticalDelta) viewport.scrollByY(verticalDelta)
-    const changed = Math.abs(viewport.scrollX - prevScrollX) >= 0.5 || Math.abs(viewport.scrollY - prevScrollY) >= 0.5
-    if (!changed) return false
-
-    this._refreshViewportAfterMarqueeScroll()
-    const pos = this._canvasPosFromClient(this._marqueeClientX, this._marqueeClientY)
-    if (pos) {
-      noteSelection.updateMarquee(pos.x, pos.y)
-      pianoRollNotes.requestDraw()
-    }
-    return true
-  }
-
+  /** 拖动平移或其他滚动变化后的统一重绘钩子（名字沿用历史，虽然现在已不限于 marquee）*/
   _refreshViewportAfterMarqueeScroll() {
     grid.draw()
     pianoRollNotes.requestDraw()
     playheadController.setPosition(playheadController.getPosition())
-  }
-
-  _computeEdgeAutoScrollStep(clientCoord, minEdge, maxEdge) {
-    if (!Number.isFinite(clientCoord) || !Number.isFinite(minEdge) || !Number.isFinite(maxEdge)) return 0
-    const edgeDistance = Math.max(1, PIANO_ROLL.AUTO_SCROLL_PADDING)
-    const leadingEdge = minEdge + edgeDistance
-    const trailingEdge = maxEdge - edgeDistance
-    if (clientCoord < leadingEdge) {
-      const ratio = Math.max(0, Math.min(1, (leadingEdge - clientCoord) / edgeDistance))
-      return -MARQUEE_AUTO_SCROLL_MAX_STEP * ratio
-    }
-    if (clientCoord > trailingEdge) {
-      const ratio = Math.max(0, Math.min(1, (clientCoord - trailingEdge) / edgeDistance))
-      return MARQUEE_AUTO_SCROLL_MAX_STEP * ratio
-    }
-    return 0
   }
 
   _findPitchEditableNote(pixelX, pixelY) {
