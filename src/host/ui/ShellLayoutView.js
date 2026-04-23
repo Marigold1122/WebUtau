@@ -606,6 +606,7 @@ export class ShellLayoutView {
         const demoLabel = document.createElement('span')
         demoLabel.textContent = '也可加载示例midi快速体验'
         const loadDemo = (button, url, fileName) => {
+          const originalLabel = button.textContent
           button.disabled = true
           button.textContent = '加载中…'
           fetch(url)
@@ -613,6 +614,10 @@ export class ShellLayoutView {
             .then((blob) => {
               const file = new File([blob], fileName, { type: 'audio/midi' })
               this.handlers.onMidiFileSelected?.(file)
+              // 文件已交给 handler 处理：若加载真正成功，空态区域会被重绘而使此按钮消失；
+              // 若用户随后取消下游弹窗（如时序导入），按钮仍保留在 DOM 中且需可再次点击
+              button.textContent = originalLabel
+              button.disabled = false
             })
             .catch(() => {
               button.textContent = '失败'
