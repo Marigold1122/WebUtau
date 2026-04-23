@@ -1785,13 +1785,18 @@ body {
 
 /* ── 快速填词浮窗 ── */
 .quick-lyric-panel {
-  position: absolute; top: 36px; right: 12px; z-index: 900;
-  width: 340px; padding: 12px 14px 10px;
+  position: fixed; top: 0; left: 0; z-index: 900;
+  width: 280px; padding: 12px 14px 10px;
   border: 1px solid #8F8A80; border-radius: 4px; background: #ECE8DE;
   box-shadow: 0 8px 28px rgba(0,0,0,0.18), inset 0 1px 0 #FFF;
 }
+.quick-lyric-panel--dragging {
+  box-shadow: 0 14px 36px rgba(0,0,0,0.26), inset 0 1px 0 #FFF;
+}
 .quick-lyric-header {
   display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;
+  cursor: move;
+  user-select: none;
 }
 .quick-lyric-title {
   color: #2B2825; font-family: 'Oswald', sans-serif; font-size: 13px; font-weight: 500;

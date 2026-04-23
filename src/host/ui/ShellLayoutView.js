@@ -301,6 +301,7 @@ export class ShellLayoutView {
       onSave,
       onClose: () => this.btnQuickLyric?.classList.remove('active'),
       languageCode,
+      anchor: this.refs.trackView || container,
     })
     this.btnQuickLyric?.classList.add('active')
   }

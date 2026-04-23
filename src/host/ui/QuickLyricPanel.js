@@ -26,22 +26,26 @@ export class QuickLyricPanel {
     this._languageCode = null
   }
 
-  /** 打开面板并填充当前歌词 */
-  open(snapshot, container, { onSave, onClose, languageCode }) {
+  /** 打开面板并填充当前歌词。anchor 决定初次弹出的位置，后续可由用户拖动 */
+  open(snapshot, container, { onSave, onClose, languageCode, anchor }) {
     this.close()
     this._snapshot = snapshot
     this._onSave = onSave
     this._languageCode = languageCode || null
     this._parsedLyrics = null
     this._build(container, onClose)
+    this._applyInitialPosition(anchor)
+    this._installDrag()
     this._fillCurrentLyrics()
   }
 
   close() {
+    this._uninstallDrag()
     if (this._el) {
       this._el.remove()
       this._el = null
     }
+    this._header = null
     this._snapshot = null
     this._parsedLyrics = null
     this._onSave = null
@@ -53,7 +57,7 @@ export class QuickLyricPanel {
 
   // ── 内部 ──────────────────────────────────────────
 
-  _build(container, onClose) {
+  _build(_container, onClose) {
     const el = document.createElement('div')
     el.className = 'quick-lyric-panel'
     el.dataset.tour = 'quick-lyric-panel'
@@ -63,6 +67,7 @@ export class QuickLyricPanel {
     // 标题栏
     const header = document.createElement('div')
     header.className = 'quick-lyric-header'
+    this._header = header
     const title = document.createElement('span')
     title.className = 'quick-lyric-title'
     title.textContent = '快速填词'
@@ -114,9 +119,74 @@ export class QuickLyricPanel {
     actions.append(this._btnFix, this._btnParse, this._btnSave)
 
     el.append(header, this._textarea, this._statusEl, actions)
-    container.appendChild(el)
+    // 使用 position: fixed，挂到 body 避免被编辑面板的 overflow:hidden 裁剪
+    document.body.appendChild(el)
     this._el = el
     this._textarea.focus()
+  }
+
+  /** 根据传入的锚点（通常是轨道列表区域）计算初始位置：x 贴右 12px，y 贴锚点顶部 36px */
+  _applyInitialPosition(anchor) {
+    if (!this._el) return
+    const rect = anchor?.getBoundingClientRect?.()
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    const w = this._el.offsetWidth || 280
+    const h = this._el.offsetHeight || 320
+    const rightEdge = rect ? rect.right : vw
+    const topEdge = rect ? rect.top : 0
+    const left = Math.max(8, Math.min(vw - w - 8, rightEdge - 12 - w))
+    const top = Math.max(8, Math.min(vh - h - 8, topEdge + 36))
+    this._el.style.left = `${Math.round(left)}px`
+    this._el.style.top = `${Math.round(top)}px`
+  }
+
+  /** 允许用户通过拖动标题栏移动浮窗；点击关闭按钮时不触发拖动 */
+  _installDrag() {
+    if (!this._header || !this._el) return
+    let startX = 0
+    let startY = 0
+    let startLeft = 0
+    let startTop = 0
+    this._onHeaderDown = (event) => {
+      if (event.button !== 0) return
+      if (event.target?.closest?.('.quick-lyric-close')) return
+      const rect = this._el.getBoundingClientRect()
+      startX = event.clientX
+      startY = event.clientY
+      startLeft = rect.left
+      startTop = rect.top
+      this._el.classList.add('quick-lyric-panel--dragging')
+      document.addEventListener('mousemove', this._onDocMove)
+      document.addEventListener('mouseup', this._onDocUp)
+      event.preventDefault()
+    }
+    this._onDocMove = (event) => {
+      if (!this._el) return
+      const w = this._el.offsetWidth
+      const h = this._el.offsetHeight
+      const nextLeft = Math.max(0, Math.min(window.innerWidth - w, startLeft + (event.clientX - startX)))
+      const nextTop = Math.max(0, Math.min(window.innerHeight - h, startTop + (event.clientY - startY)))
+      this._el.style.left = `${nextLeft}px`
+      this._el.style.top = `${nextTop}px`
+    }
+    this._onDocUp = () => {
+      this._el?.classList.remove('quick-lyric-panel--dragging')
+      document.removeEventListener('mousemove', this._onDocMove)
+      document.removeEventListener('mouseup', this._onDocUp)
+    }
+    this._header.addEventListener('mousedown', this._onHeaderDown)
+  }
+
+  _uninstallDrag() {
+    if (this._header && this._onHeaderDown) {
+      this._header.removeEventListener('mousedown', this._onHeaderDown)
+    }
+    if (this._onDocMove) document.removeEventListener('mousemove', this._onDocMove)
+    if (this._onDocUp) document.removeEventListener('mouseup', this._onDocUp)
+    this._onHeaderDown = null
+    this._onDocMove = null
+    this._onDocUp = null
   }
 
   /** 从 snapshot 提取当前歌词，按分句换行 */
