@@ -44,6 +44,8 @@ class PianoRollInputController {
     this._marqueeAutoScrollFrame = 0
     this._marqueeClientX = null
     this._marqueeClientY = null
+    this._pan = null
+    this._panOverride = false
   }
 
   bindTo(container, noteCanvas) {
@@ -55,12 +57,40 @@ class PianoRollInputController {
     container.addEventListener('dblclick', (e) => this._onDblClick(e))
     container.addEventListener('contextmenu', (e) => this._onContextMenu(e))
     window.addEventListener('keydown', (e) => this._onKeyDown(e))
+    window.addEventListener('keyup', (e) => this._onKeyUp(e))
+    // 暴露给父窗口调用：焦点在宿主时，宿主按 H 仍可通过此钩子切换抓手状态
+    window.__webutauSetVoicePanOverride = (active) => this.setPanOverride(active)
+  }
+
+  /** 设置临时抓手状态；父窗口通过 window.__webutauSetVoicePanOverride 调用 */
+  setPanOverride(active) {
+    const next = Boolean(active)
+    if (next === this._panOverride) return
+    this._panOverride = next
+    if (next) {
+      this._container?.classList.add('piano-roll-pan-override')
+    } else {
+      this._container?.classList.remove('piano-roll-pan-override')
+      if (this._pan) this._endPan()
+    }
   }
 
   _onMouseDown(e) {
+    // 中键：立即进入抓手拖动（与当前模式无关）
+    if (e.button === 1) {
+      e.preventDefault()
+      this._startPan(e)
+      return
+    }
     if (e.button === 2) return
     if (playheadController.isDraggingPlayhead?.()) return
     if (this._shouldIgnorePointerTarget(e.target)) return
+    // 按住 H 时，左键拖动也是抓手
+    if (this._panOverride) {
+      e.preventDefault()
+      this._startPan(e)
+      return
+    }
     if (this._state === STATE.SINGLE_EDIT || this._state === STATE.BATCH_EDIT) return
     if (this._state === STATE.CONTEXT_MENU) {
       contextMenu.hide()
@@ -126,6 +156,10 @@ class PianoRollInputController {
   }
 
   _onMouseMove(e) {
+    if (this._pan) {
+      this._updatePan(e)
+      return
+    }
     if (playheadController.isDraggingPlayhead?.()) return
 
     if (pitchEditor.isEnabled()) {
@@ -199,6 +233,10 @@ class PianoRollInputController {
   }
 
   _onMouseUp(e) {
+    if (this._pan) {
+      this._endPan()
+      return
+    }
     if (playheadController.isDraggingPlayhead?.()) return
 
     if (pitchEditor.isEnabled()) {
@@ -475,9 +513,20 @@ class PianoRollInputController {
   }
 
   _onKeyDown(e) {
-    if (!pitchEditor.isEnabled()) return
     if (this._state === STATE.SINGLE_EDIT || this._state === STATE.BATCH_EDIT) return
     if (this._isEditableTarget(e.target)) return
+
+    // 按住 H：无论当前是哪种编辑模式（音符/歌词/音高）都进入临时抓手
+    if (e.key?.toLowerCase?.() === 'h' && !e.repeat) {
+      if (!this._panOverride) {
+        this._panOverride = true
+        this._container?.classList.add('piano-roll-pan-override')
+      }
+      e.preventDefault()
+      return
+    }
+
+    if (!pitchEditor.isEnabled()) return
 
     if ((e.key === 'Delete' || e.key === 'Backspace') && pitchEditor.hasSelectedPoint()) {
       e.preventDefault()
@@ -497,6 +546,44 @@ class PianoRollInputController {
         pianoRollNotes.requestDraw()
       }
     }
+  }
+
+  _onKeyUp(e) {
+    if (e.key?.toLowerCase?.() !== 'h') return
+    if (!this._panOverride) return
+    this._panOverride = false
+    this._container?.classList.remove('piano-roll-pan-override')
+    if (this._pan) this._endPan()
+  }
+
+  /** 记录拖动起点与起始滚动偏移；后续 mousemove 以 1:1 反向滚动 */
+  _startPan(e) {
+    this._pan = {
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      startScrollX: viewport.scrollX,
+      startScrollY: viewport.scrollY,
+    }
+    this._container?.classList.add('piano-roll-panning')
+  }
+
+  _updatePan(e) {
+    if (!this._pan) return
+    const dx = e.clientX - this._pan.startClientX
+    const dy = e.clientY - this._pan.startClientY
+    const targetScrollX = Math.max(0, this._pan.startScrollX - dx)
+    const targetScrollY = this._pan.startScrollY - dy
+    const prevX = viewport.scrollX
+    const prevY = viewport.scrollY
+    viewport.scrollByX(targetScrollX - prevX)
+    viewport.scrollByY(targetScrollY - prevY)
+    if (Math.abs(viewport.scrollX - prevX) < 0.5 && Math.abs(viewport.scrollY - prevY) < 0.5) return
+    this._refreshViewportAfterMarqueeScroll()
+  }
+
+  _endPan() {
+    this._pan = null
+    this._container?.classList.remove('piano-roll-panning')
   }
 
   _openBatchEdit() {

@@ -151,6 +151,16 @@ input {
   background: var(--bg-canvas);
 }
 
+/* 按住 H 临时抓手：光标提前反馈 */
+.piano-roll-canvas-wrapper.piano-roll-pan-override {
+  cursor: grab;
+}
+
+/* 实际拖动中：握拳光标 */
+.piano-roll-canvas-wrapper.piano-roll-panning {
+  cursor: grabbing;
+}
+
 .piano-roll-editor-toolbar {
   display: inline-flex;
   flex-wrap: wrap;
