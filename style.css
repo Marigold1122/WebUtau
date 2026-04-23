@@ -2015,6 +2015,7 @@ body {
 .instrument-editor-actions { margin-left: auto; }
 
 .instrument-editor-tool {
+  position: relative;
   width: 28px;
   height: 28px;
   padding: 0;
@@ -2040,6 +2041,24 @@ body {
   width: 15px;
   height: 15px;
   display: block;
+  transform: translate(-3px, -3px);
+}
+
+.instrument-editor-tool-key {
+  position: absolute;
+  right: 3px;
+  bottom: 2px;
+  font-family: 'JetBrains Mono', 'Consolas', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
+  color: rgba(95, 90, 83, 0.7);
+  pointer-events: none;
+}
+
+.instrument-editor-tool.active .instrument-editor-tool-key {
+  color: rgba(255, 255, 255, 0.88);
 }
 
 .instrument-editor-meta {

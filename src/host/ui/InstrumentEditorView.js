@@ -230,6 +230,19 @@ export class InstrumentEditorView {
     this.setVisible(false)
     window.addEventListener('mousemove', this._handlePointerMove)
     window.addEventListener('mouseup', this._handlePointerUp)
+    this._handleToolShortcut = (event) => {
+      if (!this.root || this.root.hidden) return
+      if (event.ctrlKey || event.metaKey || event.altKey) return
+      const target = event.target
+      if (target && target.matches?.('input, textarea, select, [contenteditable="true"]')) return
+      const key = event.key?.toLowerCase?.()
+      const tool = key === 'v' ? 'select' : key === 'b' ? 'brush' : key === 'e' ? 'eraser' : null
+      if (!tool || tool === this.state.tool) return
+      event.preventDefault()
+      this.setTool(tool)
+      this.handlers.onInstrumentEditorToolChanged?.(tool)
+    }
+    document.addEventListener('keydown', this._handleToolShortcut)
   }
 
   setVisible(visible) {
@@ -506,38 +519,26 @@ export class InstrumentEditorView {
     const tools = document.createElement('div')
     tools.className = 'instrument-editor-tools'
 
-    const selectButton = document.createElement('button')
-    selectButton.type = 'button'
-    selectButton.className = 'instrument-editor-tool'
-    selectButton.setAttribute('aria-label', '拖拽视角')
-    selectButton.title = '拖拽视角'
-    selectButton.appendChild(createToolIcon('select'))
-    selectButton.addEventListener('click', () => {
-      this.setTool('select')
-      this.handlers.onInstrumentEditorToolChanged?.('select')
-    })
-
-    const brushButton = document.createElement('button')
-    brushButton.type = 'button'
-    brushButton.className = 'instrument-editor-tool'
-    brushButton.setAttribute('aria-label', '画笔')
-    brushButton.title = '画笔'
-    brushButton.appendChild(createToolIcon('brush'))
-    brushButton.addEventListener('click', () => {
-      this.setTool('brush')
-      this.handlers.onInstrumentEditorToolChanged?.('brush')
-    })
-
-    const eraserButton = document.createElement('button')
-    eraserButton.type = 'button'
-    eraserButton.className = 'instrument-editor-tool'
-    eraserButton.setAttribute('aria-label', '橡皮')
-    eraserButton.title = '橡皮'
-    eraserButton.appendChild(createToolIcon('eraser'))
-    eraserButton.addEventListener('click', () => {
-      this.setTool('eraser')
-      this.handlers.onInstrumentEditorToolChanged?.('eraser')
-    })
+    const buildTool = (name, label, shortcutKey) => {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'instrument-editor-tool'
+      button.setAttribute('aria-label', `${label} (快捷键: ${shortcutKey.toUpperCase()})`)
+      button.title = `${label}（快捷键: ${shortcutKey.toUpperCase()}）`
+      button.appendChild(createToolIcon(name))
+      const badge = document.createElement('span')
+      badge.className = 'instrument-editor-tool-key'
+      badge.textContent = shortcutKey.toUpperCase()
+      button.appendChild(badge)
+      button.addEventListener('click', () => {
+        this.setTool(name)
+        this.handlers.onInstrumentEditorToolChanged?.(name)
+      })
+      return button
+    }
+    const selectButton = buildTool('select', '拖拽视角', 'v')
+    const brushButton = buildTool('brush', '画笔', 'b')
+    const eraserButton = buildTool('eraser', '橡皮', 'e')
 
     tools.append(selectButton, brushButton, eraserButton)
 
