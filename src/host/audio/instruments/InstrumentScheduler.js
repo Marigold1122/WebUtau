@@ -1,5 +1,6 @@
 ﻿import { getHostPlaybackSourceId } from './sourceCatalog.js'
 import { normalizeTrackVolume } from '../../project/trackPlaybackState.js'
+import { buildPlaybackSamplePlan, timeToChunkIndex, DEFAULT_CHUNK_DURATION_SEC } from './samplePlanBuilder.js'
 
 function createScheduledNotes(tracks, audibleTrackIds, fromTimeSec) {
   const notes = []
@@ -80,6 +81,7 @@ export class InstrumentScheduler {
     this.duration = 0
     this.active = false
     this.prepareToken = 0
+    this.chunkDurationSec = DEFAULT_CHUNK_DURATION_SEC
   }
 
   async prepare({ tracks, audibleTrackIds, fromTimeSec = 0 }) {
@@ -93,7 +95,37 @@ export class InstrumentScheduler {
     const duration = notes.reduce((maxValue, note) => Math.max(maxValue, note.endSec), 0)
     this._clearState()
 
-    await this.samplerPool.prepareTrackSources(trackSourceRefs)
+    const plan = buildPlaybackSamplePlan({
+      tracks: tracks || [],
+      audibleTrackIds: audibleTrackIds || new Set(),
+      fromTimeSec,
+    })
+    this.chunkDurationSec = plan.chunkDurationSec || DEFAULT_CHUNK_DURATION_SEC
+    const planByTrackKey = new Map()
+    plan.trackPlans.forEach((tp) => {
+      planByTrackKey.set(`${tp.trackId}::${tp.sourceId}`, {
+        chunkMidisByIndex: tp.chunkMidisByIndex,
+        triggeredCatalogMidis: tp.triggeredCatalogMidis,
+        currentChunkIndex: plan.currentChunkIndex,
+        chunkDurationSec: plan.chunkDurationSec,
+      })
+    })
+
+    const refsWithPlan = trackSourceRefs.map((ref) => ({
+      ...ref,
+      playbackPlan: planByTrackKey.get(`${ref.trackId}::${ref.sourceId}`) || null,
+    }))
+    const refsChunked = refsWithPlan.filter((r) => r.playbackPlan)
+    const refsPlain = refsWithPlan.filter((r) => !r.playbackPlan)
+
+    await Promise.all([
+      refsChunked.length > 0
+        ? this.samplerPool.prepareChunkedPlaybackPlan(refsChunked)
+        : Promise.resolve(),
+      refsPlain.length > 0
+        ? this.samplerPool.prepareTrackSources(refsPlain)
+        : Promise.resolve(),
+    ])
     if (token !== this.prepareToken) {
       return {
         hasPlayableNotes: false,
@@ -118,6 +150,7 @@ export class InstrumentScheduler {
     if (!this.active) return
 
     const audioNow = this.samplerPool.getAudioTime()
+    const chunkDur = this.chunkDurationSec || DEFAULT_CHUNK_DURATION_SEC
 
     while (this.nextIndex < this.notes.length) {
       const note = this.notes[this.nextIndex]
@@ -130,6 +163,17 @@ export class InstrumentScheduler {
         : remainingDuration
 
       if (playbackDuration > 0.05) {
+        // 触发前检查 chunk 就绪：未就绪就给 SamplerPool 广播 missing 信号（toast 由 Coordinator 订阅）。
+        // 注意：Tone.Sampler 对未加载 MIDI 会自动 pitch-shift 最近 sample，所以 trigger 本身照常调用。
+        const chunkIndex = timeToChunkIndex(note.startSec, chunkDur)
+        if (!this.samplerPool.isChunkReady(note.trackId, note.sourceId, chunkIndex)) {
+          this.samplerPool.reportMissingChunk?.({
+            trackId: note.trackId,
+            sourceId: note.sourceId,
+            chunkIndex,
+            songTimeSec: note.startSec,
+          })
+        }
         this.samplerPool.triggerAttackRelease(
           note.trackId,
           note.sourceId,

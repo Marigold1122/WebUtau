@@ -53,10 +53,32 @@ export class ProjectTransportCoordinator {
     this.lastTransportDisplayAtMs = 0
     this.lastFrameTraceAtMs = 0
     this.lastViewTickTraceAtMs = 0
+    this.lastMissingChunkToastAt = 0
+    this._missingChunkUnsubscribe = null
   }
 
   init() {
     this._syncViewState(this.transportStore.getSnapshot())
+    // 注册 "触发 note 时所在 chunk 未加载完成" 事件 → 右上角 toast
+    const samplerPool = this.instrumentScheduler?.samplerPool
+    if (samplerPool?.onMissingSample) {
+      this._missingChunkUnsubscribe = samplerPool.onMissingSample(() => this._handleMissingChunk())
+    }
+  }
+
+  _handleMissingChunk() {
+    if (!this.isProjectPlaybackActive()) return
+    const now = (typeof performance !== 'undefined' && performance.now)
+      ? performance.now()
+      : Date.now()
+    // debounce：1 秒内只弹一次（避免同一 chunk 内多 note 连续触发多次 toast）
+    if (now - this.lastMissingChunkToastAt < 1000) return
+    this.lastMissingChunkToastAt = now
+    this.view?.showPlaybackToast?.('音频加载中，当前段落可能出现音色偏色…', {
+      tone: 'warning',
+      toastId: 'chunk-loading',
+      durationMs: 2400,
+    })
   }
 
   getSnapshot() {

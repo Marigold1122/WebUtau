@@ -161,6 +161,72 @@ function buildGuitarConfig() {
   }
 }
 
+const NOTE_LETTER_SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }
+
+/** 把 "C4" / "F#3" / "Db5" 之类 SPN note 名转换成 MIDI number（C4 = 60）。非法输入返回 NaN。 */
+export function noteNameToMidi(noteName) {
+  if (typeof noteName !== 'string') return NaN
+  const match = noteName.match(/^([A-G])([#b]?)(-?\d+)$/)
+  if (!match) return NaN
+  const [, letter, accidental, octave] = match
+  const semitone = NOTE_LETTER_SEMITONES[letter]
+  if (semitone == null) return NaN
+  const accOffset = accidental === '#' ? 1 : accidental === 'b' ? -1 : 0
+  return (parseInt(octave, 10) + 1) * 12 + semitone + accOffset
+}
+
+const catalogMidisCache = new Map()
+
+/** 返回一个 source 的 catalog 里所有有采样的 MIDI 值集合（跨力度层一致）。 */
+export function getSourceCatalogMidis(sourceId) {
+  if (catalogMidisCache.has(sourceId)) return catalogMidisCache.get(sourceId)
+  const config = SOURCE_CONFIGS[sourceId]
+  const midis = new Set()
+  if (!config) {
+    catalogMidisCache.set(sourceId, midis)
+    return midis
+  }
+  const firstLayer = config.velocityLayers?.[0]
+  if (firstLayer) {
+    // 三种形态：layer.samples 是 object[]（多变体）| 单 object | 用 config.noteKeys + layer.suffix 动态生成
+    let sampleKeys = []
+    if (Array.isArray(firstLayer.samples) && firstLayer.samples[0]) {
+      sampleKeys = Object.keys(firstLayer.samples[0])
+    } else if (firstLayer.samples && typeof firstLayer.samples === 'object') {
+      sampleKeys = Object.keys(firstLayer.samples)
+    } else if (Array.isArray(config.noteKeys)) {
+      sampleKeys = config.noteKeys.map((n) => fileNoteToSamplerKey(n))
+    }
+    sampleKeys.forEach((key) => {
+      const midi = noteNameToMidi(key)
+      if (Number.isFinite(midi)) midis.add(midi)
+    })
+  }
+  catalogMidisCache.set(sourceId, midis)
+  return midis
+}
+
+/**
+ * 在 source 的 catalog MIDI 集里找最接近目标 MIDI 的那个值；精确匹配优先，其次最近，平局取较低者。
+ * catalog 为空则返回 null。
+ */
+export function findClosestCatalogMidi(sourceId, midi) {
+  const catalog = getSourceCatalogMidis(sourceId)
+  if (!catalog.size) return null
+  if (!Number.isFinite(midi)) return null
+  if (catalog.has(midi)) return midi
+  let closest = null
+  let minDist = Infinity
+  for (const cmidi of catalog) {
+    const d = Math.abs(cmidi - midi)
+    if (d < minDist || (d === minDist && cmidi < closest)) {
+      minDist = d
+      closest = cmidi
+    }
+  }
+  return closest
+}
+
 export function isHostInstrumentSource(sourceId) {
   return HOST_INSTRUMENT_SOURCE_IDS.includes(sourceId)
 }

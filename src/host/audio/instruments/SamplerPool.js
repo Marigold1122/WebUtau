@@ -1,7 +1,12 @@
-import { getInstrumentSourceConfig, resolveInstrumentPlaybackParams } from './sourceCatalog.js'
+import {
+  getInstrumentSourceConfig,
+  resolveInstrumentPlaybackParams,
+  noteNameToMidi,
+} from './sourceCatalog.js'
 import { SourceSamplerRegistry } from './SourceSamplerRegistry.js'
 import { loadToneRuntime } from './toneRuntime.js'
 import { resolveInstrumentTrackInsertId } from '../insert/trackInsertCatalog.js'
+import { sortChunksByPlaybackPriority, timeToChunkIndex } from './samplePlanBuilder.js'
 
 function midiToNoteName(midi) {
   const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
@@ -55,6 +60,41 @@ function buildSamplerKey(trackId, sourceId) {
   return `${trackId || 'global'}::${sourceId || 'unknown'}`
 }
 
+const MIDI_NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+
+/** MIDI number → Scientific Pitch Notation（sharp 形式，与 sourceCatalog 缓存 key 对齐）。 */
+function midiToNoteKey(midi) {
+  const m = Math.round(Number.isFinite(midi) ? midi : 60)
+  const pitchClass = ((m % 12) + 12) % 12
+  return `${MIDI_NOTE_NAMES[pitchClass]}${Math.floor(m / 12) - 1}`
+}
+
+/** 从 variantMap 里挑出对应这些 MIDI 的 url 子集（MIDI 不在映射里就跳过）。 */
+function filterVariantMapToMidis(variantMap, midis) {
+  const urls = {}
+  for (const m of midis) {
+    const key = midiToNoteKey(m)
+    if (variantMap[key] != null) urls[key] = variantMap[key]
+  }
+  return urls
+}
+
+/**
+ * Tone.Sampler 如果初始 urls 为空，triggerAttack 会抛 "No available buffers for note"。
+ * 这里给出兜底：用 fallback MIDI 集（通常是 triggeredCatalogMidis）里第一个命中的 key。
+ */
+function ensureNonEmptyUrls(urls, variantMap, fallbackMidis) {
+  if (Object.keys(urls).length > 0) return urls
+  if (fallbackMidis) {
+    for (const m of fallbackMidis) {
+      const key = midiToNoteKey(m)
+      if (variantMap[key] != null) return { [key]: variantMap[key] }
+    }
+  }
+  const firstKey = Object.keys(variantMap)[0]
+  return firstKey ? { [firstKey]: variantMap[firstKey] } : urls
+}
+
 export class SamplerPool {
   constructor({ audioGraph = null, random = Math.random } = {}) {
     this.audioGraph = audioGraph
@@ -62,6 +102,10 @@ export class SamplerPool {
     this.tone = null
     this.sourceRegistry = new SourceSamplerRegistry()
     this.random = typeof random === 'function' ? random : Math.random
+    /** trackKey → Set<chunkIndex>，已就绪的 variant-0 chunk 集合。 */
+    this.chunkReadinessByKey = new Map()
+    /** 监听"触发时所在 chunk 未就绪"的事件订阅者。 */
+    this.missingSampleListeners = new Set()
   }
 
   async prepareTrackSources(trackSourceRefs = []) {
@@ -73,6 +117,58 @@ export class SamplerPool {
     await this.audioGraph?.ensureReady?.()
     await Promise.all(uniqueRefs.map((ref) => this._prepareTrackSource(ref)))
     return uniqueRefs
+  }
+
+  /**
+   * 基于 samplePlanBuilder 生成的 playbackPlan 做"只加载实际触发音高 + 按时间分块"的准备。
+   * 阻塞直到每条轨 variant 0 的 **当前 chunk** 就绪；其余 chunk 与 variants 1+ 后台继续。
+   *
+   * ref 约定：{ trackId, sourceId, volume, reverbSend, reverbConfig, guitarTone, playbackPlan }
+   * playbackPlan: { chunkMidisByIndex, triggeredCatalogMidis, currentChunkIndex, chunkDurationSec }
+   */
+  async prepareChunkedPlaybackPlan(refs = []) {
+    const uniqueRefs = this._normalizeChunkedRefs(refs)
+    if (uniqueRefs.length === 0) return []
+    this.tone ||= await loadToneRuntime()
+    const Tone = this.tone
+    await Tone.start()
+    await this.audioGraph?.ensureReady?.()
+    await Promise.all(uniqueRefs.map((ref) => this._prepareChunkedTrackSource(ref)))
+    return uniqueRefs
+  }
+
+  /** 注册 "触发时所在 chunk 未就绪" 事件监听器。返回 unsubscribe。 */
+  onMissingSample(listener) {
+    if (typeof listener !== 'function') return () => {}
+    this.missingSampleListeners.add(listener)
+    return () => this.missingSampleListeners.delete(listener)
+  }
+
+  /** 查询某轨 / 某 chunk 是否已加载到可用程度（至少 variant 0 的 MIDI 子集就绪）。 */
+  isChunkReady(trackId, sourceId, chunkIndex) {
+    const key = buildSamplerKey(trackId, sourceId)
+    return this.chunkReadinessByKey.get(key)?.has(chunkIndex) === true
+  }
+
+  /** 由 Scheduler.tick 在触发 note 前调用：若 chunk 未就绪则向监听者广播。 */
+  reportMissingChunk({ trackId, sourceId, chunkIndex, songTimeSec } = {}) {
+    if (this.missingSampleListeners.size === 0) return
+    const payload = {
+      trackId,
+      sourceId,
+      chunkIndex,
+      songTimeSec,
+      at: (typeof performance !== 'undefined' && performance.now)
+        ? performance.now()
+        : Date.now(),
+    }
+    this.missingSampleListeners.forEach((fn) => {
+      try {
+        fn(payload)
+      } catch (err) {
+        console.warn('[SamplerPool] missingSample listener threw', err)
+      }
+    })
   }
 
   async prepareSources(sourceIds = []) {
@@ -136,6 +232,7 @@ export class SamplerPool {
       if (entry) entry._disposed = true // 阻断尚未触发的后台变体加载
       this._forEachVariant(entry, (v) => v.sampler?.dispose?.())
       this.entries.delete(key)
+      this.chunkReadinessByKey.delete(key)
     })
     return keysToDelete.length > 0
   }
@@ -393,6 +490,227 @@ export class SamplerPool {
           } catch (err) {
             console.warn('[SamplerPool] deferred variant setup failed', err)
           }
+        }
+      })
+    })
+  }
+
+  // ========== chunked playback plan 分支 ==========
+
+  _normalizeChunkedRefs(refs) {
+    const deduped = new Map()
+    ;(Array.isArray(refs) ? refs : []).forEach((ref) => {
+      if (!ref?.trackId || !ref?.sourceId) return
+      const key = buildSamplerKey(ref.trackId, ref.sourceId)
+      if (!deduped.has(key)) {
+        deduped.set(key, {
+          trackId: ref.trackId,
+          sourceId: ref.sourceId,
+          volume: ref.volume,
+          reverbSend: ref.reverbSend ?? ref.sendAmount,
+          reverbConfig: ref.reverbConfig,
+          guitarTone: ref.guitarTone,
+          playbackPlan: ref.playbackPlan || null,
+        })
+      }
+    })
+    return [...deduped.values()]
+  }
+
+  async _prepareChunkedTrackSource(ref) {
+    const key = buildSamplerKey(ref.trackId, ref.sourceId)
+    const insertId = resolveInstrumentTrackInsertId(ref.sourceId)
+
+    if (this.entries.has(key)) {
+      // 已有 entry（例如预览链路已按全量加载），直接复用：chunked 模式下命中的 MIDI 可能比全量少，
+      // 但预览已经加载了全量 → 反过来命中率更高，不用重做。
+      this.audioGraph?.syncTrackState?.(ref.trackId, {
+        insertId,
+        volume: ref.volume,
+        reverbSend: ref.reverbSend,
+        reverbConfig: ref.reverbConfig,
+        guitarTone: ref.guitarTone,
+      })
+      // 把当前 chunk 标记为就绪（预览路径已全量加载，所有 chunk 都能触发）
+      if (ref.playbackPlan?.currentChunkIndex != null) {
+        this._markChunkReady(key, ref.playbackPlan.currentChunkIndex)
+      }
+      return this._waitUntilReady(this.entries.get(key))
+    }
+
+    const config = getInstrumentSourceConfig(ref.sourceId)
+    if (!config) return null
+    const Tone = this.tone
+    if (!Tone) return null
+    const plan = ref.playbackPlan
+    if (
+      !plan
+      || !Array.isArray(config.velocityLayers)
+      || config.velocityLayers.length === 0
+      || !(plan.chunkMidisByIndex instanceof Map)
+    ) {
+      // 没有 plan / 配置不支持分层 → 退回全量路径（例如 single-sampler 音色）
+      return this._prepareTrackSource(ref)
+    }
+
+    const destination = this.audioGraph?.getTrackInput?.(ref.trackId, {
+      insertId,
+      volume: ref.volume,
+      reverbSend: ref.reverbSend,
+      reverbConfig: ref.reverbConfig,
+      guitarTone: ref.guitarTone,
+    }) || null
+    const toneContext = Tone.getContext?.() || null
+    const baseUrl = config.baseUrl || ''
+    const currentChunkMidis = plan.chunkMidisByIndex.get(plan.currentChunkIndex) || new Set()
+
+    const layers = config.velocityLayers.map((layerConfig) => {
+      const variantMaps = buildLayerVariantMaps(config, layerConfig)
+      const variant0Map = variantMaps[0] || {}
+      const initialUrls = ensureNonEmptyUrls(
+        filterVariantMapToMidis(variant0Map, currentChunkMidis),
+        variant0Map,
+        plan.triggeredCatalogMidis,
+      )
+      const variant0 = this.sourceRegistry.createSamplerEntry({
+        Tone,
+        config,
+        urls: initialUrls,
+        destination,
+        volume: layerConfig.volume || 0,
+        toneContext,
+      })
+      variant0._loadedMidis = new Set(
+        Object.keys(initialUrls)
+          .map((k) => noteNameToMidi(k))
+          .filter((m) => Number.isFinite(m)),
+      )
+      variant0._variantMap = variant0Map
+
+      const lazyVariants = variantMaps.slice(1).map((vMap) => ({
+        ready: false,
+        sampler: null,
+        readyPromise: null,
+        error: null,
+        _deferredVariant: {
+          Tone,
+          config,
+          variantMap: vMap,
+          destination,
+          volume: layerConfig.volume || 0,
+          toneContext,
+          triggeredCatalogMidis: plan.triggeredCatalogMidis,
+        },
+      }))
+
+      return {
+        maxVelocity: layerConfig.maxVelocity,
+        variants: [variant0, ...lazyVariants],
+        lastVariantIndex: -1,
+      }
+    })
+
+    const layeredEntry = {
+      type: 'layered',
+      layers,
+      _trackKey: key,
+      _plan: plan,
+      _config: config,
+      _baseUrl: baseUrl,
+      _Tone: Tone,
+    }
+    this.entries.set(key, layeredEntry)
+
+    await this._waitUntilRequiredReady(layeredEntry)
+    this._markChunkReady(key, plan.currentChunkIndex)
+    this._scheduleChunkedBackgroundLoad(layeredEntry)
+    return layeredEntry
+  }
+
+  _markChunkReady(key, chunkIndex) {
+    if (!Number.isFinite(chunkIndex)) return
+    let set = this.chunkReadinessByKey.get(key)
+    if (!set) {
+      set = new Set()
+      this.chunkReadinessByKey.set(key, set)
+    }
+    set.add(chunkIndex)
+  }
+
+  _scheduleChunkedBackgroundLoad(entry) {
+    const queueTask = typeof queueMicrotask === 'function'
+      ? queueMicrotask
+      : (fn) => Promise.resolve().then(fn)
+    queueTask(() => this._runChunkedBackgroundLoad(entry))
+  }
+
+  async _runChunkedBackgroundLoad(entry) {
+    if (!entry || entry._disposed) return
+    const plan = entry._plan
+    const Tone = entry._Tone
+    const baseUrl = entry._baseUrl
+    const trackKey = entry._trackKey
+
+    // 1) variant 0 的其余 chunk：按播放优先级顺序串行加载（同 chunk 内跨层并行）
+    const sortedOtherChunks = sortChunksByPlaybackPriority(
+      [...plan.chunkMidisByIndex.keys()].filter((i) => i !== plan.currentChunkIndex),
+      plan.currentChunkIndex,
+    )
+    for (const chunkIdx of sortedOtherChunks) {
+      if (entry._disposed) return
+      const chunkMidis = plan.chunkMidisByIndex.get(chunkIdx) || new Set()
+      await Promise.all(entry.layers.map(async (layer) => {
+        const v0 = layer.variants?.[0]
+        if (!v0?.sampler || !v0._variantMap) return
+        const variantMap = v0._variantMap
+        const pendingAdds = []
+        for (const midi of chunkMidis) {
+          if (v0._loadedMidis.has(midi)) continue
+          const noteKey = midiToNoteKey(midi)
+          if (variantMap[noteKey] == null) continue
+          pendingAdds.push({ midi, noteKey, relativeUrl: variantMap[noteKey] })
+        }
+        await Promise.all(pendingAdds.map(async ({ midi, noteKey, relativeUrl }) => {
+          try {
+            const buffer = await this.sourceRegistry.loadSharedBuffer(Tone, baseUrl, relativeUrl)
+            if (entry._disposed) return
+            v0.sampler.add(noteKey, buffer)
+            v0._loadedMidis.add(midi)
+          } catch (err) {
+            console.warn('[SamplerPool] chunk buffer load failed', err)
+          }
+        }))
+      }))
+      if (entry._disposed) return
+      this._markChunkReady(trackKey, chunkIdx)
+    }
+
+    // 2) variants 1+：为每个占位创建实际 Sampler（只覆盖整首歌触发过的 MIDI，不再分块）
+    entry.layers.forEach((layer) => {
+      layer.variants.forEach((v, idx) => {
+        if (idx === 0 || !v._deferredVariant || entry._disposed) return
+        const deferred = v._deferredVariant
+        v._deferredVariant = null
+        try {
+          const urls = ensureNonEmptyUrls(
+            filterVariantMapToMidis(deferred.variantMap, deferred.triggeredCatalogMidis),
+            deferred.variantMap,
+            deferred.triggeredCatalogMidis,
+          )
+          const real = this.sourceRegistry.createSamplerEntry({
+            Tone: deferred.Tone,
+            config: deferred.config,
+            urls,
+            destination: deferred.destination,
+            volume: deferred.volume,
+            toneContext: deferred.toneContext,
+          })
+          layer.variants[idx] = real
+          real.readyPromise.catch((err) => {
+            console.warn('[SamplerPool] lazy variant load failed', err)
+          })
+        } catch (err) {
+          console.warn('[SamplerPool] lazy variant setup failed', err)
         }
       })
     })

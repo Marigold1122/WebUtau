@@ -69,4 +69,9 @@
     if (!baseUrl) return url
     return `${baseUrl}${url}`
   }
+
+  /** 对外暴露的带缓存 buffer 加载接口：跨轨同 URL 只发一次 fetch。 */
+  loadSharedBuffer(Tone, baseUrl, relativeUrl) {
+    return this._loadBuffer(Tone, this._resolveAssetUrl(baseUrl, relativeUrl))
+  }
 }
