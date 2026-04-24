@@ -99,14 +99,15 @@ function buildDrumsConfig() {
     { midi: 'D#3', name: 'ride' },
     { midi: 'F3', name: 'ride-bell' },
   ]
+  const rrCount = 4
   return {
     baseUrl: '/samples/drums-hq/',
     release: 0.3,
     velocityLayers: Array.from({ length: 8 }, (_, i) => ({
       maxVelocity: (i + 1) / 8,
-      samples: Object.fromEntries(
-        drumPieces.map((d) => [d.midi, `${d.name}-v${i + 1}-r1.mp3`]),
-      ),
+      samples: Array.from({ length: rrCount }, (_, rr) => Object.fromEntries(
+        drumPieces.map((d) => [d.midi, `${d.name}-v${i + 1}-r${rr + 1}.mp3`]),
+      )),
       volume: i === 0 ? 5 : 0,
     })),
   }
@@ -118,14 +119,15 @@ function buildBassConfig() {
     'B2', 'D3', 'F3', 'Ab3', 'B3', 'D4', 'F4', 'Ab4', 'A4',
   ]
   const velIds = ['pp', 'p', 'mf', 'f', 'ff']
+  const rrIds = ['rr1', 'rr2', 'rr3']
   return {
     baseUrl: '/samples/bass-hq/',
     release: 0.3,
     velocityLayers: velIds.map((vel, i) => ({
       maxVelocity: (i + 1) / velIds.length,
-      samples: Object.fromEntries(
-        noteKeys.map((note) => [fileNoteToSamplerKey(note), `${note}_${vel}_rr1.mp3`]),
-      ),
+      samples: rrIds.map((rr) => Object.fromEntries(
+        noteKeys.map((note) => [fileNoteToSamplerKey(note), `${note}_${vel}_${rr}.mp3`]),
+      )),
       volume: i === 0 ? 5 : 0,
     })),
     playbackResponse: {
@@ -141,14 +143,15 @@ function buildGuitarConfig() {
     'C4', 'Eb4', 'Gb4', 'A4', 'C5', 'Eb5', 'Gb5', 'A5', 'C6', 'D6',
   ]
   const velIds = ['p', 'mp', 'mf', 'f']
+  const rrIds = ['rr1', 'rr2', 'rr3']
   return {
     baseUrl: '/samples/guitar-hq/',
     release: 0.5,
     velocityLayers: velIds.map((vel, i) => ({
       maxVelocity: (i + 1) / velIds.length,
-      samples: Object.fromEntries(
-        noteKeys.map((note) => [fileNoteToSamplerKey(note), `${note}_${vel}_rr1.mp3`]),
-      ),
+      samples: rrIds.map((rr) => Object.fromEntries(
+        noteKeys.map((note) => [fileNoteToSamplerKey(note), `${note}_${vel}_${rr}.mp3`]),
+      )),
       volume: i === 0 ? 4 : 0,
     })),
     playbackResponse: {

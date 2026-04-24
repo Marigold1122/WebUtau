@@ -1,4 +1,4 @@
-﻿import { getInstrumentSourceConfig, resolveInstrumentPlaybackParams } from './sourceCatalog.js'
+import { getInstrumentSourceConfig, resolveInstrumentPlaybackParams } from './sourceCatalog.js'
 import { SourceSamplerRegistry } from './SourceSamplerRegistry.js'
 import { loadToneRuntime } from './toneRuntime.js'
 import { resolveInstrumentTrackInsertId } from '../insert/trackInsertCatalog.js'
@@ -9,14 +9,46 @@ function midiToNoteName(midi) {
   return `${noteNames[normalizedMidi % 12]}${Math.floor(normalizedMidi / 12) - 1}`
 }
 
-function buildLayerSamples(config, layer) {
-  if (layer.samples) return layer.samples
-  if (config.noteKeys && layer.suffix) {
-    return Object.fromEntries(
-      config.noteKeys.map((note) => [note, `LLVln_ArcoVib_${note}${layer.suffix}.mp3`]),
-    )
+/**
+ * 规范化一层的 samples 字段：既支持"单变体"的对象，也支持"多变体"的对象数组，
+ * 统一返回数组形式（长度 ≥ 1），后续一视同仁地按 round-robin 处理。
+ */
+function normalizeVariantSamples(layerSamples) {
+  if (Array.isArray(layerSamples)) {
+    return layerSamples.filter((v) => v && typeof v === 'object' && Object.keys(v).length > 0)
   }
-  return {}
+  if (layerSamples && typeof layerSamples === 'object' && Object.keys(layerSamples).length > 0) {
+    return [layerSamples]
+  }
+  return []
+}
+
+function buildLayerVariantMaps(config, layer) {
+  const explicit = normalizeVariantSamples(layer.samples)
+  if (explicit.length > 0) return explicit
+  // 兼容 violin 的 suffix + noteKeys 写法：当前只有 1 个变体
+  if (config.noteKeys && layer.suffix) {
+    return [Object.fromEntries(
+      config.noteKeys.map((note) => [note, `LLVln_ArcoVib_${note}${layer.suffix}.mp3`]),
+    )]
+  }
+  return []
+}
+
+/**
+ * round-robin 变体选择："随机但不连续"。
+ *   - count ≤ 1 → 始终 0
+ *   - 否则从 [0..count-1] 里随机挑一个 ≠ lastIndex
+ * 通过 random() 注入随机源便于测试。
+ */
+export function pickNextVariantIndex(count, lastIndex, random = Math.random) {
+  if (!Number.isFinite(count) || count <= 1) return 0
+  if (lastIndex < 0 || lastIndex >= count) {
+    return Math.floor(random() * count)
+  }
+  let next = Math.floor(random() * (count - 1))
+  if (next >= lastIndex) next += 1
+  return next
 }
 
 function buildSamplerKey(trackId, sourceId) {
@@ -24,11 +56,12 @@ function buildSamplerKey(trackId, sourceId) {
 }
 
 export class SamplerPool {
-  constructor({ audioGraph = null } = {}) {
+  constructor({ audioGraph = null, random = Math.random } = {}) {
     this.audioGraph = audioGraph
     this.entries = new Map()
     this.tone = null
     this.sourceRegistry = new SourceSamplerRegistry()
+    this.random = typeof random === 'function' ? random : Math.random
   }
 
   async prepareTrackSources(trackSourceRefs = []) {
@@ -91,11 +124,7 @@ export class SamplerPool {
 
   releaseAll() {
     this.entries.forEach((entry) => {
-      if (entry.type === 'layered') {
-        entry.layers.forEach((layer) => layer.sampler?.releaseAll?.())
-        return
-      }
-      entry.single.sampler?.releaseAll?.()
+      this._forEachVariant(entry, (v) => v.sampler?.releaseAll?.())
     })
   }
 
@@ -104,11 +133,7 @@ export class SamplerPool {
     const keysToDelete = [...this.entries.keys()].filter((key) => key.startsWith(`${trackId}::`))
     keysToDelete.forEach((key) => {
       const entry = this.entries.get(key)
-      if (entry?.type === 'layered') {
-        entry.layers.forEach((layer) => layer.sampler?.dispose?.())
-      } else {
-        entry?.single?.sampler?.dispose?.()
-      }
+      this._forEachVariant(entry, (v) => v.sampler?.dispose?.())
       this.entries.delete(key)
     })
     return keysToDelete.length > 0
@@ -157,14 +182,58 @@ export class SamplerPool {
 
   _resolveSampler(entry, velocity) {
     if (entry.type === 'single') {
-      return entry.single.ready ? entry.single.sampler : null
+      return this._pickReadySampler(entry.single)
     }
 
     const normalizedVelocity = Math.max(0, Math.min(velocity, 1))
-    const matchedLayer = entry.layers.find((layer) => normalizedVelocity <= layer.maxVelocity && layer.ready)
-    if (matchedLayer) return matchedLayer.sampler
-    const fallbackLayer = [...entry.layers].reverse().find((layer) => layer.ready)
-    return fallbackLayer?.sampler || null
+    const matchedLayer = entry.layers.find((layer) => normalizedVelocity <= layer.maxVelocity && this._layerHasReadyVariant(layer))
+    if (matchedLayer) return this._pickReadySampler(matchedLayer)
+    const fallbackLayer = [...entry.layers].reverse().find((layer) => this._layerHasReadyVariant(layer))
+    if (!fallbackLayer) return null
+    return this._pickReadySampler(fallbackLayer)
+  }
+
+  _layerHasReadyVariant(layer) {
+    return Array.isArray(layer.variants) && layer.variants.some((v) => v.ready)
+  }
+
+  /**
+   * 在一个 { variants, lastVariantIndex } 槽位里挑出下一个可用 sampler。
+   * 只考虑 ready 的变体；如果只剩一个 ready，就直接用它（失去 RR 但不会 404）。
+   */
+  _pickReadySampler(slot) {
+    if (!slot) return null
+    // 兼容 single：entry.single 本身就是一个 sampler entry
+    if (slot.sampler && !Array.isArray(slot.variants)) {
+      return slot.ready ? slot.sampler : null
+    }
+    const variants = slot.variants || []
+    const readyIndices = []
+    for (let i = 0; i < variants.length; i++) {
+      if (variants[i].ready) readyIndices.push(i)
+    }
+    if (readyIndices.length === 0) return null
+    if (readyIndices.length === 1) return variants[readyIndices[0]].sampler
+
+    const lastIndex = slot.lastVariantIndex
+    const lastPositionAmongReady = readyIndices.indexOf(lastIndex)
+    const picked = pickNextVariantIndex(
+      readyIndices.length,
+      lastPositionAmongReady,
+      this.random,
+    )
+    const chosenIndex = readyIndices[picked]
+    slot.lastVariantIndex = chosenIndex
+    return variants[chosenIndex].sampler
+  }
+
+  _forEachVariant(entry, fn) {
+    if (!entry) return
+    if (entry.type === 'layered') {
+      entry.layers.forEach((layer) => (layer.variants || []).forEach(fn))
+      return
+    }
+    if (entry.single) fn(entry.single)
   }
 
   _normalizeTrackSourceRefs(trackSourceRefs = []) {
@@ -217,16 +286,20 @@ export class SamplerPool {
 
     if (Array.isArray(config.velocityLayers) && config.velocityLayers.length > 0) {
       const layers = config.velocityLayers.map((layer) => {
-        const entry = this.sourceRegistry.createSamplerEntry({
+        const variantMaps = buildLayerVariantMaps(config, layer)
+        const variants = variantMaps.map((urls) => this.sourceRegistry.createSamplerEntry({
           Tone,
           config,
-          urls: buildLayerSamples(config, layer),
+          urls,
           destination,
           volume: layer.volume || 0,
           toneContext,
-        })
-        entry.maxVelocity = layer.maxVelocity
-        return entry
+        }))
+        return {
+          maxVelocity: layer.maxVelocity,
+          variants,
+          lastVariantIndex: -1,
+        }
       })
       const layeredEntry = { type: 'layered', layers }
       this.entries.set(key, layeredEntry)
@@ -251,7 +324,11 @@ export class SamplerPool {
   _waitUntilReady(entry) {
     if (!entry) return Promise.resolve(null)
     if (entry.type === 'layered') {
-      return Promise.all(entry.layers.map((layer) => layer.readyPromise)).then(() => entry)
+      const promises = []
+      entry.layers.forEach((layer) => {
+        (layer.variants || []).forEach((v) => promises.push(v.readyPromise))
+      })
+      return Promise.all(promises).then(() => entry)
     }
     return entry.single.readyPromise.then(() => entry)
   }
