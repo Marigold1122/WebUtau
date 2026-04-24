@@ -136,9 +136,12 @@ test('SamplerPool 端到端：bass/guitar/drums 准备后连续触发会打到�
   pool.tone = fakeTone // 跳过 loadToneRuntime 的真实 dynamic import
 
   await pool.prepareTrackSources([{ trackId: 'track-bass', sourceId: 'bass' }])
+  // 懒加载：prepare 完成时只有 variant 0 的 5 个 Sampler；等后台加载跑完再验证 RR
+  assert.equal(samplersCreated.length, 5, 'prepare 返回时只应有 variant 0 的 5 个 Sampler')
+  for (let i = 0; i < 4; i++) await new Promise((r) => setTimeout(r, 0))
 
-  // bass: 5 层 × 3 变体 = 15 个 Sampler
-  assert.equal(samplersCreated.length, 15, '应为每层每变体创建 1 个 Sampler')
+  // bass: 5 层 × 3 变体 = 15 个 Sampler（variant 1/2 后台加载完成后）
+  assert.equal(samplersCreated.length, 15, '后台加载完成后应共 15 个 Sampler')
 
   // 连续触发 8 次同一音符同一力度，应至少命中 2 个不同 Sampler 实例
   for (let i = 0; i < 8; i++) {
@@ -155,6 +158,126 @@ test('SamplerPool 端到端：bass/guitar/drums 准备后连续触发会打到�
       `第 ${i} 次触发和上一次落在同一变体 ${triggerLog[i].samplerId}`,
     )
   }
+})
+
+test('懒加载：prepareTrackSources 只阻塞 variant 0，其余 variants 后台加载', async () => {
+  // 用一个"variant 0 立即 resolve、variants 1+ 手动 resolve"的 FakeTone 验证阻塞边界。
+  const samplersCreatedUrls = [] // 每个 Sampler 拿到的第一个 url
+  const pendingResolvers = new Map() // url → resolve fn
+
+  class FakeSampler {
+    constructor(opts) {
+      const firstUrl = Object.values(opts.urls)[0]?.url || Object.values(opts.urls)[0]
+      samplersCreatedUrls.push(firstUrl)
+    }
+    connect() {}
+    toDestination() {}
+    triggerAttackRelease() {}
+    releaseAll() {}
+    dispose() {}
+  }
+  const fakeTone = {
+    Sampler: FakeSampler,
+    ToneAudioBuffer: {
+      load: (url) => {
+        // bass 的 variant 0 文件名含 '_rr1.mp3'；variants 1+ 含 '_rr2.mp3' / '_rr3.mp3'
+        if (/_rr1\.mp3$/.test(url)) return Promise.resolve({ url, loaded: true })
+        return new Promise((resolve) => {
+          pendingResolvers.set(url, () => resolve({ url, loaded: true }))
+        })
+      },
+    },
+    getContext: () => ({ name: 'ctx' }),
+    start: async () => {},
+  }
+  const pool = new SamplerPool({ random: () => 0 })
+  pool.tone = fakeTone
+
+  // variant 0 的所有 note 文件都立即 resolve → prepare 应能返回
+  await pool.prepareTrackSources([{ trackId: 't-bass', sourceId: 'bass' }])
+
+  const entry = pool.entries.get('t-bass::bass')
+  assert.ok(entry, '应建立 entry')
+  assert.equal(entry.type, 'layered')
+  assert.equal(entry.layers.length, 5, 'bass 5 个力度层')
+
+  // 每层 variant 0 应为真 Sampler（ready=true），variants 1+ 应为 placeholder 或仍在加载
+  for (const layer of entry.layers) {
+    assert.equal(layer.variants.length, 3, 'bass 3 个变体')
+    assert.equal(layer.variants[0].ready, true, 'variant 0 应就绪')
+    // variants 1+ 不阻塞 prepare，此时 ready 必然是 false
+    assert.equal(layer.variants[1].ready, false)
+    assert.equal(layer.variants[2].ready, false)
+  }
+
+  // microtask 已允许 _scheduleDeferredVariantLoad 运行过 → 现在应该有 rr2/rr3 的 fetch 在进行
+  // 让事件循环跑一下让 queueMicrotask 触发
+  await new Promise((r) => setTimeout(r, 0))
+  assert.ok(
+    pendingResolvers.size > 0,
+    `后台加载应已启动 rr2/rr3 的 fetch，实际 pending=${pendingResolvers.size}`,
+  )
+
+  // 在 variants 1+ 未 ready 前调触发，_pickReadySampler 应只命中 variant 0
+  const pickedSamplers = new Set()
+  for (let i = 0; i < 5; i++) {
+    const sampler = pool._resolveSampler(entry, 0.3)
+    pickedSamplers.add(sampler)
+  }
+  assert.equal(pickedSamplers.size, 1, '未 ready 期间所有触发应落在 variant 0 单 Sampler 上')
+
+  // 手动解锁所有 rr2/rr3 的 load，等待 variants 1+ 就绪
+  pendingResolvers.forEach((fn) => fn())
+  pendingResolvers.clear()
+  // 等变体 readyPromise 走完（Promise.all 需要多个 microtask）
+  for (let i = 0; i < 4; i++) await new Promise((r) => setTimeout(r, 0))
+
+  // 现在每层应各有 3 个就绪变体
+  for (const layer of entry.layers) {
+    for (const v of layer.variants) {
+      assert.equal(v.ready, true, '所有变体最终都应就绪')
+    }
+  }
+  // RR 现已生效：连续触发应命中多于 1 个 Sampler
+  const rrPicked = new Set()
+  for (let i = 0; i < 6; i++) {
+    rrPicked.add(pool._resolveSampler(entry, 0.3))
+  }
+  assert.ok(rrPicked.size >= 2, 'variants 全就绪后应有 RR 效果')
+})
+
+test('懒加载：releaseTrack 阻止尚未启动的后台变体加载', async () => {
+  const loadCalls = []
+  class FakeSampler {
+    constructor() {}
+    connect() {}
+    toDestination() {}
+    releaseAll() {}
+    dispose() {}
+  }
+  const fakeTone = {
+    Sampler: FakeSampler,
+    ToneAudioBuffer: {
+      load: (url) => { loadCalls.push(url); return Promise.resolve({ url }) },
+    },
+    getContext: () => ({}),
+    start: async () => {},
+  }
+  const pool = new SamplerPool()
+  pool.tone = fakeTone
+  await pool.prepareTrackSources([{ trackId: 't', sourceId: 'bass' }])
+
+  // 此刻 variant 0 的 95 个 URL 已被 load；variants 1+ 的 microtask 还未跑
+  const baselineLoads = loadCalls.length
+  pool.releaseTrack('t')
+
+  // 让 microtask 执行：因为 entry._disposed 已置 true，后台不会再 createSamplerEntry
+  await new Promise((r) => setTimeout(r, 0))
+  assert.equal(
+    loadCalls.length,
+    baselineLoads,
+    'releaseTrack 后不应再触发任何新的 buffer load',
+  )
 })
 
 test('SamplerPool 端到端：piano（无变体）连续触发始终同一 Sampler', async () => {

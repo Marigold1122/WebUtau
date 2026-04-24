@@ -133,6 +133,7 @@ export class SamplerPool {
     const keysToDelete = [...this.entries.keys()].filter((key) => key.startsWith(`${trackId}::`))
     keysToDelete.forEach((key) => {
       const entry = this.entries.get(key)
+      if (entry) entry._disposed = true // 阻断尚未触发的后台变体加载
       this._forEachVariant(entry, (v) => v.sampler?.dispose?.())
       this.entries.delete(key)
     })
@@ -287,14 +288,35 @@ export class SamplerPool {
     if (Array.isArray(config.velocityLayers) && config.velocityLayers.length > 0) {
       const layers = config.velocityLayers.map((layer) => {
         const variantMaps = buildLayerVariantMaps(config, layer)
-        const variants = variantMaps.map((urls) => this.sourceRegistry.createSamplerEntry({
-          Tone,
-          config,
-          urls,
-          destination,
-          volume: layer.volume || 0,
-          toneContext,
-        }))
+        const variants = variantMaps.map((urls, idx) => {
+          if (idx === 0) {
+            // variant 0 是"能开播"的最低保底，阻塞加载
+            return this.sourceRegistry.createSamplerEntry({
+              Tone,
+              config,
+              urls,
+              destination,
+              volume: layer.volume || 0,
+              toneContext,
+            })
+          }
+          // variants 1+ 为 round-robin 点缀音色，先占位，variant 0 就绪后再后台加载。
+          // _pickReadySampler 会跳过 ready=false 的槽位，期间降级为 variant 0 单变体，不影响播放。
+          return {
+            ready: false,
+            sampler: null,
+            readyPromise: null,
+            error: null,
+            _deferred: {
+              Tone,
+              config,
+              urls,
+              destination,
+              volume: layer.volume || 0,
+              toneContext,
+            },
+          }
+        })
         return {
           maxVelocity: layer.maxVelocity,
           variants,
@@ -303,7 +325,10 @@ export class SamplerPool {
       })
       const layeredEntry = { type: 'layered', layers }
       this.entries.set(key, layeredEntry)
-      await this._waitUntilReady(layeredEntry)
+      // 只阻塞 variant 0
+      await this._waitUntilRequiredReady(layeredEntry)
+      // 触发其余变体的后台加载（不 await；失败只打日志，不影响播放）
+      this._scheduleDeferredVariantLoad(layeredEntry)
       return layeredEntry
     }
 
@@ -322,14 +347,54 @@ export class SamplerPool {
   }
 
   _waitUntilReady(entry) {
+    // 回访已缓存的 entry 时（见 _prepareTrackSource 起始 short-circuit），只需等 required 变体，
+    // 其余变体的后台加载已由首次 prepare 触发（或已完成）。
+    return this._waitUntilRequiredReady(entry)
+  }
+
+  /** 只等待"必选"变体：layered 每层的 variant 0；single entry 则等其 readyPromise。 */
+  _waitUntilRequiredReady(entry) {
     if (!entry) return Promise.resolve(null)
     if (entry.type === 'layered') {
       const promises = []
       entry.layers.forEach((layer) => {
-        (layer.variants || []).forEach((v) => promises.push(v.readyPromise))
+        const required = layer.variants?.[0]
+        if (required?.readyPromise) promises.push(required.readyPromise)
       })
       return Promise.all(promises).then(() => entry)
     }
     return entry.single.readyPromise.then(() => entry)
+  }
+
+  /**
+   * 把所有含 `_deferred` 的变体真正创建出来，异步返回 Sampler。
+   * 为避免抢占首屏带宽/解码资源：放进 microtask 等当前 prepare 流程返回后再启动。
+   */
+  _scheduleDeferredVariantLoad(entry) {
+    if (!entry || entry.type !== 'layered') return
+    const queueTask = typeof queueMicrotask === 'function'
+      ? queueMicrotask
+      : (fn) => Promise.resolve().then(fn)
+    queueTask(() => {
+      if (entry._disposed) return
+      entry.layers.forEach((layer) => {
+        const variants = layer.variants || []
+        for (let idx = 0; idx < variants.length; idx += 1) {
+          const placeholder = variants[idx]
+          if (!placeholder?._deferred) continue
+          const deferred = placeholder._deferred
+          placeholder._deferred = null
+          try {
+            const real = this.sourceRegistry.createSamplerEntry(deferred)
+            variants[idx] = real
+            real.readyPromise.catch((err) => {
+              console.warn('[SamplerPool] deferred variant load failed', err)
+            })
+          } catch (err) {
+            console.warn('[SamplerPool] deferred variant setup failed', err)
+          }
+        }
+      })
+    })
   }
 }
