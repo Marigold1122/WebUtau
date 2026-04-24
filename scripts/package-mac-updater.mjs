@@ -2,9 +2,9 @@
 //
 // 前提：
 //   - `tauri build --bundles app` 已经跑完，目标目录下有 .app
-//   - 设置了 APPLE_SIGNING_IDENTITY 环境变量；prepare-tauri-assets.mjs 已在 bundle 前
-//     对打包进去的 cloudflared / DiffSingerApi 原生二进制完成了 hardened-runtime 签名
-//   - `tauri build` 会自动用 APPLE_SIGNING_IDENTITY 对外层 .app 签名
+//   - `fix-bundle-signatures.mjs` 已经跑过：.app 内所有 Mach-O 已重签，
+//     DiffSingerApi 等 JIT 二进制带了 allow-jit entitlements
+//   - 设置了 APPLE_SIGNING_IDENTITY 环境变量（此脚本只签 DMG 外壳）
 //
 // 流程：
 //   1. 公证 .app + staple（zip 包一份给 notarytool 提交）

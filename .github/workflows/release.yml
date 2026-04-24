@@ -79,6 +79,7 @@ jobs:
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           KEYCHAIN_PASSWORD: ${{ github.run_id }}
         run: |
           set -e
@@ -93,6 +94,22 @@ jobs:
           security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain
           security set-key-partition-list -S apple-tool:,apple: -s \
             -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          # 诊断：校验 APPLE_SIGNING_IDENTITY secret 是否匹配 keychain 中的证书。
+          # 上一次发版挂在 `no identity found`，根因通常是 secret 值跟证书 CN 对不上。
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH" > "$RUNNER_TEMP/identities.txt"
+          echo "--- identities in custom keychain ---"
+          cat "$RUNNER_TEMP/identities.txt"
+          if [ -z "$APPLE_SIGNING_IDENTITY" ]; then
+            echo "✗ APPLE_SIGNING_IDENTITY secret 为空"
+            exit 1
+          fi
+          if ! grep -qF "$APPLE_SIGNING_IDENTITY" "$RUNNER_TEMP/identities.txt"; then
+            echo "✗ APPLE_SIGNING_IDENTITY 与 keychain 里的证书 CN 不一致"
+            echo "  secret 字符数: $(printf '%s' "$APPLE_SIGNING_IDENTITY" | wc -c)"
+            echo "  （若字符数看起来多 1，多半是末尾带了换行 — 重新粘贴时去掉尾部空白）"
+            exit 1
+          fi
+          echo "✓ APPLE_SIGNING_IDENTITY 与 keychain 证书匹配"
 
       - name: Install dependencies
         run: npm ci
@@ -103,6 +120,14 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npx tauri build --target aarch64-apple-darwin --bundles app
+
+      - name: Fix bundle signatures (JIT entitlements + deep re-sign)
+        # tauri build 自己做的 `codesign --deep --force` 会覆盖签名，把 JIT
+        # entitlements 丢掉。这一步从 Resources 往外重签，给 DiffSingerApi
+        # 这类 .NET 二进制补上 allow-jit；否则公证能过但启动即 crash。
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: node scripts/fix-bundle-signatures.mjs
 
       - name: Notarize + create DMG + updater tarball
         env:
