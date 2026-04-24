@@ -3225,3 +3225,151 @@ body.inline-popover-active { }
   display: none;
 }
 .note-edit-popover-advanced-row.is-open { display: flex; }
+
+/* =====================================================
+   侧边栏 v2：单栏手风琴（取代原 5 tab 布局）
+   ===================================================== */
+.inspector {
+  flex-direction: column;
+  position: relative;
+}
+
+.inspector-content {
+  padding-top: 40px; /* 给左上收起按钮让位 */
+}
+
+.inspector-collapse-btn {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-3);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+.inspector-collapse-btn:hover { background: var(--bg-4); }
+.inspector-collapse-btn::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-top: 1.5px solid var(--text-main);
+  border-right: 1.5px solid var(--text-main);
+  transform: translateX(-1px) rotate(45deg);
+}
+.inspector.collapsed .inspector-collapse-btn::before {
+  transform: translateX(1px) rotate(-135deg);
+}
+.inspector.collapsed .inspector-footer { display: none; }
+
+/* 每个可折叠 section */
+.inspector-section {
+  border-top: 1px solid var(--border-color);
+  padding: 2px 0 6px;
+  margin: 0;
+}
+.inspector-section:first-child { border-top: none; padding-top: 0; }
+.inspector-section[hidden] { display: none; }
+
+/* 标题条（原生 <summary>） */
+.inspector-section-header {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 4px 8px 2px;
+  color: var(--text-main);
+  font-family: 'Oswald', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border-color);
+  box-shadow: 0 1px 0 #FFF;
+}
+.inspector-section-header::-webkit-details-marker,
+.inspector-section-header::marker { display: none; content: ''; }
+.inspector-section-header::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-right: 1.5px solid var(--text-muted);
+  border-bottom: 1.5px solid var(--text-muted);
+  transform: rotate(-45deg);
+  margin-right: 4px;
+  transition: transform 0.15s ease;
+}
+.inspector-section[open] > .inspector-section-header::before {
+  transform: rotate(45deg);
+}
+.inspector-section-header:hover { color: #3B8B88; }
+.inspector-section-header:hover::before { border-color: #3B8B88; }
+
+.inspector-section-body {
+  padding: 10px 2px 2px;
+}
+
+/* 父级 section：左侧 2px 色条 + 浅底色，视觉上暗示"里面还有分组" */
+.inspector-section--parent[open] {
+  border-left: 2px solid #3B8B88;
+  background: rgba(59, 139, 136, 0.035);
+  padding-left: 8px;
+}
+.inspector-section--parent > .inspector-section-header {
+  padding-left: 4px;
+}
+
+/* 底部页脚：新手引导 · 关于 */
+.inspector-footer {
+  flex-shrink: 0;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.inspector-footer-link {
+  background: none;
+  border: none;
+  padding: 2px 6px;
+  font: inherit;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 3px;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.inspector-footer-link:hover {
+  background: var(--bg-3);
+  color: var(--text-main);
+}
+.inspector-footer-sep { color: var(--border-color); user-select: none; }
+
+/* 关于浮卡：从页脚上方弹出 */
+.about-popover {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 44px;
+  padding: 14px 14px 10px;
+  background: var(--bg-2);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.22), inset 0 1px 0 #FFF;
+  z-index: 10;
+}
+.about-popover[hidden] { display: none; }
+.about-popover .about-info { padding: 0 0 8px; text-align: center; }
+.about-popover .about-app-name { font-size: 15px; margin-bottom: 2px; }
+.about-popover .about-description { font-size: 11px; color: var(--text-muted); }

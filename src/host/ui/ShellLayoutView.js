@@ -80,7 +80,6 @@ export class ShellLayoutView {
     this.trackContextMenu = this._createTrackContextMenu()
     this.trackContextTrackId = null
     this.playbackActive = false
-    this.activeInspectorTab = 'info'
     this.playheadFollowMode = normalizePlayheadFollowMode(null)
     this.followModeControls = null
     this.followModeButtons = new Map()
@@ -157,12 +156,21 @@ export class ShellLayoutView {
     const timelineViewMetrics = tracks.length > 0 ? timelineMetrics : { ...timelineMetrics, axis: null }
 
     this._renderProjectMeta(project, selectedTrack, editorTrack, renderBadgeTrack, viewState)
-    this.voiceConversionSection.render(viewState?.voiceConversion || { visible: false })
-    this.trackTonePanelView.render({
+    const vcState = viewState?.voiceConversion || { visible: false }
+    this.voiceConversionSection.render(vcState)
+    // 外层 <details> 与内部 section 的可见性同步，避免"标题在、内容空"的残影
+    if (this.refs.inspectorSectionVc) {
+      this.refs.inspectorSectionVc.hidden = !vcState.visible
+    }
+    const toneSupported = this.trackTonePanelView.render({
       project,
       selectedTrack,
       viewState,
     })
+    // "乐器音色"父级 section 仅在当前轨道支持某种乐器音色时显示
+    if (this.refs.inspectorSectionTone) {
+      this.refs.inspectorSectionTone.hidden = !toneSupported
+    }
     this._renderTracks(tracks, selectedTrack?.id, editorTrack?.id, timelineViewMetrics, viewState)
     this._renderRuler(timelineViewMetrics, project?.tempoData || null)
     this.trackViewportController.syncRulerOffset()
@@ -376,9 +384,6 @@ export class ShellLayoutView {
       this.handlers.onVoicebankChanged?.(event.target.value || null)
     })
     this.refs.btnInspectorToggle?.addEventListener('click', () => this.setInspectorCollapsed(!this.isInspectorCollapsed()))
-    for (const [tab, button] of Object.entries(this.refs.inspectorTabButtons || {})) {
-      button?.addEventListener('click', () => this._switchInspectorTab(tab))
-    }
     this.refs.trackViewport?.addEventListener('contextmenu', (event) => this._handleTrackViewportContextMenu(event))
     this.refs.mainInspector?.addEventListener('transitionend', (event) => {
       if (event.propertyName !== 'width') return
@@ -529,30 +534,24 @@ export class ShellLayoutView {
 
   _renderProjectMeta(project, selectedTrack, editorTrack, renderBadgeTrack, viewState) {
     this.setPlayheadFollowMode(viewState?.playheadFollowMode)
-    this.refs.projectFileName.textContent = project?.fileName || '—'
-    this.refs.projectTrackCount.textContent = String(project?.tracks?.length || 0)
     this.refs.selectedTrackName.textContent = selectedTrack?.name || '—'
     this.refs.selectedTrackKind.textContent = selectedTrack
       ? (isAudioTrack(selectedTrack) ? '音频轨' : getTrackSourceInspectorText(selectedTrack.playbackState?.assignedSourceId))
       : '-'
-    this.refs.selectedTrackStats.textContent = selectedTrack
-      ? (isAudioTrack(selectedTrack)
-        ? `${selectedTrack.audioClip?.fileName || '导入音频'} / 1 片段`
-        : `${selectedTrack.noteCount || 0} 音符 / ${selectedTrack.phraseCount ?? '-'} 语句`)
-      : '-'
-    this.refs.selectedTrackLength.textContent = selectedTrack
-      ? `${(isAudioTrack(selectedTrack) ? (selectedTrack.audioClip?.duration || 0) : (selectedTrack.duration || 0)).toFixed(2)}s`
-      : '-'
     this.refs.selectedTrackLanguage.textContent = selectedTrack
       ? (isAudioTrack(selectedTrack) ? '—' : getLanguageLabel(selectedTrack.languageCode))
       : '未设置'
+    const isVoiceTrack = selectedTrack && !isAudioTrack(selectedTrack) && isVoiceRuntimeSource(selectedTrack.playbackState?.assignedSourceId)
     if (this.refs.selectedTrackVoicebank) {
       const voicebankSelect = this.refs.selectedTrackVoicebank
-      const isVoiceTrack = selectedTrack && !isAudioTrack(selectedTrack)
       voicebankSelect.disabled = !isVoiceTrack
       if (isVoiceTrack && selectedTrack.singerId) {
         voicebankSelect.value = selectedTrack.singerId
       }
+    }
+    // 仅人声轨道才展示"声库"section
+    if (this.refs.inspectorSectionVoicebank) {
+      this.refs.inspectorSectionVoicebank.hidden = !isVoiceTrack
     }
     this.refs.selectedTrackStatus.textContent = selectedTrack ? getTrackInspectorStatusText(selectedTrack) : '-'
     this.refs.renderBadge.textContent = renderBadgeTrack ? getTrackStatusText(renderBadgeTrack) : ''
@@ -811,22 +810,6 @@ export class ShellLayoutView {
     button.setAttribute('aria-pressed', String(!collapsed))
     button.title = collapsed ? '展开右侧面板' : '收起右侧面板'
     button.setAttribute('aria-label', button.title)
-  }
-
-  _switchInspectorTab(tab) {
-    if (this.isInspectorCollapsed()) {
-      this.setInspectorCollapsed(false)
-    } else if (this.activeInspectorTab === tab) {
-      this.setInspectorCollapsed(true)
-      return
-    }
-    this.activeInspectorTab = tab
-    for (const [key, panel] of Object.entries(this.refs.inspectorTabPanels || {})) {
-      if (panel) panel.hidden = key !== tab
-    }
-    for (const [key, button] of Object.entries(this.refs.inspectorTabButtons || {})) {
-      button?.classList.toggle('active', key === tab)
-    }
   }
 
   _syncPlaybackFollow() {
