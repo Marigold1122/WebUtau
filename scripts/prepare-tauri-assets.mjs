@@ -214,19 +214,30 @@ async function commandWorks(command, args) {
 
 function runCommand(command, args, { stdio = 'inherit' } = {}) {
   return new Promise((resolvePromise, rejectPromise) => {
+    const capture = stdio === 'pipe'
     const child = spawn(command, args, {
       cwd: rootDir,
       env: process.env,
-      stdio,
+      stdio: capture ? ['ignore', 'pipe', 'pipe'] : stdio,
     })
+
+    let stdoutBuf = ''
+    let stderrBuf = ''
+    if (capture) {
+      child.stdout?.on('data', (chunk) => { stdoutBuf += chunk.toString() })
+      child.stderr?.on('data', (chunk) => { stderrBuf += chunk.toString() })
+    }
 
     child.on('error', rejectPromise)
     child.on('exit', (code, signal) => {
       if (code === 0) {
-        resolvePromise()
+        resolvePromise({ stdout: stdoutBuf, stderr: stderrBuf })
         return
       }
-      rejectPromise(new Error(`${command} exited with code ${code ?? 'null'}${signal ? ` (signal: ${signal})` : ''}`))
+      const detail = capture
+        ? `\n--- stdout ---\n${stdoutBuf.trim() || '(empty)'}\n--- stderr ---\n${stderrBuf.trim() || '(empty)'}`
+        : ''
+      rejectPromise(new Error(`${command} exited with code ${code ?? 'null'}${signal ? ` (signal: ${signal})` : ''}${detail}`))
     })
   })
 }
