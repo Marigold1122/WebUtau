@@ -1,60 +1,56 @@
 use axum::{
     body::Body,
     extract::{Request, State},
-    http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode},
+    http::{header, HeaderMap, HeaderName, HeaderValue, Method, StatusCode},
     response::{IntoResponse, Response},
     routing::any,
     Router,
 };
 use futures_util::StreamExt;
 use std::{net::SocketAddr, path::PathBuf};
-use tauri::{path::BaseDirectory, AppHandle, Manager};
+use tauri::AppHandle;
 use tokio::net::TcpListener;
+use tower::ServiceExt;
 use tower_http::services::ServeDir;
 
 const BACKEND_BASE: &str = "http://127.0.0.1:38510";
 const SEEDVC_BASE: &str = "http://127.0.0.1:38511";
 
 #[derive(Clone)]
-struct ProxyState {
+struct AppState {
     client: reqwest::Client,
+    app: AppHandle,
+    // 开发态回退：若二进制未嵌入前端（例如 `tauri dev` 前未构建 dist），
+    // 退而从工作区 ../dist/ 读取；生产构建永远命中 asset_resolver。
+    dev_dist: Option<PathBuf>,
 }
 
 pub struct LocalServerHandle {
     pub port: u16,
 }
 
-pub fn resolve_frontend_dist(app: &AppHandle) -> Option<PathBuf> {
-    let candidates: Vec<PathBuf> = {
-        let mut paths = Vec::new();
-        if let Ok(p) = app.path().resolve("dist", BaseDirectory::Resource) {
-            paths.push(p);
-        }
-        if let Ok(p) = app.path().resolve("frontend", BaseDirectory::Resource) {
-            paths.push(p);
-        }
-        let dev_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../dist");
-        paths.push(dev_dir);
-        paths
-    };
-
-    candidates.into_iter().find(|p| p.is_dir())
-}
-
-pub async fn spawn_local_server(dist_dir: PathBuf) -> Result<LocalServerHandle, String> {
+pub async fn spawn_local_server(app: AppHandle) -> Result<LocalServerHandle, String> {
     let client = reqwest::Client::builder()
         .no_proxy()
         .build()
         .map_err(|err| format!("failed to build reqwest client: {err}"))?;
-    let proxy_state = ProxyState { client };
 
-    let serve_dir = ServeDir::new(&dist_dir).append_index_html_on_directories(true);
+    let dev_dist = {
+        let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../dist");
+        p.is_dir().then_some(p)
+    };
 
-    let app = Router::new()
+    let state = AppState {
+        client,
+        app,
+        dev_dist,
+    };
+
+    let router = Router::new()
         .route("/api/*rest", any(proxy_backend))
         .route("/seedvc/api/*rest", any(proxy_seedvc))
-        .fallback_service(serve_dir)
-        .with_state(proxy_state);
+        .fallback(serve_asset)
+        .with_state(state);
 
     let listener = TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
         .await
@@ -65,7 +61,7 @@ pub async fn spawn_local_server(dist_dir: PathBuf) -> Result<LocalServerHandle, 
         .port();
 
     tokio::spawn(async move {
-        if let Err(err) = axum::serve(listener, app).await {
+        if let Err(err) = axum::serve(listener, router).await {
             eprintln!("[local_server] axum serve error: {err}");
         }
     });
@@ -73,17 +69,43 @@ pub async fn spawn_local_server(dist_dir: PathBuf) -> Result<LocalServerHandle, 
     Ok(LocalServerHandle { port })
 }
 
-async fn proxy_backend(State(state): State<ProxyState>, req: Request) -> Response {
-    proxy_request(state, req, BACKEND_BASE, "").await
+async fn serve_asset(State(state): State<AppState>, req: Request) -> Response {
+    let raw_path = req.uri().path().to_string();
+
+    // 1. 命中 Tauri 编译期嵌入的前端资源（生产链路）。
+    //    asset_resolver 内部已处理 percent-decode、去前导 `/`、空路径→index.html 等逻辑。
+    if let Some(asset) = state.app.asset_resolver().get(raw_path.clone()) {
+        let mut headers = HeaderMap::new();
+        if let Ok(value) = HeaderValue::from_str(&asset.mime_type) {
+            headers.insert(header::CONTENT_TYPE, value);
+        }
+        let mut res = Response::new(Body::from(asset.bytes));
+        *res.headers_mut() = headers;
+        *res.status_mut() = StatusCode::OK;
+        return res;
+    }
+
+    // 2. 开发态回退：从磁盘 dist/ 读取（dev 或未启用 custom-protocol 的调试构建）
+    if let Some(dev_dist) = state.dev_dist.clone() {
+        let service = ServeDir::new(dev_dist).append_index_html_on_directories(true);
+        let Ok(res) = service.oneshot(req).await;
+        return res.into_response();
+    }
+
+    error_response(StatusCode::NOT_FOUND, format!("asset not found: {}", raw_path))
 }
 
-async fn proxy_seedvc(State(state): State<ProxyState>, req: Request) -> Response {
-    // 前端调 /seedvc/api/foo → 后端 http://127.0.0.1:5001/api/foo
-    proxy_request(state, req, SEEDVC_BASE, "/seedvc").await
+async fn proxy_backend(State(state): State<AppState>, req: Request) -> Response {
+    proxy_request(&state.client, req, BACKEND_BASE, "").await
+}
+
+async fn proxy_seedvc(State(state): State<AppState>, req: Request) -> Response {
+    // 前端调 /seedvc/api/foo → 后端 http://127.0.0.1:38511/api/foo
+    proxy_request(&state.client, req, SEEDVC_BASE, "/seedvc").await
 }
 
 async fn proxy_request(
-    state: ProxyState,
+    client: &reqwest::Client,
     req: Request,
     target_base: &str,
     strip_prefix: &str,
@@ -122,7 +144,7 @@ async fn proxy_request(
         }
     };
 
-    let mut request_builder = state.client.request(method, &target_url);
+    let mut request_builder = client.request(method, &target_url);
     for (name, value) in parts.headers.iter() {
         if matches!(name.as_str(), "host" | "connection" | "content-length") {
             continue;

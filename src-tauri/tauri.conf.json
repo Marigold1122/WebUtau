@@ -70,8 +70,7 @@
     },
     "resources": {
       "resources/runtime/": "runtime/",
-      "resources/cloudflared/": "cloudflared/",
-      "../dist/": "dist/"
+      "resources/cloudflared/": "cloudflared/"
     }
   }
 }

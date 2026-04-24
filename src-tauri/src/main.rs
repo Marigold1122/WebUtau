@@ -53,28 +53,23 @@ fn main() {
                 );
             }
 
-            // 启动嵌入式 HTTP 服务（serve dist + 反代 /api、/seedvc/api）
-            if let Some(dist) = local_server::resolve_frontend_dist(app.handle()) {
-                let ctx_clone = Arc::clone(&manage_ctx);
-                tauri::async_runtime::spawn(async move {
-                    match local_server::spawn_local_server(dist).await {
-                        Ok(handle) => {
-                            ctx_clone.local_port.store(handle.port, Ordering::SeqCst);
-                            eprintln!("[local_server] listening on 127.0.0.1:{}", handle.port);
-                        }
-                        Err(err) => {
-                            eprintln!("[local_server] failed: {err}");
-                            ctx_clone
-                                .tunnel
-                                .mark_unavailable("本地 HTTP 服务启动失败", Some(err));
-                        }
+            // 启动嵌入式 HTTP 服务（serve 嵌入前端 + 反代 /api、/seedvc/api）
+            let ctx_clone = Arc::clone(&manage_ctx);
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                match local_server::spawn_local_server(app_handle).await {
+                    Ok(handle) => {
+                        ctx_clone.local_port.store(handle.port, Ordering::SeqCst);
+                        eprintln!("[local_server] listening on 127.0.0.1:{}", handle.port);
                     }
-                });
-            } else {
-                manage_ctx
-                    .tunnel
-                    .mark_unavailable("未找到前端资源目录，无法对外暴露", None);
-            }
+                    Err(err) => {
+                        eprintln!("[local_server] failed: {err}");
+                        ctx_clone
+                            .tunnel
+                            .mark_unavailable("本地 HTTP 服务启动失败", Some(err));
+                    }
+                }
+            });
 
             if let Some(window) = app.get_webview_window("main") {
                 window.show().map_err(|error| io_error(error.to_string()))?;

@@ -1,7 +1,7 @@
 ﻿import { resolve, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { readFileSync } from 'node:fs'
-import { readFile as readFilePromise } from 'node:fs/promises'
+import { readFile as readFilePromise, rm as rmPromise } from 'node:fs/promises'
 import { defineConfig } from 'vite'
 
 // 读取 package.json 的 version，注入给前端用于「关于」页显示
@@ -57,6 +57,18 @@ function audioInlinePlugin() {
   }
 }
 
+/** 打包结束后清掉 public/ 里被复制进来的 macOS .DS_Store */
+function stripDsStorePlugin() {
+  return {
+    name: 'strip-ds-store',
+    apply: 'build',
+    async closeBundle() {
+      const outDir = resolve(__dirname, 'dist')
+      await rmPromise(join(outDir, '.DS_Store'), { force: true }).catch(() => {})
+    },
+  }
+}
+
 /** 暴露 cloudflare tunnel 的状态文件给前端轮询 */
 function tunnelStatusPlugin() {
   const handler = async (req, res, next) => {
@@ -97,7 +109,7 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(PACKAGE_VERSION),
   },
-  plugins: [audioInlinePlugin(), tunnelStatusPlugin()],
+  plugins: [audioInlinePlugin(), tunnelStatusPlugin(), stripDsStorePlugin()],
   server: {
     port: resolveFrontendPort(),
     strictPort: true,
