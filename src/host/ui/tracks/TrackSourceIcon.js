@@ -19,6 +19,23 @@ const ICON_MAP = {
       <line x1="3" y1="17" x2="17" y2="3" />
     </svg>
   `,
+  guitar: `
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <ellipse cx="6.5" cy="13.8" rx="3.5" ry="4" />
+      <circle cx="6.5" cy="13.8" r="1" />
+      <path d="M9.2 11.3 15.8 4.6" />
+      <path d="M14.2 3 17.6 6.3" />
+    </svg>
+  `,
+  bass: `
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <ellipse cx="5.5" cy="15" rx="2.8" ry="3.2" />
+      <circle cx="5.5" cy="15" r="0.8" />
+      <path d="M7.5 13.3 17 3.8" />
+      <path d="M14.8 1.8 18.5 5.3" />
+      <path d="M13.2 3.4 15.2 5.4" />
+    </svg>
+  `,
   drums: `
     <svg viewBox="0 0 20 20" aria-hidden="true">
       <ellipse cx="10" cy="9.2" rx="5.8" ry="2.6" />

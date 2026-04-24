@@ -552,6 +552,8 @@ body {
   position: relative;
   background: var(--bg-0);
 }
+.track-viewport[data-pan-override="1"] { cursor: grab; }
+.track-viewport[data-panning="1"] { cursor: grabbing; }
 
 .timeline-spacer {
   min-width: 100%;
