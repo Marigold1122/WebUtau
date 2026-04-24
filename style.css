@@ -452,6 +452,10 @@ body {
   font-weight: 700;
   white-space: nowrap;
   border: 1px solid transparent;
+  transition:
+    background-color 260ms cubic-bezier(0.4, 0, 0.2, 1),
+    color 260ms cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 260ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 .render-status.idle { display: none; }
 .render-status.rendering { color: #111; background: var(--orange); border-color: #8C6A23;}
@@ -676,7 +680,11 @@ body {
   border-bottom: 1px solid var(--border-color);
   cursor: pointer;
   background: var(--bg-1);
-  transition: background 0.1s ease;
+  transition:
+    background-color 220ms cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 220ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 220ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 .track-item:hover {
   background: #F8F7F4;
@@ -1099,6 +1107,11 @@ body {
   background: var(--bg-3);
   border-bottom: 1px solid var(--border-color);
   cursor: pointer;
+  transition:
+    background-color 240ms cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 240ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 300ms cubic-bezier(0.4, 0, 0.2, 1),
+    filter 300ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 .track-row.selected {
   background: #F8F7F4;
@@ -3296,6 +3309,7 @@ body.inline-popover-active { }
   text-transform: uppercase;
   border-bottom: 1px solid var(--border-color);
   box-shadow: 0 1px 0 #FFF;
+  transition: color 160ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 .inspector-section-header::-webkit-details-marker,
 .inspector-section-header::marker { display: none; content: ''; }
@@ -3375,3 +3389,97 @@ body.inline-popover-active { }
 .about-popover .about-info { padding: 0 0 8px; text-align: center; }
 .about-popover .about-app-name { font-size: 15px; margin-bottom: 2px; }
 .about-popover .about-description { font-size: 11px; color: var(--text-muted); }
+
+/* =====================================================
+   通用按钮触感反馈：按下瞬间缩压 + 色块加深，松开缓慢回弹。
+   关键是 :active 时 transition-duration 设为 0 —— 按下的动作「脆」，
+   松开的动作「柔」，这套节奏才是"高级"按钮的手感秘诀。
+   ===================================================== */
+.panel-action-btn,
+.modal-btn,
+.menubar-transport-btn,
+.menu-item,
+.inspector-footer-link,
+.inspector-collapse-btn,
+.track-add-button,
+.about-update-btn,
+.piano-roll-editor-btn,
+.track-empty-hint-import-button,
+.instrument-editor-tool,
+.side-tab-btn,
+.track-context-menu-item {
+  transition-property: background, background-color, color, border-color, box-shadow, opacity, transform, filter;
+  transition-duration: 180ms;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform;
+}
+
+.panel-action-btn:active:not(:disabled),
+.modal-btn:active:not(:disabled),
+.menubar-transport-btn:active:not(:disabled),
+.menu-item:active:not(:disabled),
+.inspector-footer-link:active,
+.inspector-collapse-btn:active,
+.track-add-button:active:not(:disabled),
+.about-update-btn:active:not(:disabled),
+.piano-roll-editor-btn:active:not(:disabled),
+.track-empty-hint-import-button:active:not(:disabled),
+.instrument-editor-tool:active:not(:disabled),
+.side-tab-btn:active:not(:disabled),
+.track-context-menu-item:active:not(:disabled) {
+  transform: scale(0.93);
+  filter: brightness(0.92);
+  transition-duration: 0ms;
+}
+
+/* =====================================================
+   轨道状态进入动画：因为 _renderTracks 每次都整体重建 DOM，
+   CSS transition 拿不到"前一状态"可过渡。这里改用 @keyframes：
+   带 .active / .open / .dimmed / .selected 的新节点被插入时自动播放
+   一次从"未激活"到目标态的动画，视觉上等同于过渡。
+   ===================================================== */
+@keyframes wu-track-item-activate {
+  from {
+    background-color: var(--bg-1);
+    box-shadow: inset 3px 0 0 transparent;
+  }
+  to {
+    background-color: #F8F7F4;
+    box-shadow: inset 3px 0 0 var(--accent-color);
+  }
+}
+.track-item.active {
+  animation: wu-track-item-activate 280ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes wu-track-row-selected {
+  from { background-color: var(--bg-3); box-shadow: inset 0 0 0 1px transparent; }
+  to   { background-color: #F8F7F4; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.05); }
+}
+.track-row.selected {
+  animation: wu-track-row-selected 280ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes wu-track-row-open {
+  from { box-shadow: inset 3px 0 0 transparent; }
+  to   { box-shadow: inset 3px 0 0 var(--accent-color); }
+}
+.track-row.open {
+  animation: wu-track-row-open 280ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes wu-track-row-dim {
+  from { opacity: 1; }
+  to   { opacity: 0.4; }
+}
+.track-row.dimmed {
+  animation: wu-track-row-dim 320ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes wu-track-row-mute {
+  from { filter: none; }
+  to   { filter: saturate(0.5) opacity(0.7); }
+}
+.track-row.muted {
+  animation: wu-track-row-mute 320ms cubic-bezier(0.4, 0, 0.2, 1);
+}
