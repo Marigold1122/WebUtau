@@ -104,6 +104,8 @@ export class ProjectAudioMixPersistence {
         const playbackState = createTrackPlaybackState(track?.playbackState, playbackDefaults)
         return {
           id: track?.id || null,
+          // 用户给单条轨道自定义的颜色（#RRGGBB，可为 null）
+          color: typeof track?.color === 'string' ? track.color : null,
           reverb: playbackState.reverb,
           reverbSend: playbackState.reverbSend,
           reverbPresetId: playbackState.reverbPresetId,
@@ -159,6 +161,7 @@ export class ProjectAudioMixPersistence {
     }
     const playbackByTrackId = new Map(
       (Array.isArray(snapshot?.tracks) ? snapshot.tracks : []).map((track) => [track?.id || null, {
+        color: track?.color,
         reverb: track?.reverb,
         reverbSend: track?.reverbSend,
         reverbPresetId: track?.reverbPresetId,
@@ -175,6 +178,7 @@ export class ProjectAudioMixPersistence {
         if (!savedPlaybackState) return track
         return {
           ...track,
+          color: typeof savedPlaybackState.color === 'string' ? savedPlaybackState.color : (track?.color ?? null),
           playbackState: mergeTrackPlaybackState(track?.playbackState, {
             reverb: savedPlaybackState.reverb,
             reverbSend: savedPlaybackState.reverbSend,

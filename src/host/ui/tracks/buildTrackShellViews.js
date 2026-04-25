@@ -2,7 +2,7 @@ import { isAudioTrack } from '../../project/trackContentType.js'
 import { normalizeTrackReverbConfig, normalizeTrackReverbSend, normalizeTrackVolume } from '../../project/trackPlaybackState.js'
 import { renderTrackPreviewCanvas } from '../renderTrackPreviewCanvas.js'
 import { createTrackMonitorBadge } from './TrackMonitorBadge.js'
-import { getTrackColor } from './trackColorPalette.js'
+import { resolveTrackColor } from './trackColorPalette.js'
 import { createTrackSourcePicker } from './TrackSourcePicker.js'
 
 export const TRACK_ROW_HEIGHT = 64
@@ -305,7 +305,7 @@ function applyTrackStateClasses(element, track, viewState) {
 }
 
 function createTrackItem({ track, index, selectedTrackId, viewState, handlers }) {
-  const trackColor = getTrackColor(index)
+  const trackColor = resolveTrackColor(track, index)
   const item = document.createElement('div')
   item.className = `track-item${track.id === selectedTrackId ? ' active' : ''}`
   applyTrackStateClasses(item, track, viewState)
@@ -317,9 +317,35 @@ function createTrackItem({ track, index, selectedTrackId, viewState, handlers })
   const nameWrap = document.createElement('div')
   nameWrap.className = 'th-name'
 
+  // 轨道号色块本身就是该轨道的"颜色身份"标识；点击该色块会打开原生取色器，
+  // 通过盖在上面的透明 input[type=color] 接管点击 → 不需要任何额外按钮。
   const trackNumber = document.createElement('span')
   trackNumber.className = 'trk-num'
-  trackNumber.textContent = String(index + 1).padStart(2, '0')
+  trackNumber.style.background = trackColor
+  trackNumber.title = '点击更改轨道颜色'
+
+  const trackNumberLabel = document.createElement('span')
+  trackNumberLabel.className = 'trk-num-label'
+  trackNumberLabel.textContent = String(index + 1).padStart(2, '0')
+
+  const colorInput = document.createElement('input')
+  colorInput.type = 'color'
+  colorInput.className = 'trk-num-picker'
+  colorInput.value = trackColor
+  colorInput.setAttribute('aria-label', '轨道颜色')
+  // 阻断点击冒泡，避免触发 row.click → onTrackSelected → 立刻 render 重建 DOM
+  // 把取色器对话框打散
+  colorInput.addEventListener('click', (event) => event.stopPropagation())
+  colorInput.addEventListener('pointerdown', (event) => event.stopPropagation())
+  // 实时预览：用户在原生面板里拖动色相时 swatch 立刻跟着变
+  colorInput.addEventListener('input', (event) => {
+    trackNumber.style.background = event.target.value
+  })
+  colorInput.addEventListener('change', (event) => {
+    handlers.onTrackColorChanged?.(track.id, event.target.value)
+  })
+
+  trackNumber.append(trackNumberLabel, colorInput)
   nameWrap.appendChild(trackNumber)
 
   const name = document.createElement('span')
@@ -507,7 +533,7 @@ function createTrackPreview({
   viewState,
   handlers,
 }) {
-  const trackColor = getTrackColor(index)
+  const trackColor = resolveTrackColor(track, index)
   const clipBounds = getTrackClipBounds(track, timelineMetrics.axis)
   const preview = document.createElement('div')
   preview.className = 'track-row track-lane'

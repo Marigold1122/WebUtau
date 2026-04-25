@@ -784,6 +784,7 @@ body {
 }
 
 .trk-num {
+  position: relative;
   height: 16px;
   min-width: 18px;
   display: inline-flex;
@@ -791,12 +792,46 @@ body {
   justify-content: center;
   padding: 0 4px;
   border-radius: 2px;
+  /* 背景色由 JS 直接 inline 写入（轨道色），这里给一个回退色避免没色时一片透明 */
   background: var(--border-color);
-  color: var(--text-main);
+  color: #fff;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
   font-family: 'JetBrains Mono', monospace;
   font-size: 9px;
   font-weight: 700;
+  cursor: pointer;
+  transition: filter 120ms ease, box-shadow 120ms ease;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
 }
+.trk-num:hover {
+  filter: brightness(1.08);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(255, 255, 255, 0.6);
+}
+/* 数字 label 单独一层，便于和 picker 同坑共生 */
+.trk-num-label {
+  position: relative;
+  z-index: 1;
+  pointer-events: none;
+  user-select: none;
+}
+/* 透明覆盖整个色块的原生取色器：点击色块 = 点击它，弹出 OS 颜色面板 */
+.trk-num-picker {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 2;
+}
+/* 收掉 input[type=color] 在不同浏览器里的内边距/swatch 框 */
+.trk-num-picker::-webkit-color-swatch-wrapper { padding: 0; }
+.trk-num-picker::-webkit-color-swatch { border: 0; border-radius: 0; }
+.trk-num-picker::-moz-color-swatch { border: 0; border-radius: 0; }
 
 .track-item-footer {
   margin-top: auto;

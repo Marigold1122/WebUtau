@@ -32,6 +32,8 @@ export function createTrackDocument(trackSummary, sourcePhrases = [], languageCo
     id: `track-${trackSummary.index}`,
     midiTrackIndex: trackSummary.index,
     name: trackSummary.name,
+    // 用户自定义颜色（#RRGGBB）；null 表示走默认调色板（按 index 取色）
+    color: typeof trackSummary?.color === 'string' ? trackSummary.color : null,
     hasLyrics: trackSummary.hasLyrics,
     role: trackSummary?.role || (contentType === TRACK_CONTENT_TYPES.AUDIO
       ? 'audio'

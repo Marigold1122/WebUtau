@@ -1531,6 +1531,16 @@ export function createHostApp() {
         },
       })
     },
+    onTrackColorChanged: (trackId, nextColor) => {
+      if (!trackId || typeof nextColor !== 'string') return
+      const normalized = nextColor.toLowerCase()
+      if (!/^#[0-9a-f]{6}$/.test(normalized)) return
+      const track = store.getTrack(trackId)
+      if (!track || track.color === normalized) return
+      store.updateTrack(trackId, { color: normalized })
+      projectAudioMixPersistence.saveProject(store.getProject())
+      render('track-color-changed')
+    },
     onTrackClipMoved: handleTrackClipMoved,
     onTrackFxToggled: reverbController.toggleTrackFxPanel,
     onTrackSourcePickerToggled: handleTrackSourcePickerToggled,
