@@ -6,6 +6,7 @@ import noteSelection from './NoteSelection.js'
 import viewport from './PianoRollViewport.js'
 import grid from './PianoRollGrid.js'
 import notes from './PianoRollNotes.js'
+import phonemeTiming from './PhonemeTimingVisual.js'
 import pitchEditor, { PITCH_EDITOR_MODE } from '../modules/PitchEditor.js'
 import noteEditPopover from './NoteEditPopover.js'
 import pitchShapePopover from './PitchShapePopover.js'
@@ -18,6 +19,7 @@ class PianoRoll {
     this.timeRulerCanvas = null
     this.gridCanvas = null
     this.noteCanvas = null
+    this.phonemeTimingCanvas = null
     this.keyboardCanvas = null
     this.editorToolbarHost = null
     this.editorToolbar = null
@@ -41,11 +43,13 @@ class PianoRoll {
     this.gridCanvas.className = 'piano-roll-grid'
     this.noteCanvas = document.createElement('canvas')
     this.noteCanvas.className = 'piano-roll-notes'
+    this.phonemeTimingCanvas = document.createElement('canvas')
+    this.phonemeTimingCanvas.className = 'piano-roll-phoneme-timing'
     this.canvasWrapper = document.createElement('div')
     this.canvasWrapper.className = 'piano-roll-canvas-wrapper'
     this.canvasWrapper.tabIndex = -1
     this.container.replaceChildren()
-    this.canvasWrapper.append(this.timeRulerCanvas, this.gridCanvas, this.noteCanvas)
+    this.canvasWrapper.append(this.timeRulerCanvas, this.gridCanvas, this.noteCanvas, this.phonemeTimingCanvas)
     if (playheadElement) this.canvasWrapper.appendChild(playheadElement)
     this.container.append(this.keyboardCanvas, this.canvasWrapper)
     this._buildEditorToolbar()
@@ -53,6 +57,7 @@ class PianoRoll {
     this._resize()
     grid.init(this.gridCanvas, this.keyboardCanvas, this.timeRulerCanvas)
     notes.init(this.noteCanvas)
+    phonemeTiming.init(this.phonemeTimingCanvas)
     this._listenEvents()
     window.addEventListener('resize', () => this._resize())
     this.canvasWrapper.addEventListener('wheel', (event) => this._onWheel(event), { passive: false })
@@ -61,6 +66,7 @@ class PianoRoll {
     noteEditPopover.activate(this.noteCanvas)
     pitchShapePopover.activate(this.noteCanvas)
     grid.draw()
+    phonemeTiming.draw(notes.getPhrases())
     this._updateEditorToolbar()
     this.isInitialized = true
     console.log('[PianoRoll] 已初始化')
@@ -213,6 +219,7 @@ class PianoRoll {
   refreshViewportAfterScroll() {
     grid.draw()
     notes.draw()
+    phonemeTiming.draw(notes.getPhrases())
     this._notifyViewportChanged()
   }
 
@@ -221,18 +228,21 @@ class PianoRoll {
     const dpr = window.devicePixelRatio || 1
     const canvasWidth = Math.max(0, this.container.clientWidth - PIANO_ROLL.KEYBOARD_WIDTH)
     const canvasHeight = this.container.clientHeight
-    const noteAreaHeight = Math.max(0, canvasHeight - PIANO_ROLL.TIME_RULER_HEIGHT)
+    const keyboardHeight = Math.max(0, canvasHeight - PIANO_ROLL.TIME_RULER_HEIGHT)
+    const noteAreaHeight = Math.max(0, canvasHeight - PIANO_ROLL.TIME_RULER_HEIGHT - PIANO_ROLL.PHONEME_TIMING_HEIGHT)
     const totalHeight = (PIANO_ROLL.PITCH_MAX - PIANO_ROLL.PITCH_MIN + 1) * PIANO_ROLL.KEY_HEIGHT
-    this._scaleCanvas(this.keyboardCanvas, PIANO_ROLL.KEYBOARD_WIDTH, noteAreaHeight, dpr)
+    this._scaleCanvas(this.keyboardCanvas, PIANO_ROLL.KEYBOARD_WIDTH, keyboardHeight, dpr)
     this.keyboardCanvas.style.marginTop = `${PIANO_ROLL.TIME_RULER_HEIGHT}px`
     this._scaleCanvas(this.timeRulerCanvas, canvasWidth, PIANO_ROLL.TIME_RULER_HEIGHT, dpr)
     this._scaleCanvas(this.gridCanvas, canvasWidth, noteAreaHeight, dpr)
     this._scaleCanvas(this.noteCanvas, canvasWidth, noteAreaHeight, dpr)
+    this._scaleCanvas(this.phonemeTimingCanvas, canvasWidth, PIANO_ROLL.PHONEME_TIMING_HEIGHT, dpr)
     viewport.setSize(canvasWidth, noteAreaHeight)
     if (!this.isInitialized) viewport.scrollY = Math.max(0, totalHeight - noteAreaHeight)
     if (!this.isInitialized) return
     grid.draw()
     notes.draw()
+    phonemeTiming.draw(notes.getPhrases())
     playheadController.setPosition(playheadController.getPosition())
   }
 
@@ -254,6 +264,7 @@ class PianoRoll {
       if (viewport.zoomAtCursor(mouseX, event.deltaY)) {
         grid.draw()
         notes.draw()
+        phonemeTiming.draw(notes.getPhrases())
         playheadController.setPosition(playheadController.getPosition())
         this._notifyViewportChanged()
       }
@@ -269,6 +280,7 @@ class PianoRoll {
     }
     grid.draw()
     notes.draw()
+    phonemeTiming.draw(notes.getPhrases())
     playheadController.setPosition(playheadController.getPosition())
     this._notifyViewportChanged()
   }
@@ -323,8 +335,9 @@ class PianoRoll {
         viewport.scrollX = Math.max(0, firstNote.time * viewport.pixelsPerSecond - PIANO_ROLL.AUTO_SCROLL_PADDING)
         viewport.scrollY = Math.max(0, Math.min(centeredY, maxY))
       }
-      grid.draw()
       notes.setPhrases(phrases)
+      phonemeTiming.setPhrases(phrases)
+      grid.draw()
       playheadController.setPosition(playheadController.getPosition())
       this._updateEditorToolbar()
     })
@@ -332,6 +345,7 @@ class PianoRoll {
     eventBus.on(EVENTS.PHRASES_REBUILT, ({ phrases }) => {
       notes.setPhrases(phrases)
       grid.draw()
+      phonemeTiming.setPhrases(phrases)
       playheadController.setPosition(playheadController.getPosition())
       this._updateEditorToolbar()
     })
@@ -339,6 +353,7 @@ class PianoRoll {
     eventBus.on(EVENTS.PHRASES_EDITED, ({ phrases }) => {
       notes.setPhrases(phrases)
       grid.draw()
+      phonemeTiming.setPhrases(phrases)
       playheadController.setPosition(playheadController.getPosition())
       this._updateEditorToolbar()
     })
@@ -356,6 +371,7 @@ class PianoRoll {
       if (previousScrollX === viewport.scrollX) return
       grid.draw()
       notes.draw()
+      phonemeTiming.draw(notes.getPhrases())
       playheadController.setPosition(time)
     })
   }

@@ -25,6 +25,10 @@ class PianoRollNotes {
     this.requestDraw()
   }
 
+  getPhrases() {
+    return this.phrases
+  }
+
   draw() {
     if (this.drawFrame) {
       cancelAnimationFrame(this.drawFrame)

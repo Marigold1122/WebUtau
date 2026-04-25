@@ -147,7 +147,8 @@ class PianoRollGrid {
   }
 
   _drawKeyboard() {
-    const visible = viewport.getVisiblePitchRange()
+    const keyboardHeight = Number.parseFloat(this.keyboardCanvas?.style?.height) || viewport.canvasHeight
+    const visible = { high: viewport.yToPitch(0), low: viewport.yToPitch(keyboardHeight) }
     const high = Math.min(PIANO_ROLL.PITCH_MAX, visible.high)
     const low = Math.max(PIANO_ROLL.PITCH_MIN, visible.low)
     this.keyboardCtx.textAlign = 'center'

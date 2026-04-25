@@ -352,6 +352,15 @@ input {
   pointer-events: none;
 }
 
+.piano-roll-phoneme-timing {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  z-index: 6;
+  pointer-events: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+
 .lyric-edit-input,
 .lyric-dialog-input {
   background: var(--bg-control);

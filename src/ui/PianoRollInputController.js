@@ -7,6 +7,7 @@ import pitchEditor, { PITCH_POINT_SHAPES } from '../modules/PitchEditor.js'
 import phraseStore from '../core/PhraseStore.js'
 import viewport from './PianoRollViewport.js'
 import pianoRollNotes from './PianoRollNotes.js'
+import phonemeTiming from './PhonemeTimingVisual.js'
 import grid from './PianoRollGrid.js'
 import { PIANO_ROLL } from '../config/constants.js'
 import playheadController from '../modules/PlayheadController.js'
@@ -704,6 +705,7 @@ class PianoRollInputController {
     const rect = this._noteCanvas.getBoundingClientRect()
     const x = clientX - rect.left
     const y = clientY - rect.top
+    if (x < 0 || y < 0 || x > rect.width || y > rect.height) return null
     return {
       x,
       y,
@@ -771,6 +773,7 @@ class PianoRollInputController {
   _refreshViewportAfterMarqueeScroll() {
     grid.draw()
     pianoRollNotes.requestDraw()
+    phonemeTiming.draw(pianoRollNotes.getPhrases())
     playheadController.setPosition(playheadController.getPosition())
   }
 
