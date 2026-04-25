@@ -80,6 +80,7 @@ export class ShellLayoutView {
     this.trackContextMenu = this._createTrackContextMenu()
     this.trackContextTrackId = null
     this.playbackActive = false
+    this._selectedTrackId = null
     this.playheadFollowMode = normalizePlayheadFollowMode(null)
     this.followModeControls = null
     this.followModeButtons = new Map()
@@ -384,6 +385,11 @@ export class ShellLayoutView {
       this.handlers.onVoicebankChanged?.(event.target.value || null)
     })
     this.refs.btnInspectorToggle?.addEventListener('click', () => this.setInspectorCollapsed(!this.isInspectorCollapsed()))
+    this.refs.selectedTrackName?.addEventListener('click', () => {
+      const trackId = this._selectedTrackId
+      if (!trackId) return
+      this.handlers.onTrackRenameRequested?.(trackId, this.refs.selectedTrackName)
+    })
     this.refs.trackViewport?.addEventListener('contextmenu', (event) => this._handleTrackViewportContextMenu(event))
     this.refs.mainInspector?.addEventListener('transitionend', (event) => {
       if (event.propertyName !== 'width') return
@@ -534,6 +540,7 @@ export class ShellLayoutView {
 
   _renderProjectMeta(project, selectedTrack, editorTrack, renderBadgeTrack, viewState) {
     this.setPlayheadFollowMode(viewState?.playheadFollowMode)
+    this._selectedTrackId = selectedTrack?.id || null
     this.refs.selectedTrackName.textContent = selectedTrack?.name || '—'
     this.refs.selectedTrackKind.textContent = selectedTrack
       ? (isAudioTrack(selectedTrack) ? '音频轨' : getTrackSourceInspectorText(selectedTrack.playbackState?.assignedSourceId))

@@ -1,4 +1,5 @@
-﻿import { createHostBridgeHandlers } from './createHostBridgeHandlers.js'
+﻿import { startInlineRenameEdit } from '../ui/inlineRenameEdit.js'
+import { createHostBridgeHandlers } from './createHostBridgeHandlers.js'
 import { createHostRender } from './createHostRender.js'
 import { createPhraseMissHandler } from './createPhraseMissHandler.js'
 import { createProjectImportHandler } from './createProjectImportHandler.js'
@@ -1520,6 +1521,16 @@ export function createHostApp() {
     onTrackContextDelete: handleTrackContextDelete,
     canDeleteTrack: (trackId) => Boolean(trackId && store.getTrack(trackId)),
     onTrackOpened: openTrackById,
+    onTrackRenameRequested: (trackId, nameEl) => {
+      const track = store.getTrack(trackId)
+      if (!track || !nameEl) return
+      startInlineRenameEdit(nameEl, track.name || '', {
+        onCommit: (nextName) => {
+          store.updateTrack(trackId, { name: nextName })
+          render('track-renamed')
+        },
+      })
+    },
     onTrackClipMoved: handleTrackClipMoved,
     onTrackFxToggled: reverbController.toggleTrackFxPanel,
     onTrackSourcePickerToggled: handleTrackSourcePickerToggled,

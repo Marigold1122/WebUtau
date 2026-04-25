@@ -3483,3 +3483,37 @@ body.inline-popover-active { }
 .track-row.muted {
   animation: wu-track-row-mute 320ms cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+/* =====================================================
+   轨道名 inline 重命名：双击 .track-name / 单击 #selected-track-name 触发
+   ===================================================== */
+.track-name {
+  cursor: text;
+}
+#selected-track-name {
+  cursor: text;
+}
+#selected-track-name:hover {
+  background: rgba(59, 139, 136, 0.06);
+}
+
+/* 进入编辑状态时的视觉：浅描边 + 微底色 + 黑字 */
+.is-editing,
+.is-editing.track-name,
+.is-editing.prop-value,
+#selected-track-name.is-editing {
+  outline: 1px solid #3B8B88;
+  outline-offset: -1px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #2B2825 !important;
+  border-radius: 2px;
+  padding: 0 4px;
+  white-space: nowrap;
+  user-select: text;
+}
+
+/* 编辑中阻止 .track-name 的渐变色覆盖 */
+.track-name.is-editing {
+  -webkit-text-fill-color: initial;
+  background-clip: border-box;
+}

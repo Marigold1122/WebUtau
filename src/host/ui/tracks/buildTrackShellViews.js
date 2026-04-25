@@ -11,6 +11,11 @@ const CLIP_HEIGHT = 52
 const CLIP_HEADER_HEIGHT = 16
 const MIDI_PREVIEW_HEIGHT = CLIP_HEIGHT - CLIP_HEADER_HEIGHT - 1
 
+// 单击 name 延后触发选中的窗口长度（与浏览器 dblclick 判定接近）。
+// 在窗口内若发生原生 dblclick，撤销 pending 选中并改派重命名，
+// 从而避免第一击立即 render 重建 DOM 把第二击打散。
+const TRACK_NAME_CLICK_DEFER_MS = 250
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value))
 }
@@ -321,6 +326,32 @@ function createTrackItem({ track, index, selectedTrackId, viewState, handlers })
   name.className = 'track-name'
   name.textContent = track.name
   name.style.setProperty('--track-color', trackColor)
+  name.title = '双击重命名'
+  // 单击 name 时阻止冒泡到 row.click，把"选中"挂在延迟 timer 上；
+  // 若紧接着触发原生 dblclick，把 pending timer 撤掉、改派重命名。
+  // 这样既保证单击能选中（无闪烁），又让双击重命名稳定生效——
+  // 期间不会发生 render 重建打散第二击。同时阻断 row.dblclick 的"打开编辑器"。
+  let pendingSelectTimer = null
+  const cancelPendingSelect = () => {
+    if (pendingSelectTimer) {
+      clearTimeout(pendingSelectTimer)
+      pendingSelectTimer = null
+    }
+  }
+  name.addEventListener('click', (event) => {
+    event.stopPropagation()
+    cancelPendingSelect()
+    pendingSelectTimer = setTimeout(() => {
+      pendingSelectTimer = null
+      handlers.onTrackSelected?.(track.id)
+    }, TRACK_NAME_CLICK_DEFER_MS)
+  })
+  name.addEventListener('dblclick', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    cancelPendingSelect()
+    handlers.onTrackRenameRequested?.(track.id, name)
+  })
   nameWrap.appendChild(name)
   top.appendChild(nameWrap)
   top.appendChild(createTrackSourcePicker(track, {
