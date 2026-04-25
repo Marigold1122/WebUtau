@@ -118,18 +118,43 @@
           <div class="inspector-content">
             <!-- 当前轨道（常驻） -->
             <details class="inspector-section" id="inspector-section-track" open>
-              <summary class="inspector-section-header"><span>当前轨道</span></summary>
+              <summary class="inspector-section-header">
+                <svg class="section-icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <rect x="2" y="4.2" width="12" height="1.6" rx="0.8" fill="currentColor"/>
+                  <rect x="2" y="10.2" width="12" height="1.6" rx="0.8" fill="currentColor"/>
+                  <circle cx="5.4" cy="5" r="1.6" fill="currentColor"/>
+                  <circle cx="10.6" cy="11" r="1.6" fill="currentColor"/>
+                </svg>
+                <span>当前轨道</span>
+              </summary>
               <div class="inspector-section-body">
-                <div class="prop-row"><label>名称</label><div class="prop-value" id="selected-track-name">—</div></div>
-                <div class="prop-row"><label>类型</label><div class="prop-value" id="selected-track-kind">-</div></div>
-                <div class="prop-row"><label>语言</label><div class="prop-value" id="selected-track-language">未设置</div></div>
-                <div class="prop-row"><label>状态</label><div class="prop-value" id="selected-track-status">-</div></div>
+                <div class="track-card">
+                  <span class="track-card-stripe" aria-hidden="true"></span>
+                  <div class="track-card-main">
+                    <div class="track-card-name" id="selected-track-name" title="双击重命名">—</div>
+                    <div class="track-card-rows">
+                      <span class="track-card-row-label">类型</span>
+                      <span class="track-card-row-value" id="selected-track-kind">-</span>
+                      <span class="track-card-row-label">语言</span>
+                      <span class="track-card-row-value" id="selected-track-language">未设置</span>
+                      <span class="track-card-row-label">状态</span>
+                      <span class="track-card-row-value" id="selected-track-status">-</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </details>
 
             <!-- 声库（仅人声轨道） -->
             <details class="inspector-section" id="inspector-section-voicebank" open hidden>
-              <summary class="inspector-section-header"><span>声库</span></summary>
+              <summary class="inspector-section-header">
+                <svg class="section-icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <rect x="6" y="2" width="4" height="7.5" rx="2" fill="currentColor"/>
+                  <path d="M 4 8 v 0.5 a 4 4 0 0 0 8 0 v -0.5" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+                  <line x1="8" y1="12.5" x2="8" y2="14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                </svg>
+                <span>声库</span>
+              </summary>
               <div class="inspector-section-body">
                 <select class="prop-select" id="selected-track-voicebank"></select>
               </div>
@@ -137,13 +162,30 @@
 
             <!-- 乐器音色（嵌套父级，仅支持该音色的乐器轨道） -->
             <details class="inspector-section inspector-section--parent" id="inspector-section-tone" open hidden>
-              <summary class="inspector-section-header"><span>乐器音色</span></summary>
+              <summary class="inspector-section-header">
+                <svg class="section-icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <rect x="1.5" y="6" width="1.6" height="4" rx="0.5" fill="currentColor"/>
+                  <rect x="4.2" y="4" width="1.6" height="8" rx="0.5" fill="currentColor"/>
+                  <rect x="7" y="2.5" width="1.6" height="11" rx="0.5" fill="currentColor"/>
+                  <rect x="9.8" y="4" width="1.6" height="8" rx="0.5" fill="currentColor"/>
+                  <rect x="12.5" y="6" width="1.6" height="4" rx="0.5" fill="currentColor"/>
+                </svg>
+                <span>乐器音色</span>
+              </summary>
               <div class="inspector-section-body" id="inspector-tone-slot"></div>
             </details>
 
             <!-- 音色转换（仅人声 + SeedVC 可用） -->
             <details class="inspector-section" id="inspector-section-vc" hidden>
-              <summary class="inspector-section-header"><span>音色转换</span></summary>
+              <summary class="inspector-section-header">
+                <svg class="section-icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M 3 7 a 5 5 0 0 1 9 -1.6" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+                  <path d="M 12 5.4 L 12 3 L 9.6 3" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M 13 9 a 5 5 0 0 1 -9 1.6" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+                  <path d="M 4 10.6 L 4 13 L 6.4 13" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span>音色转换</span>
+              </summary>
               <div class="inspector-section-body voice-conversion-section" id="voice-conversion-section" hidden>
                 <div class="voice-conversion-note" data-vc-ref="message" hidden></div>
                 <div class="voice-conversion-card" data-vc-ref="body">
@@ -213,7 +255,16 @@
 
             <!-- 分享链接（常驻） -->
             <details class="inspector-section" id="inspector-section-share" open>
-              <summary class="inspector-section-header"><span>分享链接</span></summary>
+              <summary class="inspector-section-header">
+                <svg class="section-icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <line x1="5.6" y1="6.7" x2="10.6" y2="4.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                  <line x1="5.6" y1="9.3" x2="10.6" y2="11.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                  <circle cx="12" cy="3.6" r="2" fill="currentColor"/>
+                  <circle cx="4" cy="8" r="2" fill="currentColor"/>
+                  <circle cx="12" cy="12.4" r="2" fill="currentColor"/>
+                </svg>
+                <span>分享链接</span>
+              </summary>
               <div class="inspector-section-body" id="share-tunnel-section"></div>
             </details>
           </div>

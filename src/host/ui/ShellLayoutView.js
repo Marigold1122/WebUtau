@@ -27,6 +27,7 @@ import {
   createRulerMark,
   TRACK_ROW_HEIGHT,
 } from './tracks/buildTrackShellViews.js'
+import { getTrackColorById } from './tracks/trackColorPalette.js'
 import {
   getTrackInspectorStatusText,
   getTrackRenderClass,
@@ -541,6 +542,17 @@ export class ShellLayoutView {
   _renderProjectMeta(project, selectedTrack, editorTrack, renderBadgeTrack, viewState) {
     this.setPlayheadFollowMode(viewState?.playheadFollowMode)
     this._selectedTrackId = selectedTrack?.id || null
+    const trackSection = this.refs.inspectorSectionTrack
+    if (trackSection) {
+      const trackColor = selectedTrack
+        ? getTrackColorById(selectedTrack.id, project?.tracks || [])
+        : null
+      if (trackColor) {
+        trackSection.style.setProperty('--track-color', trackColor)
+      } else {
+        trackSection.style.removeProperty('--track-color')
+      }
+    }
     this.refs.selectedTrackName.textContent = selectedTrack?.name || '—'
     this.refs.selectedTrackKind.textContent = selectedTrack
       ? (isAudioTrack(selectedTrack) ? '音频轨' : getTrackSourceInspectorText(selectedTrack.playbackState?.assignedSourceId))

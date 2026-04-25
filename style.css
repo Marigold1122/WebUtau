@@ -3345,14 +3345,9 @@ body.inline-popover-active { }
   padding: 10px 2px 2px;
 }
 
-/* 父级 section：左侧 2px 色条 + 浅底色，视觉上暗示"里面还有分组" */
+/* 父级 section：仅靠浅底色暗示"里面还有分组"（左侧色条易显乱，已移除） */
 .inspector-section--parent[open] {
-  border-left: 2px solid #3B8B88;
-  background: rgba(59, 139, 136, 0.035);
-  padding-left: 8px;
-}
-.inspector-section--parent > .inspector-section-header {
-  padding-left: 4px;
+  background: rgba(59, 139, 136, 0.045);
 }
 
 /* 底部页脚：新手引导 · 关于 */
@@ -3529,3 +3524,118 @@ body.inline-popover-active { }
   -webkit-text-fill-color: initial;
   background-clip: border-box;
 }
+
+/* =====================================================
+   侧边栏 v3：精装润色
+   - section header 小图标
+   - "当前轨道" 卡片化（色条 + 大字 + 类型/语言/状态网格）
+   - 音色转换参数胶囊
+   ===================================================== */
+
+/* —— section icon （SVG，色随父继承） —— */
+.section-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  opacity: 0.85;
+  transition: color 180ms ease, opacity 180ms ease;
+}
+.inspector-section-header:hover .section-icon { color: var(--accent-color); opacity: 1; }
+.inspector-section[open] > .inspector-section-header .section-icon {
+  color: var(--accent-color);
+  opacity: 1;
+}
+
+/* —— "当前轨道" 卡片 —— */
+.track-card {
+  display: grid;
+  grid-template-columns: 4px 1fr;
+  gap: 12px;
+  align-items: stretch;
+  padding: 4px 0 6px;
+}
+.track-card-stripe {
+  width: 4px;
+  border-radius: 2px;
+  align-self: stretch;
+  min-height: 40px;
+  background: linear-gradient(
+    180deg,
+    var(--track-color, var(--accent-color)) 0%,
+    color-mix(in srgb, var(--track-color, var(--accent-color)) 55%, transparent) 100%
+  );
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.05),
+    0 1px 3px color-mix(in srgb, var(--track-color, var(--accent-color)) 40%, transparent);
+  transition: background 220ms ease, box-shadow 220ms ease;
+}
+.track-card-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  justify-content: center;
+}
+.track-card-name {
+  font-family: 'Inter', sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.012em;
+  color: var(--text-main);
+  word-break: break-word;
+  cursor: text;
+  border-radius: 3px;
+  margin: 0 -4px;
+  padding: 0 4px;
+  transition: background 140ms ease;
+}
+.track-card-name:not(.is-editing):hover { background: rgba(59, 139, 136, 0.06); }
+.track-card-rows {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 12px;
+  row-gap: 4px;
+  align-items: baseline;
+  margin-top: 2px;
+}
+.track-card-row-label {
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.track-card-row-value {
+  color: var(--text-main);
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  word-break: break-word;
+  min-width: 0;
+}
+
+/* —— 音色转换：参数数值胶囊 —— */
+.voice-conversion-param-head [data-vc-value] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  padding: 1px 9px;
+  border-radius: 999px;
+  background: rgba(59, 139, 136, 0.12);
+  border: 1px solid rgba(59, 139, 136, 0.28);
+  color: #1F5A58;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+
