@@ -203,6 +203,69 @@ export class ShellLayoutView {
     this.refs.statusBar?.classList.toggle('is-empty', nextText.length === 0)
   }
 
+  // 把"当前工程名 + 是否未保存"同步到菜单栏铭牌 + 浏览器 tab 标题。
+  // 这是用户随时能看到的"工程文件状态总指示"——铭牌上红点 + 标签页 ● 都跟它走
+  setProjectFileState({ name = null, dirty = false } = {}) {
+    const plate = this.refs.menubarProjectPlate
+    const nameEl = this.refs.menubarProjectPlateName
+    if (!plate || !nameEl) return
+    const displayName = (typeof name === 'string' && name.trim()) ? name.trim() : '未命名工程'
+    nameEl.textContent = displayName
+    plate.classList.toggle('is-untitled', !(typeof name === 'string' && name.trim()))
+    plate.classList.toggle('is-dirty', Boolean(dirty))
+    plate.title = dirty ? `${displayName} · 有未保存的改动（点击保存）` : `${displayName}（点击保存）`
+    // tab 标题：dirty 时前缀加 ● 让用户在多标签场景下也能一眼看到状态
+    const titleParts = []
+    if (dirty) titleParts.push('●')
+    titleParts.push(displayName)
+    titleParts.push('WebUtau')
+    document.title = titleParts.join(' · ')
+  }
+
+  promptProjectRecovery({ projectName = null, savedAt = null, trackCount = 0 } = {}) {
+    const overlay = this.refs.projectRecoveryModal
+    const summary = this.refs.projectRecoverySummary
+    const restoreBtn = this.refs.btnProjectRecoveryRestore
+    const discardBtn = this.refs.btnProjectRecoveryDiscard
+    if (!overlay || !restoreBtn || !discardBtn) return Promise.resolve('discard')
+
+    if (summary) {
+      const lines = []
+      lines.push(`工程名：${projectName || '未命名工程'}`)
+      lines.push(`轨道数：${trackCount}`)
+      if (savedAt) {
+        const date = typeof savedAt === 'number' ? new Date(savedAt) : new Date(savedAt)
+        if (!Number.isNaN(date.getTime())) {
+          lines.push(`备份时间：${date.toLocaleString()}`)
+        }
+      }
+      summary.textContent = lines.join('\n')
+      summary.style.whiteSpace = 'pre-line'
+    }
+
+    // 注意：modal-overlay 的真实显示触发是 `.is-open`（host-dialog.css 里定义），
+    // 不是 `.visible`——后者只有 export-audio-modal 那个特例用，别的 modal 用了
+    // 会直接静默失败（display: none 不变）
+    overlay.classList.add('is-open')
+    overlay.setAttribute('aria-hidden', 'false')
+    document.body.classList.add('modal-open')
+
+    return new Promise((resolve) => {
+      const close = (choice) => {
+        overlay.classList.remove('is-open')
+        overlay.setAttribute('aria-hidden', 'true')
+        document.body.classList.remove('modal-open')
+        restoreBtn.removeEventListener('click', onRestore)
+        discardBtn.removeEventListener('click', onDiscard)
+        resolve(choice)
+      }
+      const onRestore = () => close('restore')
+      const onDiscard = () => close('discard')
+      restoreBtn.addEventListener('click', onRestore)
+      discardBtn.addEventListener('click', onDiscard)
+    })
+  }
+
   setTransportTime(text) {
     if (!this.refs.timeDisplay) return
     this.refs.timeDisplay.textContent = typeof text === 'string' && text ? text : '00:00.000'
@@ -386,6 +449,12 @@ export class ShellLayoutView {
       this.handlers.onVoicebankChanged?.(event.target.value || null)
     })
     this.refs.btnInspectorToggle?.addEventListener('click', () => this.setInspectorCollapsed(!this.isInspectorCollapsed()))
+    // 名牌点击 = 保存；Alt/Option + 点击 = 另存为（跟 Pr / Logic 的"保存指示器一键保存"约定一致）
+    this.refs.menubarProjectPlate?.addEventListener('click', (event) => {
+      event.preventDefault()
+      if (event.altKey) this.handlers.onProjectSaveAs?.()
+      else this.handlers.onProjectSave?.()
+    })
     this.refs.selectedTrackName?.addEventListener('click', () => {
       const trackId = this._selectedTrackId
       if (!trackId) return

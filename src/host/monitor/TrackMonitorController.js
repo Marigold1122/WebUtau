@@ -56,6 +56,13 @@ export class TrackMonitorController {
         })
       },
     })
+    // 拖动 FX 旋钮时，realtime 路径（commit:false）会写 store 但故意不调 render
+    // （为了不在每帧都触发 view.render 全量重建）。结果：拖完松手 → commit:true 比较时
+    // diff 为空（因为 realtime 已经写进去了）→ 早返不调 render → dirty 永远不被触发。
+    // 这两个 Set 标记"该 track 的 realtime 路径已写过 store 但还没派出 render"，
+    // commit:true 早返时检查它来补发一次 render，让 dirty 跟踪能看到这次实际改动。
+    this._trackReverbConfigPendingDirty = new Set()
+    this._trackReverbSendPendingDirty = new Set()
   }
 
   async toggleSelectedTrackSolo() {
@@ -117,7 +124,15 @@ export class TrackMonitorController {
     }
 
     this.trackReverbSendCoalescer.takePending(track.id)
-    return this._applyTrackReverbSend(track.id, nextSendAmount, { commit: true })
+    const applied = await this._applyTrackReverbSend(track.id, nextSendAmount, { commit: true })
+    // _apply 返 false（commit 值跟 store 已对齐没新 diff）但 realtime 路径在拖动期间
+    // 已经写过 store → 补一次 render 让 dirty 跟踪能接到
+    if (!applied && this._trackReverbSendPendingDirty.has(track.id)) {
+      this._trackReverbSendPendingDirty.delete(track.id)
+      this.persistence?.saveProject?.(this.store?.getProject?.())
+      this.render('track-reverb-send-changed')
+    }
+    return applied
   }
 
   async _applyTrackReverbSend(trackId, sendAmount, { commit = true } = {}) {
@@ -132,6 +147,7 @@ export class TrackMonitorController {
     await this.transportCoordinator.setTrackReverbSend(track.id, nextSendAmount)
 
     if (commit) {
+      this._trackReverbSendPendingDirty.delete(track.id)
       this.persistence?.saveProject?.(this.store?.getProject?.())
       this.render('track-reverb-send-changed')
       this.view.setStatus(this._buildReverbSendStatusText(track.name, nextSendAmount))
@@ -140,6 +156,9 @@ export class TrackMonitorController {
         trackName: track.name,
         reverbSend: nextSendAmount,
       })
+    } else {
+      // realtime 已经写过 store，但 render 还没发——commit 时要么自己 render、要么走兜底
+      this._trackReverbSendPendingDirty.add(track.id)
     }
 
     return true
@@ -171,8 +190,18 @@ export class TrackMonitorController {
       mergedInput,
       currentConfig,
     ).patch
-    if (isEmptyReverbPatch(normalizedPatch)) return false
-    return this._applyTrackReverbConfig(track.id, normalizedPatch, { commit: true })
+    let applied = false
+    if (!isEmptyReverbPatch(normalizedPatch)) {
+      applied = await this._applyTrackReverbConfig(track.id, normalizedPatch, { commit: true })
+    }
+    // diff 为空（或 _apply 早返）→ realtime 路径已经把变化写进 store 但 render 没发；
+    // 补一次 render 让 dirty 能看到这次 commit
+    if (!applied && this._trackReverbConfigPendingDirty.has(track.id)) {
+      this._trackReverbConfigPendingDirty.delete(track.id)
+      this.persistence?.saveProject?.(this.store?.getProject?.())
+      this.render('track-reverb-config-changed')
+    }
+    return applied
   }
 
   async setTrackReverbPreset(trackId, presetId, { commit = true } = {}) {
@@ -246,6 +275,7 @@ export class TrackMonitorController {
     await this.transportCoordinator.setTrackReverbConfig(track.id, nextConfig)
 
     if (commit) {
+      this._trackReverbConfigPendingDirty.delete(track.id)
       this.persistence?.saveProject?.(this.store?.getProject?.())
       this.render('track-reverb-config-changed')
       this.view.setStatus(this._buildReverbConfigStatusText(track.name))
@@ -254,6 +284,9 @@ export class TrackMonitorController {
         trackName: track.name,
         reverbConfig: nextConfig,
       })
+    } else {
+      // realtime 已写过 store，但 render 还没发——commit 时 setTrackReverbConfig 会兜底补发
+      this._trackReverbConfigPendingDirty.add(track.id)
     }
 
     return true

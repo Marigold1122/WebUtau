@@ -13,6 +13,7 @@ const DB_VERSION = 1
 const STORE_NAME = 'project-autosave'
 const SNAPSHOT_KEY = 'latest'
 const DEFAULT_INTERVAL_MS = 30000
+const DEFAULT_DEBOUNCE_MS = 1000
 
 let dbPromise = null
 
@@ -82,21 +83,45 @@ export class ProjectAutoSave {
     store,
     getProjectName = () => null,
     getAudioAssets = () => [],
+    isDirty = null,
     intervalMs = DEFAULT_INTERVAL_MS,
+    debounceMs = DEFAULT_DEBOUNCE_MS,
     logger = null,
   } = {}) {
     this.store = store
     this.getProjectName = getProjectName
     this.getAudioAssets = getAudioAssets
+    this.isDirty = isDirty
     this.intervalMs = intervalMs
+    this.debounceMs = debounceMs
     this.logger = logger
     this.timer = null
+    this.debounceTimer = null
     this.lastFingerprint = null
+    this._hasPendingSnapshot = false
+    this._handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        // 切 tab / 关 tab 之前抢一笔——浏览器在这之后可能立刻 kill 异步任务
+        void this.saveNow()
+      }
+    }
+  }
+
+  hasPendingSnapshot() {
+    return this._hasPendingSnapshot
   }
 
   start() {
     if (this.timer) return
+    // 兜底定时器：30s 周期，防止用户长时间不动也有定期备份
     this.timer = setInterval(() => this.saveNow(), this.intervalMs)
+    // 主动事件：tab 离开可见态时立刻保存——抓住"关 tab / 关浏览器" 的边沿
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', this._handleVisibilityChange)
+    }
+    if (typeof console !== 'undefined') {
+      console.info('[webutau-autosave] started', { intervalMs: this.intervalMs, debounceMs: this.debounceMs })
+    }
   }
 
   stop() {
@@ -104,28 +129,61 @@ export class ProjectAutoSave {
       clearInterval(this.timer)
       this.timer = null
     }
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer)
+      this.debounceTimer = null
+    }
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this._handleVisibilityChange)
+    }
   }
 
-  // 不抛错——自动保存是"最佳努力"，失败时只记日志、不打扰用户
+  // 给 onAfterRender 调用：每次有新 render 都重置 debounce 计时器，
+  // 1 秒钟没有新动作就触发一次 saveNow——即使用户 5 秒内就关 tab 也能存到快照
+  scheduleSave() {
+    if (this.debounceTimer) clearTimeout(this.debounceTimer)
+    this.debounceTimer = setTimeout(() => {
+      this.debounceTimer = null
+      void this.saveNow()
+    }, this.debounceMs)
+  }
+
+  // 不抛错——自动保存是"最佳努力"，失败时只记日志、不打扰用户。
+  // 不依赖 isDirty——dirty 跟踪是给红点 / beforeunload 用的，autosave 必须独立运行
+  // 才能保证"哪怕 dirty 检测漏掉某次改动也能恢复"。fingerprint 去重已经够防止无意义刷盘。
   async saveNow() {
     try {
       const project = this.store?.getProject?.()
-      if (!project || !Array.isArray(project.tracks) || project.tracks.length === 0) return
+      if (!project || !Array.isArray(project.tracks) || project.tracks.length === 0) {
+        if (typeof console !== 'undefined') console.info('[webutau-autosave] skip: no tracks')
+        return
+      }
       const jsonString = serializeProject({
         project,
         projectName: this.getProjectName?.() ?? null,
         audioAssets: this.getAudioAssets?.() ?? [],
       })
       const fp = fingerprint(jsonString)
-      if (fp === this.lastFingerprint) return // 没变化，跳过
+      if (fp === this.lastFingerprint) {
+        if (typeof console !== 'undefined') console.info('[webutau-autosave] skip: dedup', { fp })
+        return
+      }
       await putSnapshot({
         json: jsonString,
         savedAt: Date.now(),
         projectName: this.getProjectName?.() ?? null,
       })
       this.lastFingerprint = fp
+      this._hasPendingSnapshot = true
+      if (typeof console !== 'undefined') {
+        console.info('[webutau-autosave] wrote snapshot', { bytes: jsonString.length, tracks: project.tracks.length })
+      }
       this.logger?.debug?.('Project autosaved to IndexedDB', { length: jsonString.length })
     } catch (error) {
+      // 用 console.warn 让用户在 DevTools 里能直接看到失败原因——这个失败不能静默
+      if (typeof console !== 'undefined') {
+        console.warn('[webutau-autosave] failed', error?.message || error, error?.stack)
+      }
       this.logger?.warn?.('Project autosave failed', { error: error?.message || String(error) })
     }
   }
@@ -143,6 +201,7 @@ export class ProjectAutoSave {
     try {
       await deleteSnapshot()
       this.lastFingerprint = null
+      this._hasPendingSnapshot = false
     } catch (error) {
       this.logger?.warn?.('Project autosave clear failed', { error: error?.message || String(error) })
     }

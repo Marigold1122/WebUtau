@@ -39,6 +39,7 @@ export function createProjectFileHandlers({
   projectAudioMixPersistence,
   projectMixController,
   autoSave,
+  markPristine = () => {},
   logger = null,
 }) {
   // 当前打开的工程文件状态——FSA 句柄能记住，让"保存"覆盖原文件
@@ -206,6 +207,9 @@ export function createProjectFileHandlers({
       }) || nextDisplayName || null
       const trackCount = parsed.project?.tracks?.length || 0
       view.setStatus(`已打开工程 ${currentProjectName || ''}（${trackCount} 条轨道）`)
+      // 刚加载的工程跟磁盘文件一致——重置 dirty 让红点不显示
+      markPristine()
+      view.setProjectFileState?.({ name: currentProjectName, dirty: false })
       // 打开成功后立刻把 IndexedDB 里的旧自动快照清掉，避免"恢复上次未保存"误触发
       await autoSave?.clearSnapshot?.()
     } catch (error) {
@@ -234,7 +238,10 @@ export function createProjectFileHandlers({
       try {
         await writeJsonToHandle(currentFileHandle, jsonString)
         view.setStatus(`已保存到 ${getHandleName(currentFileHandle) || '工程文件'}`)
-        await autoSave?.saveNow?.()
+        markPristine()
+        view.setProjectFileState?.({ name: currentProjectName, dirty: false })
+        // 已经保存到磁盘 → 自动快照不再需要
+        await autoSave?.clearSnapshot?.()
       } catch (error) {
         if (error instanceof UserCancelledError) return
         logger?.error?.('Project save failed', { error: error?.message || String(error) })
@@ -246,7 +253,9 @@ export function createProjectFileHandlers({
     // 浏览器不支持 FSA → 走下载兜底
     downloadBlobFile({ jsonString, suggestedName: suggestedFileName() })
     view.setStatus(`已下载工程文件 ${suggestedFileName()}（浏览器不支持原地保存）`)
-    await autoSave?.saveNow?.()
+    markPristine()
+    view.setProjectFileState?.({ name: currentProjectName, dirty: false })
+    await autoSave?.clearSnapshot?.()
   }
 
   // ===== 另存为 =====
@@ -266,7 +275,9 @@ export function createProjectFileHandlers({
         currentFileHandle = handle
         currentProjectName = stripExtension(getHandleName(handle))
         view.setStatus(`已另存为 ${getHandleName(handle)}`)
-        await autoSave?.saveNow?.()
+        markPristine()
+        view.setProjectFileState?.({ name: currentProjectName, dirty: false })
+        await autoSave?.clearSnapshot?.()
       } catch (error) {
         if (error instanceof UserCancelledError) return
         logger?.error?.('Project saveAs failed', { error: error?.message || String(error) })
@@ -278,7 +289,34 @@ export function createProjectFileHandlers({
     // 兜底：直接下载
     downloadBlobFile({ jsonString, suggestedName: suggestedFileName() })
     view.setStatus(`已下载 ${suggestedFileName()}`)
-    await autoSave?.saveNow?.()
+    markPristine()
+    view.setProjectFileState?.({ name: currentProjectName, dirty: false })
+    await autoSave?.clearSnapshot?.()
+  }
+
+  // ===== 启动恢复：根据 IndexedDB 自动快照重建工程 =====
+  async function restoreFromSnapshot(jsonString) {
+    try {
+      const parsed = deserializeProject(jsonString)
+      await tearDownAndAdoptProject(parsed.project, {
+        reason: 'project-restored-from-snapshot',
+        audioAssets: parsed.audioAssets || null,
+        // 快照本身就是完整状态，不再叠 localStorage
+        mergeFromLocalStorage: false,
+      })
+      currentFileHandle = null
+      currentProjectName = parsed.projectName ?? null
+      // 故意 *不* markPristine——快照是"未保存的工作"，恢复后红点应该继续显示，
+      // 提示用户记得保存到真实文件
+      view.setProjectFileState?.({ name: currentProjectName, dirty: true })
+      const trackCount = parsed.project?.tracks?.length || 0
+      view.setStatus(`已恢复未保存的工作（${trackCount} 条轨道），请记得保存`)
+      return true
+    } catch (error) {
+      logger?.error?.('Project restore from snapshot failed', { error: error?.message || String(error) })
+      view.setStatus('恢复失败：自动快照已损坏')
+      return false
+    }
   }
 
   return {
@@ -286,6 +324,7 @@ export function createProjectFileHandlers({
     onProjectOpen: handleProjectOpen,
     onProjectSave: handleProjectSave,
     onProjectSaveAs: handleProjectSaveAs,
+    restoreFromSnapshot,
     getCurrentFileHandle,
     getCurrentProjectName,
     setCurrentFileHandle,

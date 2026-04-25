@@ -1,6 +1,13 @@
 import { resolveAudibleTrackIds } from '../monitor/TrackAudibilityResolver.js'
 
-export function createHostRender({ logger, store, sessionStore, view, getVoiceConversionState = null }) {
+export function createHostRender({
+  logger,
+  store,
+  sessionStore,
+  view,
+  getVoiceConversionState = null,
+  onAfterRender = null,
+}) {
   return function render(reason = 'state-changed') {
     const project = store.getProject()
     const selectedTrackId = project?.selectedTrackId || null
@@ -15,5 +22,6 @@ export function createHostRender({ logger, store, sessionStore, view, getVoiceCo
       audibleTrackIds: resolveAudibleTrackIds(store.getTracks(), sessionState),
       voiceConversion: getVoiceConversionState?.(selectedTrackId) || { visible: false },
     })
+    onAfterRender?.(reason)
   }
 }

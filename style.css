@@ -121,6 +121,74 @@ body {
   gap: 4px;
 }
 
+/* 当前工程"铭牌"：紧贴文件按钮右侧，承载工程名 + 未保存红点 + 一键保存。
+   点击 = 保存；Alt/Option + 点击 = 另存为；Cmd+S 也走同一条路 */
+.menubar-project-plate {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  max-width: 220px;
+  padding: 0 12px 0 10px;
+  margin: 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-3);
+  color: var(--text-main);
+  font-family: 'Inter', sans-serif;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 #FFF, inset 0 -1px 0 rgba(0, 0, 0, 0.04);
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.menubar-project-plate:hover {
+  background: var(--bg-1);
+  border-color: var(--border-light);
+}
+.menubar-project-plate:active {
+  background: var(--bg-4);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+.menubar-project-plate.is-untitled .menubar-project-plate-name {
+  color: var(--text-muted);
+  font-style: italic;
+  font-weight: 500;
+}
+.menubar-project-plate-name {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+/* 红点：默认透明不显示，dirty 时切到 #d9433a 醒目高亮 + 脉动 glow。
+   display: inline-block 是防御性的，确保 width/height 在所有浏览器里都能严格生效 */
+.menubar-project-plate-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: transparent;
+  flex-shrink: 0;
+  transition: background 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+  opacity: 0;
+}
+.menubar-project-plate.is-dirty .menubar-project-plate-dot {
+  opacity: 1;
+  background: #e63b30;
+  box-shadow:
+    0 0 0 1px rgba(230, 59, 48, 0.5),
+    0 0 8px rgba(230, 59, 48, 0.7);
+  animation: project-plate-dot-pulse 1.4s ease-in-out infinite alternate;
+}
+@keyframes project-plate-dot-pulse {
+  from { box-shadow: 0 0 0 1px rgba(230, 59, 48, 0.4), 0 0 5px rgba(230, 59, 48, 0.5); }
+  to   { box-shadow: 0 0 0 1px rgba(230, 59, 48, 0.6), 0 0 12px rgba(230, 59, 48, 0.9); }
+}
+
 /* 物理质感菜单按钮 */
 .menu-item {
   display: inline-flex;

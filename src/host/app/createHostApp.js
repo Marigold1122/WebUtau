@@ -207,12 +207,74 @@ export function createHostApp() {
   })
   const trackShellSessionController = new TrackShellSessionController(store, sessionStore, logger)
   const view = new ShellLayoutView({}, { logger })
+
+  // === Dirty 跟踪：用 revision 计数器表达"自上次保存以来工程是否被改过" ===
+  // 每次 render(reason) 触发后，如果 reason 不在 PRISTINE_RENDER_REASONS 白名单里，
+  // 就把 currentRevision 自增；保存/打开/新建成功时调 markPristine 让 savedRevision 追上。
+  // dirty 等价于 currentRevision !== savedRevision——简单且可靠，且无需侵入每个 mutator。
+  // 白名单只列纯 UI 切换（选中、编辑器开关、传输停止、滚动模式 等），新增 reason 默认按 dirty 走，
+  // 宁可"误报红点"也不能"漏报红点"，避免用户以为已保存其实没保存。
+  const PRISTINE_RENDER_REASONS = new Set([
+    'host-init',
+    'audio-track-selected',
+    'track-selected',
+    'editor-closed',
+    'editor-mode-note',
+    'editor-open-requested',
+    'editor-opened-after-prediction',
+    'editor-detached-for-source-switch',
+    'instrument-editor-opened',
+    'playback-start-after-prediction',
+    'transport-stopped',
+    'playhead-follow-mode-changed',
+    'prediction-gate-cancelled',
+    'prediction-gate-editor-cleared',
+    'prediction-gate-runtime-loaded',
+    'reverb-dock-unavailable',
+    'reverb-dock-opened',
+    'reverb-dock-closed',
+    'source-picker-dismissed',
+    'source-picker-toggled',
+    'source-assignment-noop',
+    'runtime-track-loaded',
+    'bridge-job-submitted',
+    'bridge-prediction-ready',
+    'bridge-render-complete',
+    'bridge-render-failed',
+    'voice-conversion-cancelled',
+    'track-fx-opened',
+    'track-fx-closed',
+    'render-track-as-voice-opened',
+  ])
+  let currentRevision = 0
+  let savedRevision = 0
+  const isDirty = () => currentRevision !== savedRevision
+  const markPristine = () => { savedRevision = currentRevision }
+
   const render = createHostRender({
     logger,
     store,
     sessionStore,
     view,
     getVoiceConversionState: (trackId) => voiceConversionController?.buildInspectorState(trackId) || { visible: false },
+    onAfterRender: (reason) => {
+      const wasPristine = PRISTINE_RENDER_REASONS.has(reason)
+      if (!wasPristine) currentRevision += 1
+      // 调试钩子：DevTools 里搜 [webutau-dirty] 就能看到每次 render 是否触发了脏标记。
+      // 如果某个 reason 应该 dirty 但没 dirty，说明它进了 PRISTINE 白名单需要剔除。
+      // 用 console.info（不是 .debug）——Chrome DevTools 默认过滤掉 verbose/debug 级别
+      if (typeof console !== 'undefined' && console.info) {
+        console.info('[webutau-dirty]', { reason, wasPristine, dirty: isDirty(), currentRevision, savedRevision })
+      }
+      // 同步铭牌 + tab title——name 由 file handler 提供，dirty 由本闭包计算
+      view.setProjectFileState?.({
+        name: projectFileHandlers?.getCurrentProjectName?.() ?? null,
+        dirty: isDirty(),
+      })
+      // 主动触发 autosave debounce：1 秒内没新动作就写一次快照。
+      // 这样即使用户导入 MIDI 后 5 秒就关 tab，也已经有快照可恢复
+      if (!wasPristine) projectAutoSave?.scheduleSave?.()
+    },
   })
   const instrumentScheduler = new InstrumentScheduler(new SamplerPool({ audioGraph: projectAudioGraph }))
   const importedAudioAssetRegistry = new ImportedAudioAssetRegistry({ logger })
@@ -361,6 +423,7 @@ export function createHostApp() {
     store,
     getProjectName: () => projectFileHandlers?.getCurrentProjectName?.() ?? null,
     getAudioAssets: () => importedAudioAssetRegistry.listEntries(),
+    isDirty,
     logger,
   })
   const projectFileHandlers = createProjectFileHandlers({
@@ -382,6 +445,7 @@ export function createHostApp() {
     projectAudioMixPersistence,
     projectMixController,
     autoSave: projectAutoSave,
+    markPristine,
     logger,
   })
   const voiceConversionViewHandlers = createVoiceConversionViewHandlers({
@@ -1124,9 +1188,66 @@ export function createHostApp() {
     // 文件级快捷键（Cmd+S / Cmd+Shift+S / Cmd+O）走 HostShortcutRouter 现有 intent 管线，
     // host 和 voice-runtime iframe 两边的 keydown 都用 getHostShortcutIntent 统一识别——
     // 自动 preventDefault，不会再被浏览器拿去存 HTML
+    // 离开守卫：dirty 或 IndexedDB 还存着自动快照（说明工作内容没被同步到磁盘文件）
+    // 时 returnValue 设非空，浏览器自动弹原生确认（"离开此网站？更改可能不会保存"）。
+    // 双信号是为了兜底——dirty 计数器万一漏检某次改动，hasPendingSnapshot 仍能拦下。
+    window.addEventListener('beforeunload', (event) => {
+      if (!isDirty() && !projectAutoSave.hasPendingSnapshot()) return
+      event.preventDefault()
+      event.returnValue = ''
+      return ''
+    })
     render('host-init')
+    // 初始化铭牌为"未命名工程"——render 已经调过 onAfterRender，这里补一次保平安
+    view.setProjectFileState({ name: null, dirty: false })
     view.setStatus('系统就绪')
     logger.info('宿主初始化完成')
+    // 启动恢复：如果上次会话留下了未保存的自动快照，弹对话框让用户决定是否恢复
+    void checkProjectRecoverySnapshot()
+  }
+
+  async function checkProjectRecoverySnapshot() {
+    const snapshot = await projectAutoSave.loadLastSnapshot()
+    if (typeof console !== 'undefined') {
+      console.info('[webutau-recovery] checked', {
+        hasSnapshot: Boolean(snapshot?.json),
+        bytes: snapshot?.json?.length || 0,
+        savedAt: snapshot?.savedAt || null,
+        projectName: snapshot?.projectName || null,
+      })
+    }
+    if (!snapshot?.json) return
+    let trackCount = 0
+    try {
+      const parsed = JSON.parse(snapshot.json)
+      trackCount = parsed?.project?.tracks?.length || 0
+    } catch (_error) { /* 解析失败也照样弹，让用户决定 */ }
+    if (typeof console !== 'undefined') {
+      console.info('[webutau-recovery] parsed', { trackCount })
+    }
+    if (trackCount === 0) {
+      // 空快照（比如自动保存触发时项目没轨道）—— 没必要打扰用户
+      await projectAutoSave.clearSnapshot()
+      return
+    }
+    if (typeof console !== 'undefined') {
+      console.info('[webutau-recovery] showing recovery modal')
+    }
+    const choice = await view.promptProjectRecovery({
+      projectName: snapshot.projectName,
+      savedAt: snapshot.savedAt,
+      trackCount,
+    })
+    if (typeof console !== 'undefined') {
+      console.info('[webutau-recovery] user chose', { choice })
+    }
+    if (choice === 'restore') {
+      const ok = await projectFileHandlers.restoreFromSnapshot(snapshot.json)
+      if (!ok) await projectAutoSave.clearSnapshot()
+    } else {
+      await projectAutoSave.clearSnapshot()
+      view.setStatus('已丢弃上次的自动备份')
+    }
   }
   function handleTrackSelected(trackId) {
     if (trackShellSessionController.selectTrack(trackId)) render('track-selected')

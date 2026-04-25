@@ -18,6 +18,10 @@
           <input type="file" id="midi-file-input" accept=".mid,.midi" hidden />
           <input type="file" id="audio-file-input" accept="audio/*,.wav,.mp3,.flac,.m4a,.ogg" hidden />
         </div>
+        <button type="button" class="menubar-project-plate" id="menubar-project-plate" aria-label="当前工程">
+          <span class="menubar-project-plate-name" id="menubar-project-plate-name">未命名工程</span>
+          <span class="menubar-project-plate-dot" id="menubar-project-plate-dot" aria-hidden="true"></span>
+        </button>
         <div class="menubar-meter" id="menubar-meter" aria-label="主输出电平表"></div>
         <div class="menubar-center">
           <div class="menubar-transport" aria-label="顶部播放控制">
@@ -371,6 +375,21 @@
           <button type="button" class="modal-btn secondary" id="btn-export-audio-cancel">取消</button>
           <button type="button" class="modal-btn secondary" id="btn-export-audio-selected" disabled>导出所选轨道</button>
           <button type="button" class="modal-btn primary" id="btn-export-audio-confirm">整体导出</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="project-recovery-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="project-recovery-title">
+      <div class="modal-dialog">
+        <div class="modal-title" id="project-recovery-title">检测到未保存的工作</div>
+        <div class="modal-hint" id="project-recovery-hint">上次会话中你的工程没有保存到磁盘文件，浏览器为你做了自动备份。</div>
+        <div class="modal-field">
+          <label class="modal-label">备份内容</label>
+          <div class="modal-summary" id="project-recovery-summary"></div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="modal-btn secondary" id="btn-project-recovery-discard">丢弃</button>
+          <button type="button" class="modal-btn primary" id="btn-project-recovery-restore">恢复</button>
         </div>
       </div>
     </div>
