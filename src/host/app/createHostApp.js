@@ -1514,6 +1514,12 @@ export function createHostApp() {
   view.setHandlers({
     onMidiFileSelected: handleFileSelected,
     onAudioFileSelected: handleAudioFileSelected,
+    // 工程级操作：第 2 步会接入 File System Access API + Blob 兜底 + IndexedDB 自动保存。
+    // 现在先把入口和文案铺好，让用户能在 UI 上看到这套功能在路上。
+    onProjectNew: () => view.setStatus('新建工程功能开发中…'),
+    onProjectOpen: () => view.setStatus('打开工程功能开发中…'),
+    onProjectSave: () => view.setStatus('保存工程功能开发中…'),
+    onProjectSaveAs: () => view.setStatus('工程另存为功能开发中…'),
     onExportMidi: handleExportMidi,
     onExportAudio: handleExportAudio,
     canExportMidi,

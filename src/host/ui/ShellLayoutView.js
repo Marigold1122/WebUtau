@@ -851,48 +851,107 @@ export class ShellLayoutView {
     const menu = document.createElement('div')
     menu.className = 'track-context-menu file-menu'
 
-    const importMidiButton = document.createElement('button')
-    importMidiButton.type = 'button'
-    importMidiButton.className = 'track-context-menu-item'
-    importMidiButton.textContent = '导入 MIDI'
-    importMidiButton.addEventListener('click', () => {
-      this._hideFileMenu()
-      this.refs.fileInput?.click()
+    const newProjectButton = this._buildFileMenuItem({
+      label: '新建工程',
+      shortcut: this._formatShortcut('N'),
+      onClick: () => this.handlers.onProjectNew?.(),
+    })
+    const openProjectButton = this._buildFileMenuItem({
+      label: '打开工程',
+      shortcut: this._formatShortcut('O'),
+      onClick: () => this.handlers.onProjectOpen?.(),
     })
 
-    const importAudioButton = document.createElement('button')
-    importAudioButton.type = 'button'
-    importAudioButton.className = 'track-context-menu-item'
-    importAudioButton.textContent = '导入音频轨'
-    importAudioButton.addEventListener('click', () => {
-      this._hideFileMenu()
-      this.refs.audioFileInput?.click()
+    const saveProjectButton = this._buildFileMenuItem({
+      label: '保存工程',
+      shortcut: this._formatShortcut('S'),
+      onClick: () => this.handlers.onProjectSave?.(),
+    })
+    const saveProjectAsButton = this._buildFileMenuItem({
+      label: '工程另存为',
+      shortcut: this._formatShortcut('S', { shift: true }),
+      onClick: () => this.handlers.onProjectSaveAs?.(),
     })
 
-    const exportMidiButton = document.createElement('button')
-    exportMidiButton.type = 'button'
-    exportMidiButton.className = 'track-context-menu-item'
-    exportMidiButton.textContent = '导出 MIDI'
+    const importMidiButton = this._buildFileMenuItem({
+      label: '导入 MIDI',
+      onClick: () => this.refs.fileInput?.click(),
+    })
+    const importAudioButton = this._buildFileMenuItem({
+      label: '导入音频轨',
+      onClick: () => this.refs.audioFileInput?.click(),
+    })
+
+    const exportMidiButton = this._buildFileMenuItem({
+      label: '导出 MIDI',
+      onClick: () => this.handlers.onExportMidi?.(),
+    })
     exportMidiButton.disabled = true
-    exportMidiButton.addEventListener('click', () => {
-      this._hideFileMenu()
-      this.handlers.onExportMidi?.()
+    const exportAudioButton = this._buildFileMenuItem({
+      label: '导出音频',
+      onClick: () => this.handlers.onExportAudio?.(),
     })
-
-    const exportAudioButton = document.createElement('button')
-    exportAudioButton.type = 'button'
-    exportAudioButton.className = 'track-context-menu-item'
-    exportAudioButton.textContent = '导出音频'
     exportAudioButton.disabled = true
-    exportAudioButton.addEventListener('click', () => {
-      this._hideFileMenu()
-      this.handlers.onExportAudio?.()
-    })
 
-    menu.append(importMidiButton, importAudioButton, exportMidiButton, exportAudioButton)
+    menu.append(
+      newProjectButton,
+      openProjectButton,
+      this._buildFileMenuDivider(),
+      saveProjectButton,
+      saveProjectAsButton,
+      this._buildFileMenuDivider(),
+      importMidiButton,
+      importAudioButton,
+      this._buildFileMenuDivider(),
+      exportMidiButton,
+      exportAudioButton,
+    )
     this.fileMenuExportButton = exportMidiButton
     this.fileMenuExportAudioButton = exportAudioButton
     return menu
+  }
+
+  // 构建一个标准菜单项：左侧 label，右侧 shortcut hint（可选）；点击会先收起菜单再回调
+  _buildFileMenuItem({ label, shortcut = null, onClick }) {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'track-context-menu-item'
+    if (shortcut) button.classList.add('has-shortcut')
+
+    const labelEl = document.createElement('span')
+    labelEl.className = 'track-context-menu-label'
+    labelEl.textContent = label
+    button.appendChild(labelEl)
+
+    if (shortcut) {
+      const shortcutEl = document.createElement('span')
+      shortcutEl.className = 'track-context-menu-shortcut'
+      shortcutEl.textContent = shortcut
+      button.appendChild(shortcutEl)
+    }
+
+    button.addEventListener('click', () => {
+      this._hideFileMenu()
+      onClick?.()
+    })
+    return button
+  }
+
+  _buildFileMenuDivider() {
+    const divider = document.createElement('div')
+    divider.className = 'file-menu-divider'
+    divider.setAttribute('aria-hidden', 'true')
+    return divider
+  }
+
+  // macOS 用 ⌘，Windows/Linux 用 Ctrl —— 把肌肉记忆呈现给用户
+  _formatShortcut(key, { shift = false } = {}) {
+    const isMac = typeof navigator !== 'undefined'
+      && /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent || '')
+    const meta = isMac ? '⌘' : 'Ctrl'
+    const shiftSymbol = isMac ? '⇧' : 'Shift'
+    const sep = isMac ? '' : '+'
+    return shift ? `${meta}${sep}${shiftSymbol}${sep}${key}` : `${meta}${sep}${key}`
   }
 
   _createTrackContextMenu() {

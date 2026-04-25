@@ -1354,6 +1354,34 @@ body {
 .track-context-menu-item:disabled { opacity: 0.4; cursor: not-allowed; }
 .track-source-option-label { font-size: 11px; }
 
+/* 文件菜单：分隔线 + 项内的 label/shortcut 双栏布局 */
+.file-menu-divider {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border-color);
+  /* 内嵌一道极细的高光，跟硬件铭牌的"刻线"保持一致 */
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
+  pointer-events: none;
+}
+.file-menu .track-context-menu-item.has-shortcut {
+  /* label 占左侧、shortcut 推到右侧 */
+  justify-content: space-between;
+  gap: 18px;
+}
+.track-context-menu-shortcut {
+  flex-shrink: 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+  /* hover 高亮态下数字也跟着变白，避免读不清 */
+  transition: color 0.1s;
+}
+.track-context-menu-item:hover:not(:disabled) .track-context-menu-shortcut {
+  color: rgba(255, 255, 255, 0.85);
+}
+
 /* 轨道背景画布列 */
 .track-row {
   position: relative;
