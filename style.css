@@ -174,6 +174,226 @@ body {
   border-color: var(--accent-color);
 }
 
+/* =====================================================
+   顶栏主输出电平表（Master Meter）
+   - 双通道 PPM 横条 + 12 段 FFT 频谱条 + CLIP 锁存灯
+   - 黑色仿仪表面板，与暖米白菜单栏形成对比，符合"硬件设备嵌入操作面"的语汇
+   ===================================================== */
+.menubar-meter {
+  /* 绝对定位贴在 transport 左缘：transport 自身用 left:50% + translate -50% 居中（≈186px 宽），
+     这里 right: calc(50% + 102px) 让 meter 右边缘卡在 transport 左缘外约 10px 处 */
+  position: absolute;
+  top: 50%;
+  right: calc(50% + 102px);
+  transform: translateY(-50%);
+  /* clamp 确保窄视口下随 vw 收缩，宽视口下不超过 360 */
+  width: clamp(200px, 30vw, 360px);
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  z-index: 1; /* 与 menubar-center 同层；DOM 在 center 之前 → 任何重叠中 transport 在上 */
+  pointer-events: none; /* 仅 CLIP 自身 pointer-events:auto，其余穿透 */
+}
+.menubar-meter:empty { display: none; }
+@media (max-width: 800px) {
+  .menubar-meter { display: none; }
+}
+.menubar-meter-bezel {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+  height: 32px;
+  padding: 4px 7px;
+  background:
+    linear-gradient(180deg, #1f1d1c 0%, #0c0b0a 100%);
+  border: 1px solid rgba(0, 0, 0, 0.85);
+  border-radius: 4px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5),
+    0 1px 0 rgba(255, 255, 255, 0.7);
+}
+.menubar-meter-channels {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.menubar-meter-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 9px;
+}
+.menubar-meter-channel-label {
+  width: 7px;
+  font-family: 'Oswald', sans-serif;
+  font-size: 8px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.42);
+  letter-spacing: 0.08em;
+  text-align: center;
+  flex-shrink: 0;
+}
+.menubar-meter-track {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.85), rgba(20, 20, 20, 0.9));
+  border-radius: 1px;
+  overflow: hidden;
+  box-shadow:
+    inset 0 1px 1.5px rgba(0, 0, 0, 0.85),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.04);
+  --peak-pct: 0%;
+  --rms-pct: 0%;
+  --hold-pct: 0%;
+}
+/* 全宽渐变 + clip-path 从右收紧，使颜色档位（绿/黄/红）锚定在固定 dB 位置而不随长度伸缩 */
+.menubar-meter-fill {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to right,
+    #1da67c 0%,
+    #1da67c 60%,
+    #d4a035 80%,
+    #c94234 92%,
+    #ff3b30 100%
+  );
+  clip-path: inset(0 calc(100% - var(--peak-pct)) 0 0);
+  transition: clip-path 30ms linear;
+  filter: drop-shadow(0 0 1.5px rgba(60, 220, 180, 0.4));
+}
+.menubar-meter-rms {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to right,
+    rgba(255, 255, 255, 0.2) 0%,
+    rgba(255, 255, 255, 0.08) 100%
+  );
+  clip-path: inset(0 calc(100% - var(--rms-pct)) 0 0);
+  transition: clip-path 60ms linear;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+}
+/* peak hold 白光柱：跟踪 1.2s 内的峰值位置，缓慢回落 */
+.menubar-meter-hold {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  left: var(--hold-pct);
+  width: 1.5px;
+  background: rgba(255, 255, 255, 0.92);
+  transform: translateX(-50%);
+  transition: left 80ms ease-out;
+  pointer-events: none;
+  box-shadow: 0 0 4px rgba(255, 255, 255, 0.7);
+}
+/* 1px LED 网格：在轨道上叠一层细密竖线，看起来像离散段位 */
+.menubar-meter-grid {
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(
+    to right,
+    transparent 0,
+    transparent 5px,
+    rgba(0, 0, 0, 0.6) 5px,
+    rgba(0, 0, 0, 0.6) 6px
+  );
+  pointer-events: none;
+}
+.menubar-meter-readout {
+  width: 28px;
+  flex-shrink: 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8.5px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.55);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  letter-spacing: 0.02em;
+  transition: color 120ms ease;
+}
+.menubar-meter-readout.is-warning { color: #f5b942; }
+.menubar-meter-readout.is-danger {
+  color: #ff5a4a;
+  text-shadow: 0 0 4px rgba(255, 90, 74, 0.55);
+}
+/* 频谱：12 根细竖条，自下向上填，对数频段，给电平表外加一份"频域可视化"信息量 */
+.menubar-meter-spectrum {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  width: 56px;
+  height: 22px;
+  flex-shrink: 0;
+  align-self: center;
+  padding: 0 1px;
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+}
+.menubar-meter-spectrum-bar {
+  flex: 1 1 0;
+  min-width: 0;
+  height: var(--bar-height, 0%);
+  background: linear-gradient(
+    to top,
+    rgba(29, 166, 124, 0.85) 0%,
+    rgba(29, 166, 124, 0.95) 55%,
+    rgba(212, 160, 53, 0.95) 80%,
+    rgba(255, 90, 80, 0.95) 100%
+  );
+  border-radius: 0.5px;
+  transition: height 60ms linear;
+  box-shadow: 0 0 2px rgba(60, 220, 180, 0.35);
+}
+/* CLIP 锁存灯：默认暗灰浮雕，过载时切到霓虹红 + 缓慢脉动 */
+.menubar-meter-clip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  height: 18px;
+  padding: 0 7px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+  color: rgba(255, 255, 255, 0.4);
+  font-family: 'Oswald', sans-serif;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  cursor: pointer;
+  pointer-events: auto;
+  flex-shrink: 0;
+  transition: color 200ms ease, background 200ms ease, box-shadow 200ms ease, border-color 200ms ease;
+}
+.menubar-meter-clip:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+  color: rgba(255, 255, 255, 0.65);
+}
+.menubar-meter-clip.is-clipped {
+  background: linear-gradient(180deg, #ff3b30, #c0241a);
+  color: #fff;
+  border-color: #f0392b;
+  box-shadow:
+    0 0 10px rgba(255, 59, 48, 0.7),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.3);
+  animation: menubar-meter-clip-pulse 1.2s ease-in-out infinite alternate;
+}
+@keyframes menubar-meter-clip-pulse {
+  from { box-shadow: 0 0 6px rgba(255, 59, 48, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.45); }
+  to   { box-shadow: 0 0 14px rgba(255, 59, 48, 0.95), inset 0 1px 0 rgba(255, 255, 255, 0.45); }
+}
+
 .menubar-center {
   position: absolute;
   inset: 0;

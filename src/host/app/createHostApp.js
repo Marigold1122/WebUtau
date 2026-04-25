@@ -45,6 +45,7 @@ import { PlaybackMode } from '../transport/PlaybackMode.js'
 import { ProjectTransportCoordinator } from '../transport/ProjectTransportCoordinator.js'
 import { ProjectTransportStore } from '../transport/ProjectTransportStore.js'
 import { ShellLayoutView } from '../ui/ShellLayoutView.js'
+import { installMenubarMeter } from '../ui/menubarMeter.js'
 import { ConvertedVocalAssetRegistry } from '../vocal/ConvertedVocalAssetRegistry.js'
 import { ConvertedVocalScheduler } from '../vocal/ConvertedVocalScheduler.js'
 import { HostVocalAssetRegistry } from '../vocal/HostVocalAssetRegistry.js'
@@ -188,6 +189,12 @@ export function createHostApp() {
   const playbackMode = new PlaybackMode()
   const projectAudioGraph = new ProjectAudioGraph({ logger })
   const projectAudioMixPersistence = new ProjectAudioMixPersistence({ logger })
+  // 顶栏主输出电平表：从 audioGraph.masterGain 旁路 tap 出来；
+  // 用户首次点击播放后 audio context 才创建，模块自己会轮询等待
+  installMenubarMeter({
+    container: document.getElementById('menubar-meter'),
+    audioGraph: projectAudioGraph,
+  })
   const editorSessionController = new EditorSessionController(taskCoordinator)
   const focusSoloController = new FocusSoloController(sessionStore, logger)
   const projectMixController = new ProjectMixController({
