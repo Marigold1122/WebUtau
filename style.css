@@ -2481,9 +2481,11 @@ body {
   border-bottom: 1px solid var(--border-color); padding-bottom: 4px; box-shadow: 0 1px 0 #FFF;
 }
 
-.prop-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.prop-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; min-width: 0; }
 .prop-row label { width: 56px; flex-shrink: 0; color: var(--text-muted); font-size: 11px; font-weight: 600; }
-.prop-row .prop-select, .prop-row .prop-value { flex: 1; width: auto; }
+/* min-width: 0 + max-width: 100%: 解除 flex 子项默认 min-width: auto 导致的内容撑宽，
+   长轨道名 / 长声库名才能真正在 252px 内宽下收缩并触发 ellipsis / 换行 */
+.prop-row .prop-select, .prop-row .prop-value { flex: 1; width: auto; min-width: 0; max-width: 100%; }
 
 /* 属性值框 - 雕刻感 */
 .track-role-select, .prop-select, .prop-value {
@@ -3251,6 +3253,16 @@ body.inline-popover-active { }
 
 .inspector-content {
   padding-top: 40px; /* 给左上收起按钮让位 */
+  /* overflow-y: auto 在父级 width: 280px 下会把另一轴隐式提升为 auto，
+     任何超宽子元素都会引入水平滚动条；显式压成 hidden 杜绝右半被截 */
+  overflow-x: hidden;
+  min-width: 0;
+}
+.inspector-content > * {
+  /* 让每个 <details> section 都能在窄空间收缩，避免一个固定宽控件把整列撑出滚动 */
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .inspector-collapse-btn {
