@@ -21,6 +21,15 @@ export class HostShortcutRouter {
       case HOST_SHORTCUT_INTENTS.TOGGLE_MUTE:
         this.handlers.onToggleMute?.()
         return true
+      case HOST_SHORTCUT_INTENTS.SAVE_PROJECT:
+        this.handlers.onProjectSave?.()
+        return true
+      case HOST_SHORTCUT_INTENTS.SAVE_PROJECT_AS:
+        this.handlers.onProjectSaveAs?.()
+        return true
+      case HOST_SHORTCUT_INTENTS.OPEN_PROJECT:
+        this.handlers.onProjectOpen?.()
+        return true
       default:
         return false
     }

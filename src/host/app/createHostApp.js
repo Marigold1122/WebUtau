@@ -3,6 +3,8 @@ import { createHostBridgeHandlers } from './createHostBridgeHandlers.js'
 import { createHostRender } from './createHostRender.js'
 import { createPhraseMissHandler } from './createPhraseMissHandler.js'
 import { createProjectImportHandler } from './createProjectImportHandler.js'
+import { createProjectFileHandlers } from './createProjectFileHandlers.js'
+import { ProjectAutoSave } from '../project/projectAutoSave.js'
 import { createHostReverbController } from './createHostReverbController.js'
 import { createRuntimeTransportSync } from './createRuntimeTransportSync.js'
 import { createTrackSourceAssignmentHandler } from './createTrackSourceAssignmentHandler.js'
@@ -283,6 +285,11 @@ export function createHostApp() {
     onTogglePlayback: handlePlay,
     onToggleSolo: () => trackMonitorController.toggleSelectedTrackSolo(),
     onToggleMute: () => trackMonitorController.toggleSelectedTrackMute(),
+    // 用 lazy arrow 引用 projectFileHandlers——它在文件中后于 shortcutRouter 声明，
+    // 但快捷键真正触发时（init 之后）那个 const 已经赋值好
+    onProjectSave: () => projectFileHandlers.onProjectSave(),
+    onProjectSaveAs: () => projectFileHandlers.onProjectSaveAs(),
+    onProjectOpen: () => projectFileHandlers.onProjectOpen(),
   })
   const predictionGateController = new TrackPredictionGateController({
     store,
@@ -348,6 +355,34 @@ export function createHostApp() {
     importService,
     store,
     render,
+  })
+  // 工程文件 4 个动作（新建/打开/保存/另存为）+ 后台自动快照
+  const projectAutoSave = new ProjectAutoSave({
+    store,
+    getProjectName: () => projectFileHandlers?.getCurrentProjectName?.() ?? null,
+    getAudioAssets: () => importedAudioAssetRegistry.listEntries(),
+    logger,
+  })
+  const projectFileHandlers = createProjectFileHandlers({
+    view,
+    store,
+    render,
+    transportCoordinator,
+    vocalManifestController,
+    voiceConversionController,
+    importedAudioAssetRegistry,
+    taskCoordinator,
+    predictionGateController,
+    prepWaiters,
+    persistEditorSnapshot,
+    bridge,
+    focusSoloController,
+    trackShellSessionController,
+    sessionStore,
+    projectAudioMixPersistence,
+    projectMixController,
+    autoSave: projectAutoSave,
+    logger,
   })
   const voiceConversionViewHandlers = createVoiceConversionViewHandlers({
     store,
@@ -1084,6 +1119,11 @@ export function createHostApp() {
     shortcutRouter.init()
     document.addEventListener('keydown', handleEditorUndoShortcut)
     initMidiInput()
+    // 后台每 30s 把当前 store snapshot 写进 IndexedDB——浏览器异常关闭时的最后一道保险
+    projectAutoSave.start()
+    // 文件级快捷键（Cmd+S / Cmd+Shift+S / Cmd+O）走 HostShortcutRouter 现有 intent 管线，
+    // host 和 voice-runtime iframe 两边的 keydown 都用 getHostShortcutIntent 统一识别——
+    // 自动 preventDefault，不会再被浏览器拿去存 HTML
     render('host-init')
     view.setStatus('系统就绪')
     logger.info('宿主初始化完成')
@@ -1514,12 +1554,10 @@ export function createHostApp() {
   view.setHandlers({
     onMidiFileSelected: handleFileSelected,
     onAudioFileSelected: handleAudioFileSelected,
-    // 工程级操作：第 2 步会接入 File System Access API + Blob 兜底 + IndexedDB 自动保存。
-    // 现在先把入口和文案铺好，让用户能在 UI 上看到这套功能在路上。
-    onProjectNew: () => view.setStatus('新建工程功能开发中…'),
-    onProjectOpen: () => view.setStatus('打开工程功能开发中…'),
-    onProjectSave: () => view.setStatus('保存工程功能开发中…'),
-    onProjectSaveAs: () => view.setStatus('工程另存为功能开发中…'),
+    onProjectNew: projectFileHandlers.onProjectNew,
+    onProjectOpen: projectFileHandlers.onProjectOpen,
+    onProjectSave: projectFileHandlers.onProjectSave,
+    onProjectSaveAs: projectFileHandlers.onProjectSaveAs,
     onExportMidi: handleExportMidi,
     onExportAudio: handleExportAudio,
     canExportMidi,
