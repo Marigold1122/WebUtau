@@ -1925,6 +1925,78 @@ body {
 }
 .bottom-fx-panel.hidden { display: none !important; }
 
+/* dock 闭→开 时整面 slide-up + fade-in，让"刚打开"成为一个明显的视觉事件，
+   避免用户点电平表 / 按 fx 后无反馈感。.is-opening 由 ReverbDockView 在
+   visible 边沿翻转时加上，animationend 后自动撤掉。
+   动画把整条面板从下方 36px 处推上来（高度 252，36 占 14% 视觉距离很显著），
+   同时 scaleY 从 0.92 起跳，给一种"从下方装订线展开"的弹出感 */
+.bottom-fx-panel.is-opening {
+  animation: bottom-fx-panel-open 360ms cubic-bezier(0.18, 0.74, 0.24, 1.04) both;
+  transform-origin: bottom center;
+  will-change: transform, opacity;
+}
+@keyframes bottom-fx-panel-open {
+  0% {
+    opacity: 0;
+    transform: translateY(36px) scaleY(0.92);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(-3px) scaleY(1.01);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+}
+/* 边沿提示：dock 打开瞬间顶边短闪一道高亮线，更进一步强化"刚弹出来" */
+.bottom-fx-panel.is-opening::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent 0%, #5BC0DE 50%, transparent 100%);
+  animation: bottom-fx-panel-edge-flash 360ms ease-out both;
+}
+.bottom-fx-panel { position: relative; }
+@keyframes bottom-fx-panel-edge-flash {
+  from { opacity: 0; }
+  40%  { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+/* dock 已经开着时，新追加的单轨 module 单独 slide-in——告诉用户"刚加进来这一块"
+   是新被点开的轨道，跟主控/工程模板那两个常驻的不是一回事。
+   平移距离拉到 60px、附带短促的青色辉光，避免用户没看清就消散 */
+.fx-module.is-entering {
+  animation: fx-module-enter 380ms cubic-bezier(0.18, 0.74, 0.24, 1.04) both;
+  will-change: transform, opacity, box-shadow;
+}
+@keyframes fx-module-enter {
+  0% {
+    opacity: 0;
+    transform: translateX(60px) scale(0.92);
+    box-shadow:
+      0 0 0 3px rgba(91, 192, 222, 0.65),
+      0 0 18px rgba(91, 192, 222, 0.55),
+      0 2px 5px rgba(0, 0, 0, 0.1);
+  }
+  60% {
+    opacity: 1;
+    transform: translateX(-4px) scale(1.005);
+    box-shadow:
+      0 0 0 2px rgba(91, 192, 222, 0.45),
+      0 0 12px rgba(91, 192, 222, 0.35),
+      0 2px 5px rgba(0, 0, 0, 0.1);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  }
+}
+
 .fx-module {
   width: 486px;
   min-width: 486px;
@@ -1962,6 +2034,86 @@ body {
   border-radius: 4px 4px 0 0;
 }
 
+/* fx-module 顶栏 title 区，左侧可挂 scope 徽章（全局/工程/单轨），右侧仍是 power 按钮 */
+.fx-header-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.fx-header-title-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* scope 徽章——把"作用范围"显式写在标题前。三种 tone 用色彩区分语义，
+   便于用户从顶栏电平表点进来时一眼识别"我现在调的是全局还是单轨" */
+.fx-scope-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 7px;
+  border-radius: 9px;
+  font-family: 'Oswald', 'Inter', sans-serif;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  line-height: 1;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.fx-scope-badge--global {
+  background: linear-gradient(180deg, #E8B040 0%, #C88820 100%);
+  color: #FFF;
+  border-color: rgba(140, 90, 10, 0.45);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.45) inset, 0 1px 2px rgba(140, 90, 10, 0.25);
+}
+.fx-scope-badge--project {
+  background: #E8E6E1;
+  color: #5A554C;
+  border-color: #BCB5A8;
+}
+.fx-scope-badge--track {
+  background: linear-gradient(180deg, #5BC0DE 0%, #3A95B8 100%);
+  color: #FFF;
+  border-color: rgba(20, 90, 110, 0.45);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.45) inset, 0 1px 2px rgba(20, 90, 110, 0.25);
+}
+
+/* 主控母带链下方再贴一条 banner，明确"作用于所有轨道汇总后的最终输出"——
+   redundant 是故意的：徽章只是 16px 标签，banner 是显眼一条，免得误操作 */
+.fx-module-scope-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: linear-gradient(90deg, rgba(232, 176, 64, 0.18) 0%, rgba(232, 176, 64, 0.04) 100%);
+  border-bottom: 1px solid rgba(200, 136, 32, 0.3);
+  font-size: 11px;
+  color: #6E5A20;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+}
+.fx-module-scope-banner-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #E8B040 0%, #C88820 100%);
+  color: #FFF;
+  font-size: 11px;
+  line-height: 1;
+  flex: 0 0 18px;
+  box-shadow: 0 1px 2px rgba(140, 90, 10, 0.3);
+}
+.fx-module-scope-banner-text {
+  flex: 1;
+  min-width: 0;
+}
+
 .fx-power {
   width: 14px;
   height: 14px;
@@ -1983,6 +2135,100 @@ body {
   justify-content: space-around;
   align-items: center;
   gap: 10px;
+}
+
+/* 主控母带链模块：10 个 knob 单排展开，所以默认宽度更大；
+   高度让内容自由生长，不要 align: stretch 强行拉到 252px 内塞不下 */
+.fx-module--master-chain {
+  width: auto;
+  min-width: 880px;
+  max-width: 1080px;
+  align-self: flex-start; /* 抵消 .bottom-fx-panel 的 align-items: stretch */
+}
+/* 让 4 行 / 2 行 label 都把 knob 对齐到同一基线，不再上下错乱 */
+.fx-module--master-chain .param-label {
+  min-height: 28px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  text-align: center;
+}
+/* 默认 fx-body 是 align-items: center 居中——单行 10 knob 用 flex-start 对齐顶部 */
+.fx-module--master-chain .fx-body {
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  padding: 12px 12px 14px;
+}
+
+/* 主控母带链模块：点击顶栏电平表会触发短暂高亮脉动，告诉用户"就是这块"。
+   1.4s 后自动撤掉，不残留视觉噪音 */
+.fx-module--master-chain.is-focus-pulse {
+  animation: master-chain-focus-pulse 1.4s ease-out 1 forwards;
+}
+@keyframes master-chain-focus-pulse {
+  0%, 100% {
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08);
+    border-color: var(--border-light, #8F8A80);
+  }
+  20% {
+    box-shadow:
+      0 0 0 2px rgba(59, 139, 136, 0.55),
+      0 0 18px rgba(59, 139, 136, 0.45),
+      0 2px 5px rgba(0, 0, 0, 0.12);
+    border-color: rgba(59, 139, 136, 0.85);
+  }
+}
+
+/* 首次打开 reverb dock 时指向 master chain 主开关的引导浮窗 */
+.master-chain-onboarding {
+  position: fixed;
+  z-index: 1500;
+  max-width: 280px;
+  padding: 12px 14px 10px;
+  background: var(--bg-1, #ECE8DE);
+  border: 1px solid var(--border-light, #8F8A80);
+  border-radius: 6px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22), inset 0 1px 0 #FFF;
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-main, #2B2825);
+  animation: master-chain-onboarding-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes master-chain-onboarding-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.master-chain-onboarding-text { margin-bottom: 8px; }
+.master-chain-onboarding-dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  padding: 0 12px;
+  border: 1px solid var(--border-light, #8F8A80);
+  border-radius: 3px;
+  background: var(--accent-color, #3B8B88);
+  color: #FFF;
+  font-family: 'Oswald', sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transition: filter 0.15s ease;
+}
+.master-chain-onboarding-dismiss:hover { filter: brightness(1.08); }
+.master-chain-onboarding-arrow {
+  position: absolute;
+  bottom: -7px;
+  width: 12px;
+  height: 12px;
+  background: var(--bg-1, #ECE8DE);
+  border-right: 1px solid var(--border-light, #8F8A80);
+  border-bottom: 1px solid var(--border-light, #8F8A80);
+  transform: rotate(45deg);
+  pointer-events: none;
 }
 
 .fx-screen-row {
@@ -2053,6 +2299,33 @@ body {
   border-radius: 2px;
   border: 1px solid #CCC;
   min-width: 58px;
+  text-align: center;
+  cursor: text;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.param-value:hover {
+  background: #EFEDE7;
+  border-color: #B8B5AE;
+}
+
+.param-group.editing .param-value {
+  padding: 0;
+  background: #FFF;
+  border-color: #5BC0DE;
+}
+
+.param-value-input {
+  width: 100%;
+  min-width: 56px;
+  box-sizing: border-box;
+  font-size: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  color: #222;
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 2px 6px;
   text-align: center;
 }
 

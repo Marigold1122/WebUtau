@@ -9,6 +9,7 @@
 import { isSameReverbConfig } from './reverb/ReverbConfigDiff.js'
 import { LEGACY_REVERB_ENGINE_ID } from './reverb/ReverbParameterSchema.js'
 import { startToneAudio } from './instruments/toneRuntime.js'
+import { MasterChainBus } from './master/MasterChainBus.js'
 import { TrackReverbBus } from './TrackReverbBus.js'
 import { createTrackInsertEffect } from './insert/createTrackInsertEffect.js'
 import {
@@ -31,6 +32,7 @@ export class ProjectAudioGraph {
     this.readyPromise = null
     this.rawContext = null
     this.masterGain = null
+    this.masterChainBus = null
     this.defaultReverbConfig = normalizeTrackReverbConfig()
     this.trackStates = new Map()
     this.trackChannels = new Map()
@@ -44,7 +46,12 @@ export class ProjectAudioGraph {
         this.rawContext = rawContext
         this.masterGain = rawContext.createGain()
         this.masterGain.gain.value = 1
-        this.masterGain.connect(rawContext.destination)
+        // master chain 接在 masterGain 与 destination 之间——
+        // 所有轨道的混音和 → masterGain → MasterChainBus → destination。
+        // 电平表通过 getMasterTapNode() 拿到 chain 输出节点，读到的是"用户实际听到的"信号
+        this.masterChainBus = new MasterChainBus({ logger: this.logger }).attach(rawContext)
+        this.masterGain.connect(this.masterChainBus.input)
+        this.masterChainBus.output.connect(rawContext.destination)
 
         this.trackStates.forEach((_state, trackId) => {
           this._ensureTrackChannel(trackId)
@@ -57,6 +64,15 @@ export class ProjectAudioGraph {
       })
     }
     return this.readyPromise
+  }
+
+  // 给电平表 / 频谱用——拿到 master chain 输出节点；chain 还没起来时退化到 masterGain
+  getMasterTapNode() {
+    return this.masterChainBus?.output || this.masterGain || null
+  }
+
+  setMasterChainConfig(config) {
+    this.masterChainBus?.applyConfig?.(config)
   }
 
   syncTrackState(trackId, changes = {}) {

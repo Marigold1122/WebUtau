@@ -196,6 +196,24 @@ export function createHostApp() {
   installMenubarMeter({
     container: document.getElementById('menubar-meter'),
     audioGraph: projectAudioGraph,
+    // D 方案：点击电平表 bezel 打开 reverb dock 并高亮 master chain 模块。
+    // 电平表显示问题（爆音 / 太响），master chain 是修问题的入口——一键直达
+    onBezelClick: () => {
+      if (!sessionStore.isReverbDockOpen()) {
+        sessionStore.setReverbDockOpen(true)
+      }
+      render('master-chain-focus-requested')
+      // render 之后 ReverbDockView 会重建 DOM，找到 master chain 模块加高亮
+      requestAnimationFrame(() => {
+        const masterModule = document.querySelector('.fx-module--master-chain')
+        if (!masterModule) return
+        masterModule.classList.remove('is-focus-pulse')
+        // 强制 reflow 让动画可以从头来
+        void masterModule.offsetWidth
+        masterModule.classList.add('is-focus-pulse')
+        masterModule.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+      })
+    },
   })
   const editorSessionController = new EditorSessionController(taskCoordinator)
   const focusSoloController = new FocusSoloController(sessionStore, logger)
@@ -245,6 +263,7 @@ export function createHostApp() {
     'track-fx-opened',
     'track-fx-closed',
     'render-track-as-voice-opened',
+    'master-chain-focus-requested',
   ])
   let currentRevision = 0
   let savedRevision = 0
@@ -1688,6 +1707,35 @@ export function createHostApp() {
     onToggleProjectReverbEnabled: reverbController.toggleProjectReverbEnabled,
     onProjectReverbPresetSelected: reverbController.handleProjectReverbPresetSelected,
     onProjectReverbConfigChanged: reverbController.handleProjectReverbConfigChanged,
+    // ===== 主控母带链 =====
+    // 调参时 commit:false 直接写 audioGraph 不发 render（跟单轨 reverb 一致避免拖动重建 UI）；
+    // commit:true 一次 render('master-*-changed') 触发 dirty 红点 + autosave + 工程文件保存
+    onMasterChainEnabledToggled: () => {
+      const current = projectMixController.getMasterChain()
+      projectMixController.setMasterChainEnabled(!current.enabled, { commit: true })
+      render('master-chain-toggled')
+      view.setStatus(current.enabled ? '主控母带链已关闭 / Master chain off' : '主控母带链已开启 / Master chain on')
+    },
+    onMasterEqBandChanged: (bandIndex, patch, options = {}) => {
+      projectMixController.setMasterEqBand(bandIndex, patch, options)
+      if (options.commit) render('master-eq-changed')
+    },
+    onMasterCompressorChanged: (patch, options = {}) => {
+      projectMixController.setMasterCompressor(patch, options)
+      if (options.commit) render('master-compressor-changed')
+    },
+    onMasterLimiterChanged: (patch, options = {}) => {
+      projectMixController.setMasterLimiter(patch, options)
+      if (options.commit) render('master-limiter-changed')
+    },
+    onMasterChainPresetSelected: (presetId) => {
+      const result = projectMixController.setMasterChainPreset(presetId, { commit: true })
+      if (!result) return
+      render('master-chain-preset-applied')
+      const preset = projectMixController.getMasterChainPresets().find((p) => p.id === presetId)
+      if (preset) view.setStatus(`已应用预设 / Preset applied: ${preset.name}`)
+    },
+    getMasterChainPresets: () => projectMixController.getMasterChainPresets(),
     onTrackSelected: handleTrackSelected,
     onTrackContextCreate: handleTrackContextCreate,
     onTrackContextDelete: handleTrackContextDelete,

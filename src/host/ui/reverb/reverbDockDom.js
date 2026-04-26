@@ -53,6 +53,7 @@ export function createReverbDockModule({
   controls = [],
   footer = null,
   note = '',
+  scopeBadge = null, // { text, tone } —— 顶栏 pill，标明该模块作用范围（全局 / 单轨 / 工程默认）
 } = {}) {
   const root = document.createElement('div')
   root.className = 'fx-module'
@@ -60,8 +61,20 @@ export function createReverbDockModule({
   const header = document.createElement('div')
   header.className = 'fx-header'
 
+  const titleWrap = document.createElement('span')
+  titleWrap.className = 'fx-header-title'
+
+  if (scopeBadge && typeof scopeBadge.text === 'string' && scopeBadge.text) {
+    const badge = document.createElement('span')
+    badge.className = `fx-scope-badge fx-scope-badge--${scopeBadge.tone || 'neutral'}`
+    badge.textContent = scopeBadge.text
+    titleWrap.appendChild(badge)
+  }
+
   const titleNode = document.createElement('span')
+  titleNode.className = 'fx-header-title-text'
   titleNode.textContent = title
+  titleWrap.appendChild(titleNode)
 
   const powerButton = document.createElement('button')
   powerButton.type = 'button'
@@ -74,7 +87,7 @@ export function createReverbDockModule({
     onTogglePower?.()
   })
 
-  header.append(titleNode, powerButton)
+  header.append(titleWrap, powerButton)
 
   const body = document.createElement('div')
   body.className = 'fx-body'
@@ -232,9 +245,13 @@ export function createFxKnobControl({
 
   const valueNode = document.createElement('div')
   valueNode.className = 'param-value'
+  valueNode.title = '点击输入精确数值'
+
+  let currentValue = clampRange(value, min, max, min)
 
   const syncValue = (nextValue) => {
     const normalizedValue = clampRange(nextValue, min, max, min)
+    currentValue = normalizedValue
     const ratio = max > min ? (normalizedValue - min) / (max - min) : 0
     input.value = String(normalizedValue)
     knob.style.setProperty('--knob-sweep', `${Math.round(ratio * 270)}deg`)
@@ -242,7 +259,7 @@ export function createFxKnobControl({
     valueNode.textContent = format(normalizedValue)
   }
 
-  syncValue(value)
+  syncValue(currentValue)
 
   input.addEventListener('input', () => {
     const nextValue = Number.parseFloat(input.value)
@@ -255,6 +272,70 @@ export function createFxKnobControl({
     const nextValue = Number.parseFloat(input.value)
     syncValue(nextValue)
     onCommit?.(nextValue)
+  })
+
+  // 单击 value 显示框 → 切到文本编辑态精确输入。Enter 提交、Escape 取消、blur 默认提交
+  const beginNumericEdit = () => {
+    if (disabled) return
+    if (root.classList.contains('editing')) return
+    root.classList.add('editing')
+
+    const editInput = document.createElement('input')
+    editInput.type = 'text'
+    editInput.inputMode = 'decimal'
+    editInput.className = 'param-value-input'
+    editInput.value = String(currentValue)
+
+    const previousText = valueNode.textContent
+    valueNode.textContent = ''
+    valueNode.appendChild(editInput)
+    requestAnimationFrame(() => {
+      editInput.focus()
+      editInput.select()
+    })
+
+    let finished = false
+    const finish = (cancel) => {
+      if (finished) return
+      finished = true
+      root.classList.remove('editing')
+      if (editInput.parentNode) editInput.parentNode.removeChild(editInput)
+      if (cancel) {
+        valueNode.textContent = previousText
+        return
+      }
+      const numeric = Number.parseFloat(editInput.value)
+      if (!Number.isFinite(numeric)) {
+        valueNode.textContent = previousText
+        return
+      }
+      const clamped = clampRange(numeric, min, max, min)
+      syncValue(clamped)
+      onCommit?.(clamped)
+    }
+
+    editInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault()
+        event.stopPropagation()
+        finish(false)
+      } else if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+        finish(true)
+      } else {
+        // 阻断空格 / S / M 等全局快捷键，避免输入数字时误触播放等
+        event.stopPropagation()
+      }
+    })
+    editInput.addEventListener('blur', () => finish(false))
+    editInput.addEventListener('pointerdown', (event) => event.stopPropagation())
+    editInput.addEventListener('click', (event) => event.stopPropagation())
+  }
+  valueNode.addEventListener('click', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    beginNumericEdit()
   })
 
   root.append(labelNode, knob, valueNode)

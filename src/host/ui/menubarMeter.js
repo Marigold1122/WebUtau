@@ -177,13 +177,27 @@ function updateSpectrum(spectrumState, analyser, buffer, dt) {
   }
 }
 
-export function installMenubarMeter({ container, audioGraph }) {
+export function installMenubarMeter({ container, audioGraph, onBezelClick = null }) {
   if (!container || !audioGraph) return null
   if (container.dataset.meterInstalled === '1') return null
   container.dataset.meterInstalled = '1'
 
   const bezel = document.createElement('div')
   bezel.className = 'menubar-meter-bezel'
+  if (typeof onBezelClick === 'function') {
+    bezel.style.cursor = 'pointer'
+    bezel.title = '点击打开主控母带链'
+    // 父级 .menubar-meter 有 pointer-events: none（让 transport 控件穿透），
+    // bezel 自己必须显式 auto 才能接到点击。inline style 覆盖样式表的 none
+    bezel.style.pointerEvents = 'auto'
+    bezel.addEventListener('click', (event) => {
+      // CLIP 按钮自己 stopPropagation 处理过载复位，不会走到这里——
+      // 这里只接 bezel 其它区域（条形、读数、频谱）的点击
+      if (event.target.closest?.('.menubar-meter-clip')) return
+      event.preventDefault()
+      onBezelClick()
+    })
+  }
 
   const channels = document.createElement('div')
   channels.className = 'menubar-meter-channels'
@@ -215,7 +229,9 @@ export function installMenubarMeter({ container, audioGraph }) {
     if (stopped) return
 
     const ctx = audioGraph.rawContext
-    const master = audioGraph.masterGain
+    // 优先 tap master chain 输出节点——用户听到什么、表上读到什么；
+    // chain 没起来（早期版本或异常）时退化到 masterGain，仍能工作
+    const master = audioGraph.getMasterTapNode?.() || audioGraph.masterGain
     const splitter = ctx.createChannelSplitter(2)
     const analyserL = ctx.createAnalyser()
     const analyserR = ctx.createAnalyser()
