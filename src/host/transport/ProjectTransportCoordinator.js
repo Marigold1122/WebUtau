@@ -135,6 +135,12 @@ export class ProjectTransportCoordinator {
     return this.trackFxDispatchRouter.dispatch(trackId, 'setTrackVolume', nextVolume)
   }
 
+  setTrackPan(trackId, pan) {
+    // pan 不需要走 scheduler 维护的 per-track 状态——它纯粹是 audioGraph
+    // channel 的路由层节点。直接调 audioGraph 比给每个 scheduler 加重复的 delegate 简洁
+    return Boolean(this.audioGraph?.setTrackPan?.(trackId, pan))
+  }
+
   setTrackReverbSend(trackId, reverbSend) {
     return this.trackFxDispatchRouter.dispatch(trackId, 'setTrackReverbSend', reverbSend)
   }

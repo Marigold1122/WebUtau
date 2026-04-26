@@ -1,5 +1,5 @@
 import { isAudioTrack } from '../../project/trackContentType.js'
-import { normalizeTrackReverbConfig, normalizeTrackReverbSend, normalizeTrackVolume } from '../../project/trackPlaybackState.js'
+import { normalizeTrackPan, normalizeTrackReverbConfig, normalizeTrackReverbSend, normalizeTrackVolume } from '../../project/trackPlaybackState.js'
 import { renderTrackPreviewCanvas } from '../renderTrackPreviewCanvas.js'
 import { createTrackMonitorBadge } from './TrackMonitorBadge.js'
 import { resolveTrackColor } from './trackColorPalette.js'
@@ -41,6 +41,24 @@ function quantizeTrackVolume(value) {
 
 function formatTrackVolumePercent(value) {
   return Math.round(normalizeTrackVolume(value) * 100)
+}
+
+function quantizeTrackPan(value) {
+  return Math.round(normalizeTrackPan(value) * 100) / 100
+}
+
+// pan 在 0 附近自动吸附到正中——拖动时手感更好，专业 DAW 通用约定
+const PAN_SNAP_THRESHOLD = 0.05
+function snapTrackPan(value) {
+  const normalized = quantizeTrackPan(value)
+  return Math.abs(normalized) < PAN_SNAP_THRESHOLD ? 0 : normalized
+}
+
+function formatTrackPanReadout(value) {
+  const normalized = quantizeTrackPan(value)
+  if (Math.abs(normalized) < 0.005) return 'C'
+  const direction = normalized < 0 ? 'L' : 'R'
+  return `${direction} ${Math.round(Math.abs(normalized) * 100)}`
 }
 
 function getNoteStartTick(note, axis) {
@@ -140,6 +158,26 @@ function applyTrackVolumeControlState(control, fill, knob, valueNode, volume) {
   knob.setAttribute('aria-valuenow', String(percent))
   knob.setAttribute('aria-valuetext', `${percent}%`)
   valueNode.textContent = String(percent)
+}
+
+// pan 的 fill 从 50% 中心向左/右延伸——L 时 left 收缩、width 增加；R 时 left 固定 50%、width 增加
+function applyTrackPanControlState(control, fill, knob, valueNode, pan) {
+  const normalizedPan = quantizeTrackPan(pan)
+  const knobPercent = (normalizedPan + 1) * 50 // [-1,1] → [0,100]
+  control.dataset.pan = normalizedPan.toFixed(2)
+  control.style.setProperty('--track-pan-position', `${knobPercent}%`)
+  if (normalizedPan < 0) {
+    const fillStart = 50 + normalizedPan * 50
+    fill.style.left = `${fillStart}%`
+    fill.style.width = `${50 - fillStart}%`
+  } else {
+    fill.style.left = '50%'
+    fill.style.width = `${normalizedPan * 50}%`
+  }
+  const ariaValue = Math.round(normalizedPan * 100)
+  knob.setAttribute('aria-valuenow', String(ariaValue))
+  knob.setAttribute('aria-valuetext', formatTrackPanReadout(normalizedPan))
+  valueNode.textContent = formatTrackPanReadout(normalizedPan)
 }
 
 function createTrackVolumeControl(track, trackColor, handlers) {
@@ -338,6 +376,189 @@ function createTrackVolumeControl(track, trackColor, handlers) {
   return control
 }
 
+// pan 控件：跟 volume 一致的交互模型（拖动 + 滚轮 + 方向键 + 单击精准输入），
+// 但 fill 从中心向两侧伸展、拖动时 |pan| < 0.05 自动吸附到 0
+function createTrackPanControl(track, trackColor, handlers) {
+  const control = document.createElement('div')
+  control.className = 'th-pan'
+  control.style.setProperty('--track-color', trackColor)
+
+  const shell = document.createElement('div')
+  shell.className = 'th-pan-shell'
+
+  const scale = document.createElement('div')
+  scale.className = 'th-pan-scale'
+  const fill = document.createElement('span')
+  fill.className = 'th-pan-fill'
+  const center = document.createElement('span')
+  center.className = 'th-pan-center'
+  scale.append(fill, center)
+
+  const knob = document.createElement('button')
+  knob.type = 'button'
+  knob.className = 'th-pan-knob'
+  knob.setAttribute('role', 'slider')
+  knob.setAttribute('aria-label', `${track.name} 声像`)
+  knob.setAttribute('aria-valuemin', '-100')
+  knob.setAttribute('aria-valuemax', '100')
+  knob.setAttribute('aria-orientation', 'horizontal')
+  shell.append(scale, knob)
+
+  const readout = document.createElement('div')
+  readout.className = 'th-pan-readout'
+  const valueNode = document.createElement('span')
+  valueNode.className = 'th-pan-value'
+  readout.appendChild(valueNode)
+
+  control.append(shell, readout)
+
+  let currentPan = quantizeTrackPan(track.playbackState?.pan)
+  applyTrackPanControlState(control, fill, knob, valueNode, currentPan)
+
+  const commitPan = (nextPan, { commit = true, snap = true } = {}) => {
+    const candidate = snap ? snapTrackPan(nextPan) : quantizeTrackPan(nextPan)
+    if (Math.abs(candidate - currentPan) < 0.0001 && !commit) return false
+    currentPan = candidate
+    applyTrackPanControlState(control, fill, knob, valueNode, currentPan)
+    handlers.onTrackPanChanged?.(track.id, candidate, { commit })
+    return true
+  }
+
+  const resolvePointerPan = (clientX) => {
+    const rect = scale.getBoundingClientRect()
+    if (!Number.isFinite(rect.width) || rect.width <= 0) return currentPan
+    const ratio = (clientX - rect.left) / rect.width
+    return snapTrackPan(ratio * 2 - 1) // [0,1] → [-1,1]
+  }
+
+  control.addEventListener('click', (event) => event.stopPropagation())
+  control.addEventListener('dblclick', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+  })
+
+  const PAN_DRAG_THRESHOLD = 3
+
+  const beginPanEdit = () => {
+    if (control.classList.contains('editing')) return
+    control.classList.add('editing')
+
+    const input = document.createElement('input')
+    input.type = 'text'
+    input.inputMode = 'numeric'
+    input.className = 'th-pan-input'
+    // 编辑时显示带符号的纯数字（-100 ~ 100），方便精确输入
+    input.value = String(Math.round(currentPan * 100))
+    input.setAttribute('aria-label', `${track.name} 声像 -100 到 100`)
+    input.maxLength = 5
+
+    valueNode.style.display = 'none'
+    readout.appendChild(input)
+    requestAnimationFrame(() => {
+      input.focus()
+      input.select()
+    })
+
+    let finished = false
+    const finish = (cancel) => {
+      if (finished) return
+      finished = true
+      control.classList.remove('editing')
+      if (input.parentNode) input.parentNode.removeChild(input)
+      valueNode.style.display = ''
+      if (cancel) return
+      const numeric = Number.parseFloat(input.value)
+      if (!Number.isFinite(numeric)) return
+      // 精准输入不走 snap——用户敲了 3 就给 3，不要被吸附到 0
+      commitPan(clamp(numeric, -100, 100) / 100, { commit: true, snap: false })
+    }
+
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault()
+        event.stopPropagation()
+        finish(false)
+      } else if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+        finish(true)
+      } else {
+        event.stopPropagation()
+      }
+    })
+    input.addEventListener('blur', () => finish(false))
+    input.addEventListener('pointerdown', (event) => event.stopPropagation())
+    input.addEventListener('click', (event) => event.stopPropagation())
+    input.addEventListener('dblclick', (event) => event.stopPropagation())
+  }
+
+  const handlePointerDown = (event) => {
+    if (event.button !== 0) return
+    if (control.classList.contains('editing')) return
+    event.preventDefault()
+    event.stopPropagation()
+
+    const startX = event.clientX
+    let dragging = false
+
+    const enterDrag = (clientX) => {
+      dragging = true
+      control.classList.add('dragging')
+      knob.focus({ preventScroll: true })
+      commitPan(resolvePointerPan(clientX), { commit: false })
+    }
+
+    const handlePointerMove = (moveEvent) => {
+      if (!dragging) {
+        if (Math.abs(moveEvent.clientX - startX) < PAN_DRAG_THRESHOLD) return
+        enterDrag(moveEvent.clientX)
+        return
+      }
+      commitPan(resolvePointerPan(moveEvent.clientX), { commit: false })
+    }
+
+    const handlePointerUp = () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+      if (dragging) {
+        control.classList.remove('dragging')
+        handlers.onTrackPanChanged?.(track.id, currentPan, { commit: true })
+        return
+      }
+      beginPanEdit()
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp, { once: true })
+  }
+
+  shell.addEventListener('pointerdown', handlePointerDown)
+
+  control.addEventListener('wheel', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    const delta = event.deltaY < 0 ? 0.04 : -0.04
+    commitPan(currentPan + delta, { commit: true, snap: false })
+  }, { passive: false })
+
+  knob.addEventListener('keydown', (event) => {
+    let nextPan = currentPan
+    if (event.key === 'ArrowRight') nextPan += 0.02
+    else if (event.key === 'ArrowLeft') nextPan -= 0.02
+    else if (event.key === 'PageUp') nextPan += 0.1
+    else if (event.key === 'PageDown') nextPan -= 0.1
+    else if (event.key === 'Home') nextPan = -1
+    else if (event.key === 'End') nextPan = 1
+    else if (event.key === 'Enter' || event.key === ' ') nextPan = 0
+    else return
+    event.preventDefault()
+    event.stopPropagation()
+    commitPan(nextPan, { commit: true, snap: false })
+  })
+
+  return control
+}
+
 export function buildTrackPreviewGridOverlay({ timelineMetrics, contentHeight }) {
   const grid = document.createElement('div')
   grid.className = 'track-preview-grid-overlay'
@@ -475,7 +696,12 @@ function createTrackItem({ track, index, selectedTrackId, viewState, handlers })
       && Number(reverbConfig?.returnGain || 0) > 0.0001
     ),
   }))
-  bottom.appendChild(createTrackVolumeControl(track, trackColor, handlers))
+  // 把 pan + volume 在右侧竖直堆叠——pan 占上方一行细滑块，volume 占下方常规滑块
+  const mixStack = document.createElement('div')
+  mixStack.className = 'th-mix'
+  mixStack.appendChild(createTrackPanControl(track, trackColor, handlers))
+  mixStack.appendChild(createTrackVolumeControl(track, trackColor, handlers))
+  bottom.appendChild(mixStack)
   item.append(top, bottom)
   return item
 }

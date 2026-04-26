@@ -1,5 +1,6 @@
 ﻿import {
   normalizeTrackGuitarToneConfig,
+  normalizeTrackPan,
   normalizeTrackReverbConfig,
   normalizeTrackReverbSend,
   normalizeTrackVolume,
@@ -71,6 +72,10 @@ export class ProjectAudioGraph {
     return Boolean(this.syncTrackState(trackId, { volume }))
   }
 
+  setTrackPan(trackId, pan) {
+    return Boolean(this.syncTrackState(trackId, { pan }))
+  }
+
   setTrackReverbSend(trackId, reverbSend) {
     return Boolean(this.syncTrackState(trackId, { reverbSend }))
   }
@@ -111,6 +116,7 @@ export class ProjectAudioGraph {
     channel.reverbBus?.dispose?.()
     disconnectNode(channel.input)
     disconnectNode(channel.postInsert)
+    disconnectNode(channel.pan)
     disconnectNode(channel.volume)
     disconnectNode(channel.send)
     return true
@@ -123,6 +129,7 @@ export class ProjectAudioGraph {
     const previous = this.trackStates.get(trackId) || {
       insertId: null,
       volume: normalizeTrackVolume(),
+      pan: normalizeTrackPan(),
       reverbSend: normalizeTrackReverbSend(),
       reverbConfig: normalizeTrackReverbConfig({}, this.defaultReverbConfig),
       reverbEngineId: LEGACY_REVERB_ENGINE_ID,
@@ -149,6 +156,9 @@ export class ProjectAudioGraph {
       volume: hasOwn(changes, 'volume')
         ? normalizeTrackVolume(changes.volume, previous.volume)
         : previous.volume,
+      pan: hasOwn(changes, 'pan')
+        ? normalizeTrackPan(changes.pan, previous.pan)
+        : previous.pan,
       reverbSend: (hasOwn(changes, 'reverbSend') || hasOwn(changes, 'sendAmount'))
         ? normalizeTrackReverbSend(
           changes.reverbSend == null ? changes.sendAmount : changes.reverbSend,
@@ -184,6 +194,9 @@ export class ProjectAudioGraph {
     const state = this.trackStates.get(trackId) || this._mergeTrackState(trackId, {})
     const input = this.rawContext.createGain()
     const postInsert = this.rawContext.createGain()
+    // pan 节点放在 postInsert 之后、volume / send 分叉之前——dry 与 wet 两路都从 pan 出发，
+    // 这样混响也跟着声像走。StereoPannerNode 自动做等功率定位（equal-power），混音学标准
+    const pan = this.rawContext.createStereoPanner()
     const volume = this.rawContext.createGain()
     const send = this.rawContext.createGain()
     const reverbBus = new TrackReverbBus({
@@ -192,18 +205,21 @@ export class ProjectAudioGraph {
       engineId: state.reverbEngineId,
     })
 
-    postInsert.connect(volume)
+    postInsert.connect(pan)
+    pan.connect(volume)
     volume.connect(this.masterGain)
-    postInsert.connect(send)
+    pan.connect(send)
     reverbBus.attach({
       rawContext: this.rawContext,
       inputNode: send,
       outputNode: this.masterGain,
     })
+    pan.pan.value = normalizeTrackPan(state.pan)
 
     channel = {
       input,
       postInsert,
+      pan,
       volume,
       send,
       reverbBus,
@@ -228,6 +244,7 @@ export class ProjectAudioGraph {
 
     this._syncTrackInsert(channel, nextState)
     channel.volume.gain.value = resolveTrackPlaybackGain(nextState.volume)
+    if (channel.pan?.pan) channel.pan.pan.value = normalizeTrackPan(nextState.pan)
     channel.send.gain.value = nextState.reverbSend
     const nextReverbConfig = normalizeTrackReverbConfig(
       nextState.reverbConfig,

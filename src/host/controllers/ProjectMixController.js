@@ -40,6 +40,9 @@ export class ProjectMixController {
       if (!track?.id) return
       this.audioGraph?.syncTrackState?.(track.id, {
         volume: track?.playbackState?.volume,
+        // pan 必须在加载/重建工程时同步给 audioGraph 的 channel——否则 store 的 pan
+        // 跟 StereoPannerNode 的实际值会脱节，UI 显示 R100 但音频在正中
+        pan: track?.playbackState?.pan,
         reverbSend: track?.playbackState?.reverbSend,
         reverb: track?.playbackState?.reverb,
         reverbConfig: track?.playbackState?.reverbConfig,

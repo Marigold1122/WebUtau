@@ -1296,6 +1296,158 @@ body {
     #8F8A80;
 }
 
+/* pan + volume 共用的右侧竖直堆叠容器；接管原本 .th-volume 上的 margin-left:auto */
+.th-mix {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.th-mix .th-volume {
+  margin-left: 0;
+}
+
+/* pan 控件：跟 volume 一致的盒子尺寸，但 fill 从中心向两侧伸展 */
+.th-pan {
+  position: relative;
+  width: 92px;
+  height: 12px;
+  flex-shrink: 0;
+}
+.th-pan-shell {
+  position: relative;
+  width: 88px;
+  height: 100%;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  overflow: visible;
+}
+.th-pan-scale {
+  position: relative;
+  width: 100%;
+  height: 4px;
+  border-radius: 1px;
+  border: 1px solid #111;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0) 100%),
+    #1C241D;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.45);
+  cursor: ew-resize;
+}
+/* 中心刻度线：让用户一眼能看出"正中"位置 */
+.th-pan-center {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  left: 50%;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.55);
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+.th-pan-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 0;
+  border-radius: 1px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0) 100%),
+    var(--track-color, var(--accent-color));
+  pointer-events: none;
+}
+.th-pan-knob {
+  position: absolute;
+  top: 50%;
+  left: var(--track-pan-position, 50%);
+  width: 8px;
+  height: 12px;
+  padding: 0;
+  border: 1px solid var(--border-light);
+  border-radius: 2px;
+  background: linear-gradient(180deg, #FFFFFF 0%, #ECE6D8 100%);
+  box-shadow: 0 1px 1px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.92);
+  cursor: ew-resize;
+  transform: translate(-50%, -50%);
+}
+.th-pan-knob:focus-visible {
+  outline: 2px solid rgba(59,139,136,0.34);
+  outline-offset: 2px;
+}
+.th-pan-readout {
+  position: absolute;
+  right: -2px;
+  bottom: calc(100% + 4px);
+  min-width: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 5px;
+  border: 1px solid var(--border-light);
+  border-radius: 2px;
+  background: var(--bg-3);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.88);
+  font-family: 'JetBrains Mono', monospace;
+  opacity: 0;
+  transform: translateY(4px);
+  pointer-events: none;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.th-pan-readout::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  right: 8px;
+  width: 6px;
+  height: 6px;
+  background: var(--bg-3);
+  border-right: 1px solid var(--border-light);
+  border-bottom: 1px solid var(--border-light);
+  transform: translateY(-4px) rotate(45deg);
+}
+.th-pan-value {
+  min-width: 2.2ch;
+  text-align: center;
+  color: var(--text-main);
+  font-size: 10px;
+  font-weight: 700;
+}
+.th-pan:hover .th-pan-readout,
+.th-pan:focus-within .th-pan-readout,
+.th-pan.dragging .th-pan-readout,
+.th-pan.editing .th-pan-readout {
+  opacity: 1;
+  transform: translateY(0);
+}
+.th-pan.editing .th-pan-readout { pointer-events: auto; }
+.th-pan-input {
+  width: 3.5ch;
+  min-width: 2ch;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-main);
+  text-align: center;
+  outline: none;
+}
+.th-pan-input::-webkit-outer-spin-button,
+.th-pan-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.track-item.muted .th-pan-fill {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0) 100%),
+    #8F8A80;
+}
+
 /* Solo / Mute 按键列 */
 .track-monitor-badge {
   display: inline-flex;

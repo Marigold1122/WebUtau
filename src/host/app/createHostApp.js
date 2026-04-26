@@ -1736,6 +1736,7 @@ export function createHostApp() {
     onTrackSoloToggled: (trackId) => trackMonitorController.toggleTrackSolo(trackId),
     onTrackMuteToggled: (trackId) => trackMonitorController.toggleTrackMute(trackId),
     onTrackVolumeChanged: (trackId, volume, options) => trackMonitorController.setTrackVolume(trackId, volume, options),
+    onTrackPanChanged: (trackId, pan, options) => trackMonitorController.setTrackPan(trackId, pan, options),
     onTrackGuitarToneChanged: (trackId, patch, options) => trackMonitorController.setTrackGuitarTone(trackId, patch, options),
     onVoicebankChanged: async (singerId) => {
       const selectedTrack = store.getSelectedTrack()

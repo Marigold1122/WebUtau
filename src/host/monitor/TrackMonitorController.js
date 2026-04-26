@@ -9,6 +9,7 @@ import { isSameReverbConfig } from '../audio/reverb/ReverbConfigDiff.js'
 import { markReverbProbe } from '../audio/reverb/ReverbDebugProbe.js'
 import { isEmptyReverbPatch, normalizeReverbPatch } from '../audio/reverb/ReverbPatchValidator.js'
 import {
+  normalizeTrackPan,
   normalizeTrackReverbConfig,
   normalizeTrackReverbSend,
   normalizeTrackVolume,
@@ -105,6 +106,37 @@ export class TrackMonitorController {
         trackId: track.id,
         trackName: track.name,
         volume: nextVolume,
+      })
+    }
+
+    return true
+  }
+
+  // pan 跟 volume 完全相同的 commit/realtime 模式：commit:false 直接写 store +
+  // audioGraph，不发 render（拖动时不重建 view）；commit:true 时 render 一次
+  // 触发 dirty 跟踪。比 reverb 那条 coalescer 路径简单——pan 是单一标量，
+  // 不需要批量合并多个字段
+  async setTrackPan(trackId, pan, { commit = true } = {}) {
+    const track = this.store.getTrack(trackId)
+    if (!track) return false
+
+    const nextPan = normalizeTrackPan(pan, track.playbackState?.pan)
+    const currentPan = normalizeTrackPan(track.playbackState?.pan)
+    if (Math.abs(nextPan - currentPan) < 0.0001 && !commit) {
+      return false
+    }
+
+    this.store.updateTrackPlaybackState(track.id, { pan: nextPan })
+    await this.transportCoordinator.setTrackPan(track.id, nextPan)
+
+    if (commit) {
+      this.persistence?.saveProject?.(this.store?.getProject?.())
+      this.render('track-pan-changed')
+      this.view.setStatus(this._buildPanStatusText(track.name, nextPan))
+      this.logger?.info?.('Track pan updated', {
+        trackId: track.id,
+        trackName: track.name,
+        pan: nextPan,
       })
     }
 
@@ -334,6 +366,13 @@ export class TrackMonitorController {
 
   _buildVolumeStatusText(trackName, volume) {
     return `${trackName} 音量 / Volume ${Math.round(normalizeTrackVolume(volume) * 100)}%`
+  }
+
+  _buildPanStatusText(trackName, pan) {
+    const value = normalizeTrackPan(pan)
+    if (Math.abs(value) < 0.005) return `${trackName} 声像 / Pan 居中 Center`
+    const direction = value < 0 ? 'L' : 'R'
+    return `${trackName} 声像 / Pan ${direction} ${Math.round(Math.abs(value) * 100)}%`
   }
 
   _buildReverbSendStatusText(trackName, sendAmount) {
