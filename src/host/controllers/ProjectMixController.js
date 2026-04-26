@@ -8,6 +8,7 @@ import { getMasterChainPreset, MASTER_CHAIN_PRESETS, mergeEqBand, normalizeMaste
 import { isSameReverbConfig } from '../audio/reverb/ReverbConfigDiff.js'
 import { isEmptyReverbPatch, normalizeReverbPatch } from '../audio/reverb/ReverbPatchValidator.js'
 import { LEGACY_REVERB_ENGINE_ID } from '../audio/reverb/ReverbParameterSchema.js'
+import { calcAutoFitMakeupGain } from '../audio/master/lufsMath.js'
 
 export class ProjectMixController {
   constructor({ store, audioGraph, logger = null, persistence = null } = {}) {
@@ -15,6 +16,77 @@ export class ProjectMixController {
     this.audioGraph = audioGraph
     this.logger = logger
     this.persistence = persistence
+    // 自动达标状态机：'idle' → 'measuring' → ('idle' | 'cancelled')
+    // 进 measuring 后仅在 transport 自然结束时计算并应用增益；中途暂停 / 停止 / 拖动一律取消
+    this._autoFitState = 'idle'
+  }
+
+  isAutoFitMeasuring() {
+    return this._autoFitState === 'measuring'
+  }
+
+  beginAutoFitMeasurement() {
+    this._autoFitState = 'measuring'
+    this._lastAutoFitResult = null // 进新一轮——旧结果失效
+    this.resetLufsIntegrated()
+  }
+
+  cancelAutoFitMeasurement() {
+    if (this._autoFitState !== 'measuring') return false
+    this._autoFitState = 'idle'
+    return true
+  }
+
+  // 自然结束触发：基于刚刚整首歌的 integrated 计算并应用 makeup gain。
+  // 如果不在 measuring 状态（用户没点 autofit，只是普通播放结束）则什么都不做
+  finalizeAutoFitMeasurement() {
+    if (this._autoFitState !== 'measuring') return null
+    this._autoFitState = 'idle'
+    // minGatedBlocks 设很小（5）——既然是"完整播完一首歌"的数据，几乎不可能不够
+    const result = this.autoFitLoudness({ minGatedBlocks: 5 })
+    if (result?.ok && !result.alreadyOnTarget) {
+      // 保存"刚刚的成功结果" + 当时 gatedBlockCount——UI 据此显示绿色成功横幅。
+      // 当 LUFS 累计块数继续增长（用户开新一轮播放），结果自动失效，状态行回归实时读数
+      this._lastAutoFitResult = {
+        appliedDb: result.appliedDb,
+        deltaLu: result.deltaLu,
+        beforeIntegrated: result.snapshot?.integrated,
+        // 线性预计：调整后的 integrated ≈ 调整前 + 新增的 dB（被限幅器修正后会略小）
+        predictedIntegrated: result.snapshot?.integrated + result.appliedDb,
+        targetLufs: result.chain?.loudnessTarget,
+        atGatedBlockCount: result.snapshot?.gatedBlockCount || 0,
+        hitLimit: result.hitLimit,
+        largeAdjustment: result.largeAdjustment,
+      }
+    } else if (result?.ok && result.alreadyOnTarget) {
+      this._lastAutoFitResult = {
+        alreadyOnTarget: true,
+        deltaLu: result.deltaLu,
+        beforeIntegrated: result.snapshot?.integrated,
+        predictedIntegrated: result.snapshot?.integrated,
+        targetLufs: result.chain?.loudnessTarget,
+        atGatedBlockCount: result.snapshot?.gatedBlockCount || 0,
+      }
+    }
+    return result
+  }
+
+  // 给 UI 用：返回最近一次 autofit 的结果——前提是之后没有累计新的测量数据。
+  // 一旦用户开始新播放、积分块数增长，结果就过期返回 null
+  getLastAutoFitResult() {
+    if (!this._lastAutoFitResult) return null
+    const live = this.audioGraph?.getLufsSnapshot?.()
+    const liveBlocks = live?.gatedBlockCount || 0
+    if (liveBlocks > (this._lastAutoFitResult.atGatedBlockCount || 0)) {
+      // 新数据进来了，旧结果过时——清掉避免下次还显示
+      this._lastAutoFitResult = null
+      return null
+    }
+    return this._lastAutoFitResult
+  }
+
+  clearLastAutoFitResult() {
+    this._lastAutoFitResult = null
   }
 
   init() {
@@ -122,7 +194,14 @@ export class ProjectMixController {
     const preset = getMasterChainPreset(presetId)
     if (!preset) return null
     this.store?.ensureProject?.()
-    const next = normalizeMasterChain({ ...preset.config, presetId: preset.id })
+    // preset.config 只覆盖音频处理参数（eq / compressor / limiter / enabled），
+    // 不要覆盖 loudnessTarget——那是用户单独配的"成品响度目标"，跨预设保留
+    const current = this.getMasterChain()
+    const next = normalizeMasterChain({
+      ...preset.config,
+      presetId: preset.id,
+      loudnessTarget: current.loudnessTarget,
+    })
     const mixState = this.store?.updateProjectMixState?.({ masterChain: next })
       || createProjectMixState({ masterChain: next })
     this.audioGraph?.setMasterChainConfig?.(mixState.masterChain)
@@ -131,6 +210,64 @@ export class ProjectMixController {
       this.logger?.info?.('Master chain preset applied', { presetId: preset.id, presetName: preset.name })
     }
     return mixState.masterChain
+  }
+
+  setMasterChainLoudnessTarget(value, options = {}) {
+    return this.setMasterChain({ loudnessTarget: value }, options)
+  }
+
+  // 自动达标：读 LufsMeter 当前 integrated → 算 delta → 调主控母带链 makeupGain。
+  // 返回值给 UI 写状态用：包含是否成功、最终调了多少 dB、是否撞限幅、是否大调整等。
+  //
+  // 注意：本函数不主动 reset LUFS——M/S/I 读数保留为"调整前的真实测量值"，
+  // 让用户看到"刚才完整播完测出来的就是这个数"。新一轮测量开始（按 play / 重新点 autofit）
+  // 由 beginAutoFitMeasurement / 手动 reset / 下一轮 measuring 自动清掉
+  autoFitLoudness({ minGatedBlocks = 30 } = {}) {
+    const chain = this.getMasterChain()
+    const snapshot = this.audioGraph?.getLufsSnapshot?.() || { integrated: -Infinity, gatedBlockCount: 0 }
+    if (!Number.isFinite(snapshot.integrated)) {
+      return { ok: false, reason: 'no-playback', snapshot, chain }
+    }
+    if ((snapshot.gatedBlockCount || 0) < minGatedBlocks) {
+      // 至少要 3 秒（30 个门控块）的素材，否则 integrated 还在剧烈波动，调出来不准
+      return { ok: false, reason: 'insufficient-data', snapshot, chain }
+    }
+    const result = calcAutoFitMakeupGain({
+      currentIntegrated: snapshot.integrated,
+      targetLufs: chain.loudnessTarget,
+      currentMakeupGainDb: chain.compressor.makeupGain,
+    })
+    if (!result.ok) {
+      return { ok: false, reason: result.reason || 'compute-failed', snapshot, chain }
+    }
+    if (Math.abs(result.appliedDb) < 0.05) {
+      // 已经在 ±0.05 dB 内，没必要调；告诉 UI 已达标
+      return { ok: true, alreadyOnTarget: true, snapshot, chain, ...result }
+    }
+    // 通过 setMasterCompressor patch 把 makeupGain 改了；commit:true → 持久化 + render
+    this.setMasterCompressor({ makeupGain: result.nextMakeupGainDb }, { commit: true })
+    return { ok: true, alreadyOnTarget: false, snapshot, chain, ...result }
+  }
+
+  // ===== LUFS 表 =====
+
+  subscribeLufs(fn) {
+    return this.audioGraph?.subscribeLufs?.(fn) || (() => {})
+  }
+
+  getLufsSnapshot() {
+    return this.audioGraph?.getLufsSnapshot?.() || {
+      momentary: -Infinity,
+      shortTerm: -Infinity,
+      integrated: -Infinity,
+      gatedBlockCount: 0,
+    }
+  }
+
+  resetLufsIntegrated() {
+    // 用户手动重置积分时，旧的 autofit 结果也应当失效——避免"已重置但状态行还显示成功横幅"
+    this._lastAutoFitResult = null
+    this.audioGraph?.resetLufsIntegrated?.()
   }
 
   getMasterChainPresets() {

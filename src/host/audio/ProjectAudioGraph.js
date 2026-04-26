@@ -9,6 +9,7 @@
 import { isSameReverbConfig } from './reverb/ReverbConfigDiff.js'
 import { LEGACY_REVERB_ENGINE_ID } from './reverb/ReverbParameterSchema.js'
 import { startToneAudio } from './instruments/toneRuntime.js'
+import { LufsMeter } from './master/LufsMeter.js'
 import { MasterChainBus } from './master/MasterChainBus.js'
 import { TrackReverbBus } from './TrackReverbBus.js'
 import { createTrackInsertEffect } from './insert/createTrackInsertEffect.js'
@@ -33,6 +34,11 @@ export class ProjectAudioGraph {
     this.rawContext = null
     this.masterGain = null
     this.masterChainBus = null
+    this.lufsMeter = null
+    // LufsMeter 在用户首次按 play / 触发 audioGraph.ensureReady 后才生成；
+    // 早于这个时机调 subscribeLufs（比如顶栏电平表在 createHostApp 启动时就订阅）
+    // 的回调先入队，等 meter 起来再一并接进去
+    this._pendingLufsSubscribers = new Set()
     this.defaultReverbConfig = normalizeTrackReverbConfig()
     this.trackStates = new Map()
     this.trackChannels = new Map()
@@ -52,6 +58,29 @@ export class ProjectAudioGraph {
         this.masterChainBus = new MasterChainBus({ logger: this.logger }).attach(rawContext)
         this.masterGain.connect(this.masterChainBus.input)
         this.masterChainBus.output.connect(rawContext.destination)
+
+        // LUFS 表旁路 tap 在 chain output 上——读"用户实际听到的"响度（含限幅 / 压缩后）。
+        // 自启动后 100ms 一跳；用户切工程 / 重置时再 reset，正常播放期间一直累计 integrated
+        try {
+          this.lufsMeter = new LufsMeter({
+            ctx: rawContext,
+            sourceNode: this.masterChainBus.output,
+            channels: 2,
+            logger: this.logger,
+          })
+          this.lufsMeter.start()
+          // 把启动前积压的订阅者一次性接进去——他们已经收过一帧 empty 快照，
+          // 现在开始会收到真实读数
+          this._pendingLufsSubscribers.forEach((entry) => {
+            entry.unsubscribe = this.lufsMeter.subscribe(entry.fn)
+          })
+        } catch (error) {
+          // LufsMeter 抛错不能影响音频本身——表挂掉，音频照常出
+          this.logger?.warn?.('LufsMeter init failed; loudness readout disabled', {
+            error: error?.message || String(error),
+          })
+          this.lufsMeter = null
+        }
 
         this.trackStates.forEach((_state, trackId) => {
           this._ensureTrackChannel(trackId)
@@ -73,6 +102,42 @@ export class ProjectAudioGraph {
 
   setMasterChainConfig(config) {
     this.masterChainBus?.applyConfig?.(config)
+  }
+
+  // LUFS 表订阅——返回退订函数。订阅时立即推一帧当前快照，便于 UI 启动期就有内容
+  subscribeLufs(fn) {
+    if (typeof fn !== 'function') return () => {}
+    if (this.lufsMeter) {
+      return this.lufsMeter.subscribe(fn)
+    }
+    // 未起来：进 pending 队列，先推一帧 empty，等 ensureReady 完成时统一接进真表
+    try { fn({ momentary: -Infinity, shortTerm: -Infinity, integrated: -Infinity, gatedBlockCount: 0 }) }
+    catch (_e) {}
+    const entry = { fn, unsubscribe: null }
+    this._pendingLufsSubscribers.add(entry)
+    return () => {
+      // 退订要兼顾两种状态：还在 pending 时只移出队列；已接进真表则调真退订
+      if (entry.unsubscribe) {
+        try { entry.unsubscribe() } catch (_e) {}
+        entry.unsubscribe = null
+      }
+      this._pendingLufsSubscribers.delete(entry)
+    }
+  }
+
+  getLufsSnapshot() {
+    return this.lufsMeter?.getSnapshot?.() || {
+      momentary: -Infinity,
+      shortTerm: -Infinity,
+      integrated: -Infinity,
+      gatedBlockCount: 0,
+    }
+  }
+
+  // 用户从头播放 / 切工程时调——清空 momentary / short-term / integrated 累计，
+  // 让仪表反映"这段播放从此刻起"的响度，而非历次叠加
+  resetLufsIntegrated() {
+    this.lufsMeter?.reset?.()
   }
 
   syncTrackState(trackId, changes = {}) {

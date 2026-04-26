@@ -132,18 +132,32 @@ function normalizeLimiter(input, fallback) {
 
 // presetId 跟 masterChain 同阶——记录"用户上次选了哪个预设"。
 // 默认 'flat'，因为 DEFAULT_MASTER_CHAIN 各参数恰好等于 Flat 预设的 config
+//
+// loudnessTarget：用户期望的"成品响度目标"，单位 LUFS。默认 -14（Spotify / B站 / YouTube
+// 等流媒体的发布响度），用户可在 UI 改成 -16（Apple Music）或 -23（EBU R128 广播）等。
+// 不参与音频处理，纯是给 LUFS 表着色 / 提示用户"还差几 LU 到达目标"用的参考线
+export const LOUDNESS_TARGET_MIN = -36
+export const LOUDNESS_TARGET_MAX = -6
+export const LOUDNESS_TARGET_DEFAULT = -14
+
 export const DEFAULT_MASTER_CHAIN = Object.freeze({
   presetId: 'flat',
   enabled: true,
   eq: { enabled: true, bands: DEFAULT_EQ_BANDS },
   compressor: DEFAULT_COMPRESSOR,
   limiter: DEFAULT_LIMITER,
+  loudnessTarget: LOUDNESS_TARGET_DEFAULT,
 })
 
 function normalizePresetId(value, fallback) {
   if (value === null) return null
   if (typeof value === 'string' && value) return value
   return fallback ?? null
+}
+
+function normalizeLoudnessTarget(value, fallback) {
+  if (!Number.isFinite(value)) return Number.isFinite(fallback) ? fallback : LOUDNESS_TARGET_DEFAULT
+  return clamp(value, LOUDNESS_TARGET_MIN, LOUDNESS_TARGET_MAX)
 }
 
 export function normalizeMasterChain(input, fallback = null) {
@@ -154,6 +168,10 @@ export function normalizeMasterChain(input, fallback = null) {
     eq: normalizeEq(input?.eq, baseline.eq),
     compressor: normalizeCompressor(input?.compressor, baseline.compressor),
     limiter: normalizeLimiter(input?.limiter, baseline.limiter),
+    loudnessTarget: normalizeLoudnessTarget(
+      HAS_OWN(input || {}, 'loudnessTarget') ? input.loudnessTarget : baseline.loudnessTarget,
+      baseline.loudnessTarget,
+    ),
   }
 }
 
@@ -178,6 +196,11 @@ export function mergeMasterChain(currentState, changes = {}) {
     limiter: HAS_OWN(changes, 'limiter')
       ? normalizeLimiter({ ...current.limiter, ...(changes.limiter || {}) }, current.limiter)
       : current.limiter,
+    // loudnessTarget 是仪表参考线，不算"音频处理参数"——所以改它不会让 presetId 失效。
+    // 用户在 broadcast 预设下把目标从 -14 改到 -16，预设名仍保留
+    loudnessTarget: HAS_OWN(changes, 'loudnessTarget')
+      ? normalizeLoudnessTarget(changes.loudnessTarget, current.loudnessTarget)
+      : current.loudnessTarget,
   }
   return next
 }

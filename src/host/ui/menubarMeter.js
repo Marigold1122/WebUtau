@@ -177,7 +177,13 @@ function updateSpectrum(spectrumState, analyser, buffer, dt) {
   }
 }
 
-export function installMenubarMeter({ container, audioGraph, onBezelClick = null }) {
+export function installMenubarMeter({
+  container,
+  audioGraph,
+  onBezelClick = null,
+  subscribeLufs = null,
+  getLoudnessTarget = null,
+}) {
   if (!container || !audioGraph) return null
   if (container.dataset.meterInstalled === '1') return null
   container.dataset.meterInstalled = '1'
@@ -192,7 +198,7 @@ export function installMenubarMeter({ container, audioGraph, onBezelClick = null
     bezel.style.pointerEvents = 'auto'
     bezel.addEventListener('click', (event) => {
       // CLIP 按钮自己 stopPropagation 处理过载复位，不会走到这里——
-      // 这里只接 bezel 其它区域（条形、读数、频谱）的点击
+      // 这里只接 bezel 其它区域（条形、读数、频谱、LUFS 读数）的点击
       if (event.target.closest?.('.menubar-meter-clip')) return
       event.preventDefault()
       onBezelClick()
@@ -207,6 +213,18 @@ export function installMenubarMeter({ container, audioGraph, onBezelClick = null
 
   const spectrum = buildSpectrum(SPECTRUM_BANDS)
 
+  // LUFS 集成响度小读数：标签 "I" + 数值，按目标 ±1/±3 LU 着色
+  const lufsCell = document.createElement('div')
+  lufsCell.className = 'menubar-meter-lufs'
+  lufsCell.title = 'Integrated LUFS（积分响度）—— 点击进入主控母带链查看 M/S/I 全部读数'
+  const lufsLabel = document.createElement('span')
+  lufsLabel.className = 'menubar-meter-lufs-label'
+  lufsLabel.textContent = 'I'
+  const lufsValue = document.createElement('span')
+  lufsValue.className = 'menubar-meter-lufs-value'
+  lufsValue.textContent = '—'
+  lufsCell.append(lufsLabel, lufsValue)
+
   const clip = document.createElement('button')
   clip.type = 'button'
   clip.className = 'menubar-meter-clip'
@@ -214,8 +232,28 @@ export function installMenubarMeter({ container, audioGraph, onBezelClick = null
   clip.title = '主输出过载指示（点击复位）'
   clip.addEventListener('click', () => clip.classList.remove('is-clipped'))
 
-  bezel.append(channels, spectrum.container, clip)
+  bezel.append(channels, spectrum.container, lufsCell, clip)
   container.appendChild(bezel)
+
+  // LUFS 订阅：每 100ms 刷一次。订阅时 LufsMeter 会推一帧"empty 快照"，
+  // UI 立即跳到"—"（而非空白），后续每 100ms 推一次新读数
+  let lufsUnsubscribe = null
+  if (typeof subscribeLufs === 'function') {
+    lufsUnsubscribe = subscribeLufs((snapshot) => {
+      const integrated = snapshot?.integrated
+      if (!Number.isFinite(integrated)) {
+        lufsValue.textContent = '—'
+        lufsCell.dataset.tone = 'idle'
+        return
+      }
+      lufsValue.textContent = integrated.toFixed(1)
+      const target = Number.isFinite(getLoudnessTarget?.()) ? getLoudnessTarget() : -14
+      const abs = Math.abs(integrated - target)
+      if (abs <= 1) lufsCell.dataset.tone = 'good'
+      else if (abs <= 3) lufsCell.dataset.tone = 'warn'
+      else lufsCell.dataset.tone = integrated > target ? 'too-loud' : 'too-quiet'
+    })
+  }
 
   const states = [createChannelState(left), createChannelState(right)]
   let stopped = false
@@ -274,6 +312,10 @@ export function installMenubarMeter({ container, audioGraph, onBezelClick = null
   return () => {
     stopped = true
     if (rafHandle) cancelAnimationFrame(rafHandle)
+    if (lufsUnsubscribe) {
+      try { lufsUnsubscribe() } catch (_e) {}
+      lufsUnsubscribe = null
+    }
     bezel.remove()
     delete container.dataset.meterInstalled
   }

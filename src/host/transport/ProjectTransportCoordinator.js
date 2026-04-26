@@ -27,6 +27,7 @@ export class ProjectTransportCoordinator {
     runtimeTransportSync = null,
     view,
     logger = null,
+    onPlaybackEndedNaturally = null,
   }) {
     this.projectStore = projectStore
     this.sessionStore = sessionStore
@@ -46,6 +47,9 @@ export class ProjectTransportCoordinator {
     this.runtimeTransportSync = runtimeTransportSync
     this.view = view
     this.logger = logger
+    // 跟"用户暂停 / 用户停止"区分开——只在工程播放跑到末尾时触发，
+    // 给 LUFS 自动达标这种"必须完整测一遍"的功能用
+    this.onPlaybackEndedNaturally = onPlaybackEndedNaturally
     this.rafId = null
     this.clockStartedAtMs = 0
     this.clockStartedSongTime = 0
@@ -313,6 +317,13 @@ export class ProjectTransportCoordinator {
           this._logTrace('scheduleFrame:project-ended', {
             clampedTime,
           })
+          // 自然结束（不是用户暂停 / 停止）——通知监听者，例如 LUFS 自动达标完成
+          try { this.onPlaybackEndedNaturally?.({ duration: snapshot.duration }) }
+          catch (error) {
+            this.logger?.warn?.('onPlaybackEndedNaturally callback threw', {
+              error: error?.message || String(error),
+            })
+          }
           return
         }
 

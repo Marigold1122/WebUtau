@@ -191,8 +191,16 @@ export function createHostApp() {
   const playbackMode = new PlaybackMode()
   const projectAudioGraph = new ProjectAudioGraph({ logger })
   const projectAudioMixPersistence = new ProjectAudioMixPersistence({ logger })
-  // 顶栏主输出电平表：从 audioGraph.masterGain 旁路 tap 出来；
-  // 用户首次点击播放后 audio context 才创建，模块自己会轮询等待
+  const editorSessionController = new EditorSessionController(taskCoordinator)
+  const focusSoloController = new FocusSoloController(sessionStore, logger)
+  const projectMixController = new ProjectMixController({
+    store,
+    audioGraph: projectAudioGraph,
+    logger,
+    persistence: projectAudioMixPersistence,
+  })
+  // 顶栏主输出电平表：必须在 projectMixController 创建之后装（subscribeLufs 闭包引用了它）；
+  // installMenubarMeter 内部会立刻调一次 subscribeLufs，早装会触发 TDZ ReferenceError 让页面卡死
   installMenubarMeter({
     container: document.getElementById('menubar-meter'),
     audioGraph: projectAudioGraph,
@@ -214,14 +222,9 @@ export function createHostApp() {
         masterModule.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
       })
     },
-  })
-  const editorSessionController = new EditorSessionController(taskCoordinator)
-  const focusSoloController = new FocusSoloController(sessionStore, logger)
-  const projectMixController = new ProjectMixController({
-    store,
-    audioGraph: projectAudioGraph,
-    logger,
-    persistence: projectAudioMixPersistence,
+    // 顶栏 LUFS 小读数 + 着色阈值——直接订阅同一个 LufsMeter，跟 master chain 模块共用数据
+    subscribeLufs: (fn) => projectMixController.subscribeLufs(fn),
+    getLoudnessTarget: () => projectMixController.getMasterChain()?.loudnessTarget,
   })
   const trackShellSessionController = new TrackShellSessionController(store, sessionStore, logger)
   const view = new ShellLayoutView({}, { logger })
@@ -264,6 +267,8 @@ export function createHostApp() {
     'track-fx-closed',
     'render-track-as-voice-opened',
     'master-chain-focus-requested',
+    'master-chain-auto-fit-start',
+    'master-chain-auto-fit-cancelled',
   ])
   let currentRevision = 0
   let savedRevision = 0
@@ -326,7 +331,63 @@ export function createHostApp() {
     runtimeTransportSync,
     view,
     logger,
+    onPlaybackEndedNaturally: () => handleAutoFitNaturalEnd(),
   })
+
+  // === LUFS 自动达标：完整播放一遍后才生效 ===
+  // 状态由 projectMixController._autoFitState 持有；这里只编排"何时进 measuring、
+  // 何时检测中断、何时 finalize"
+  let autoFitInterruptWatcher = null
+  function clearAutoFitWatcher() {
+    if (autoFitInterruptWatcher != null) {
+      clearInterval(autoFitInterruptWatcher)
+      autoFitInterruptWatcher = null
+    }
+  }
+  function handleAutoFitNaturalEnd() {
+    if (!projectMixController.isAutoFitMeasuring()) return
+    clearAutoFitWatcher()
+    const result = projectMixController.finalizeAutoFitMeasurement()
+    render('master-chain-auto-fit')
+    if (!result || !result.ok) {
+      view.setStatus('⚠ 自动达标完成测量但调整失败：可能数据太少，请重新点一次')
+      return
+    }
+    if (result.alreadyOnTarget) {
+      view.setStatus(`✓ 完整测量后已达标（差 ${result.deltaLu.toFixed(1)} LU），无需调整`)
+      return
+    }
+    const sign = result.appliedDb >= 0 ? '+' : ''
+    let msg = `✓ 完整测量后已自动调整 makeup gain ${sign}${result.appliedDb.toFixed(1)} dB → 目标 ${result.chain.loudnessTarget} LUFS`
+    if (result.hitLimit) msg += '（已达调节上限，建议再点一次或手动调整 EQ / 压缩）'
+    else if (result.largeAdjustment) msg += '（调整量较大，建议再听一遍音质）'
+    else msg += '——可点保存导出'
+    view.setStatus(msg)
+  }
+  function cancelAutoFitDueToInterrupt() {
+    if (!projectMixController.isAutoFitMeasuring()) return
+    projectMixController.cancelAutoFitMeasurement()
+    clearAutoFitWatcher()
+    render('master-chain-auto-fit-cancelled')
+    view.setStatus('⚠ 自动达标已取消——必须完整播放一首歌才能自动达标')
+  }
+  // 中断检测：每 250ms 检查 transport 状态。若 measuring 期间 playing 突然变 false 而
+  // 不是自然结束（自然结束会先调 onPlaybackEndedNaturally 把状态切到 idle），就算中断
+  function startAutoFitWatcher() {
+    clearAutoFitWatcher()
+    autoFitInterruptWatcher = setInterval(() => {
+      if (!projectMixController.isAutoFitMeasuring()) {
+        clearAutoFitWatcher()
+        return
+      }
+      const snap = transportCoordinator.getSnapshot()
+      // 自然结束的路径会在 onPlaybackEndedNaturally 里把 _autoFitState 翻成 idle，
+      // 所以走到这里仍 measuring 而 playing=false 必然是用户暂停 / 停止 / 拖动
+      if (!snap.playing) {
+        cancelAutoFitDueToInterrupt()
+      }
+    }, 250)
+  }
   const phraseMissHandler = createPhraseMissHandler({ playbackMode, transportCoordinator, runtimeTransportSync, taskRemoteGateway, view, logger })
   voiceConversionController = new TrackVoiceConversionController({
     store,
@@ -1735,6 +1796,58 @@ export function createHostApp() {
       const preset = projectMixController.getMasterChainPresets().find((p) => p.id === presetId)
       if (preset) view.setStatus(`已应用预设 / Preset applied: ${preset.name}`)
     },
+    onMasterChainLoudnessTargetChanged: (target) => {
+      projectMixController.setMasterChainLoudnessTarget(target, { commit: true })
+      render('master-loudness-target-changed')
+      view.setStatus(`响度目标 / Target: ${target} LUFS`)
+    },
+    onLufsResetRequested: () => {
+      projectMixController.resetLufsIntegrated()
+      view.setStatus('已重置积分响度 / Integrated LUFS reset')
+    },
+    onLufsAutoFitRequested: async () => {
+      // 已经在测了——再点视为"取消重来"，避免按钮卡住
+      if (projectMixController.isAutoFitMeasuring()) {
+        cancelAutoFitDueToInterrupt()
+        return
+      }
+      const project = store.getProject()
+      if (!project) {
+        view.setStatus('请先导入工程再使用自动达标')
+        return
+      }
+      // 进 measuring → 重置 LUFS → 拖到 0 → 起播。要等 transport 启动完成再开 watcher，
+      // 否则 watcher 第一帧就看到 playing=false（还没 toggle）会立刻误判为中断
+      projectMixController.beginAutoFitMeasurement()
+      render('master-chain-auto-fit-start')
+      view.setStatus('🔴 自动达标测量中——请勿暂停 / 拖动，完整播放后将自动调整')
+      try {
+        await transportCoordinator.seekToTime(0)
+        // 此时 playing 仍是 false。toggle 会启动它（如果之前是暂停状态）
+        const snap = transportCoordinator.getSnapshot()
+        if (!snap.playing) {
+          await transportCoordinator.toggleProjectPlayback()
+        }
+      } catch (error) {
+        logger.warn?.('Auto-fit seek/play failed', { error: error?.message || String(error) })
+        cancelAutoFitDueToInterrupt()
+        return
+      }
+      // 给 toggle 发起的异步播放准备一点时间，再开启中断监测
+      setTimeout(() => {
+        if (!projectMixController.isAutoFitMeasuring()) return
+        const snap = transportCoordinator.getSnapshot()
+        if (!snap.playing) {
+          // 准备过程失败 / 用户手太快又点了暂停——直接取消
+          cancelAutoFitDueToInterrupt()
+          return
+        }
+        startAutoFitWatcher()
+      }, 800)
+    },
+    isAutoFitMeasuring: () => projectMixController.isAutoFitMeasuring(),
+    getLastAutoFitResult: () => projectMixController.getLastAutoFitResult(),
+    subscribeLufs: (fn) => projectMixController.subscribeLufs(fn),
     getMasterChainPresets: () => projectMixController.getMasterChainPresets(),
     onTrackSelected: handleTrackSelected,
     onTrackContextCreate: handleTrackContextCreate,

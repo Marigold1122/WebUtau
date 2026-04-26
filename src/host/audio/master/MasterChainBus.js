@@ -113,7 +113,9 @@ export class MasterChainBus {
       } catch (_error) { /* 个别浏览器对 setTargetAtTime 时间常数敏感，忽略 */ }
     })
 
-    // Compressor：disabled = 高阈值 + ratio 1（不触发压缩）+ makeup gain = 1
+    // Compressor：disabled = 高阈值 + ratio 1（透明化），但 makeupGain 始终生效——
+    // makeupGain 既是"补偿压缩损失的能量"也是"整链 trim"，自动达标按钮调的就是它。
+    // 如果在 comp 禁用时把 makeupGain 锁死成 1，自动达标对那部分用户就废了
     const comp = config.compressor
     if (comp.enabled) {
       this._setAudioParam(this.compressor.threshold, comp.threshold, now)
@@ -121,12 +123,11 @@ export class MasterChainBus {
       this._setAudioParam(this.compressor.attack, comp.attack, now)
       this._setAudioParam(this.compressor.release, comp.release, now)
       this._setAudioParam(this.compressor.knee, comp.knee, now)
-      this._setAudioParam(this.makeupGain.gain, dbToLinear(comp.makeupGain), now, 0.01)
     } else {
       this._setAudioParam(this.compressor.threshold, 0, now)
       this._setAudioParam(this.compressor.ratio, 1, now)
-      this._setAudioParam(this.makeupGain.gain, 1, now, 0.01)
     }
+    this._setAudioParam(this.makeupGain.gain, dbToLinear(comp.makeupGain), now, 0.01)
 
     // Limiter：disabled = 高阈值 + ratio 1
     const lim = config.limiter

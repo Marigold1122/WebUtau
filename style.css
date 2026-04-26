@@ -462,6 +462,41 @@ body {
   to   { box-shadow: 0 0 14px rgba(255, 59, 48, 0.95), inset 0 1px 0 rgba(255, 255, 255, 0.45); }
 }
 
+/* 顶栏 LUFS 小读数：跟 CLIP 灯并排，仅显示 integrated 值；
+   颜色按目标响度 ±1/±3 LU 着色——good 绿、warn 橙、too-loud 红、too-quiet 蓝 */
+.menubar-meter-lufs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: center;
+  height: 18px;
+  padding: 0 6px 0 5px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+  color: rgba(255, 255, 255, 0.62);
+  font-family: 'Oswald', 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+  transition: color 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+.menubar-meter-lufs-label {
+  color: rgba(255, 255, 255, 0.42);
+  font-weight: 700;
+  letter-spacing: 0.18em;
+}
+.menubar-meter-lufs-value {
+  font-variant-numeric: tabular-nums;
+  min-width: 30px;
+  text-align: right;
+}
+.menubar-meter-lufs[data-tone='good']      { color: #5BD68A; border-color: rgba(91, 214, 138, 0.35); }
+.menubar-meter-lufs[data-tone='warn']      { color: #F0AD4E; border-color: rgba(240, 173, 78, 0.35); }
+.menubar-meter-lufs[data-tone='too-loud']  { color: #FF6B6B; border-color: rgba(255, 107, 107, 0.35); }
+.menubar-meter-lufs[data-tone='too-quiet'] { color: #6BB6FF; border-color: rgba(107, 182, 255, 0.35); }
+
 .menubar-center {
   position: absolute;
   inset: 0;
@@ -2159,6 +2194,503 @@ body {
   align-items: flex-start;
   padding: 12px 12px 14px;
 }
+
+/* 主控母带链 LUFS 仪表面板：插在 footer 之后、note 之前，单独一段。
+   M / S / I 三档读数 + 目标下拉 + 偏差条 + 重置按钮。
+   颜色 token：good 绿（达标 ±1）、warn 橙（±3）、too-loud 红、too-quiet 蓝 */
+.fx-lufs-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px 12px;
+  margin: 0 10px 8px;
+  border: 1px solid #C7C0B3;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #F2EFE8 0%, #E8E4D9 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+.fx-lufs-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.fx-lufs-head-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.fx-lufs-heading {
+  font-family: 'Oswald', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  color: #4A4640;
+  flex: 0 0 auto;
+}
+.fx-lufs-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid #B8B2A7;
+  border-radius: 50%;
+  background: #FFF;
+  color: #6B665C;
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+.fx-lufs-help:hover {
+  background: #3B8B88;
+  color: #FFF;
+  border-color: #2E6E6C;
+}
+.fx-lufs-target {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  font-size: 10px;
+  color: #5A554C;
+}
+.fx-lufs-target-label {
+  font-weight: 600;
+  letter-spacing: 0.1em;
+}
+.fx-lufs-target-select {
+  font-size: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  padding: 2px 4px;
+  border: 1px solid #B8B2A7;
+  border-radius: 3px;
+  background: #FFF;
+  color: #2B2825;
+  min-width: 180px;
+  cursor: pointer;
+}
+.fx-lufs-reset {
+  font-size: 10px;
+  font-family: 'Oswald', sans-serif;
+  letter-spacing: 0.1em;
+  padding: 3px 9px;
+  border: 1px solid #B8B2A7;
+  border-radius: 3px;
+  background: #ECE8DE;
+  color: #4A4640;
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+.fx-lufs-reset:hover {
+  background: #DCD5C4;
+  border-color: #8F8A80;
+}
+
+.fx-lufs-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.fx-lufs-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 8px 7px;
+  border: 1px solid #B8B2A7;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.55);
+  transition: border-color 160ms ease, background 160ms ease;
+}
+.fx-lufs-cell-label {
+  font-family: 'Oswald', sans-serif;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: #6B665C;
+}
+.fx-lufs-cell-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  color: #2B2825;
+  line-height: 1;
+}
+.fx-lufs-cell[data-tone='good']      { border-color: rgba(60, 160, 90, 0.6);  background: linear-gradient(180deg, rgba(91, 214, 138, 0.18), rgba(91, 214, 138, 0.06)); }
+.fx-lufs-cell[data-tone='good']      .fx-lufs-cell-value { color: #2E7D44; }
+.fx-lufs-cell[data-tone='warn']      { border-color: rgba(200, 136, 32, 0.55); background: linear-gradient(180deg, rgba(240, 173, 78, 0.18), rgba(240, 173, 78, 0.06)); }
+.fx-lufs-cell[data-tone='warn']      .fx-lufs-cell-value { color: #B36B14; }
+.fx-lufs-cell[data-tone='too-loud']  { border-color: rgba(190, 50, 50, 0.55);  background: linear-gradient(180deg, rgba(255, 107, 107, 0.20), rgba(255, 107, 107, 0.06)); }
+.fx-lufs-cell[data-tone='too-loud']  .fx-lufs-cell-value { color: #B23434; }
+.fx-lufs-cell[data-tone='too-quiet'] { border-color: rgba(60, 110, 180, 0.5);  background: linear-gradient(180deg, rgba(107, 182, 255, 0.18), rgba(107, 182, 255, 0.06)); }
+.fx-lufs-cell[data-tone='too-quiet'] .fx-lufs-cell-value { color: #2C5C9A; }
+.fx-lufs-cell[data-tone='idle']      .fx-lufs-cell-value { color: #B0ABA0; }
+
+/* 偏差条：中心 50% 是"达标"，左右各 50% 表示 -10..+10 LU 偏差 */
+.fx-lufs-delta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fx-lufs-delta-label {
+  font-family: 'Oswald', sans-serif;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: #6B665C;
+  flex: 0 0 auto;
+}
+.fx-lufs-delta-track {
+  flex: 1;
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: #DCD5C4;
+  border: 1px solid #B8B2A7;
+  overflow: hidden;
+}
+.fx-lufs-delta-track::before {
+  /* 中点（达标线）刻线 */
+  content: '';
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  left: 50%;
+  width: 1px;
+  background: #4A4640;
+  opacity: 0.45;
+}
+.fx-lufs-delta-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 0;
+  background: linear-gradient(90deg, #5BD68A 0%, #F0AD4E 70%, #FF6B6B 100%);
+  transition: width 120ms ease, transform 120ms ease;
+  transform-origin: left center;
+}
+.fx-lufs-delta-text {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  min-width: 60px;
+  text-align: right;
+  color: #2B2825;
+  flex: 0 0 auto;
+}
+.fx-lufs-delta-text[data-tone='good']      { color: #2E7D44; }
+.fx-lufs-delta-text[data-tone='warn']      { color: #B36B14; }
+.fx-lufs-delta-text[data-tone='too-loud']  { color: #B23434; }
+.fx-lufs-delta-text[data-tone='too-quiet'] { color: #2C5C9A; }
+.fx-lufs-delta-text[data-tone='idle']      { color: #B0ABA0; }
+
+/* 白话状态行——傻瓜用户的主信息渠道；按 tone 着背景 + 边框 */
+.fx-lufs-status {
+  padding: 7px 10px;
+  border: 1px solid #B8B2A7;
+  border-radius: 3px;
+  background: #FFF;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #2B2825;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+.fx-lufs-status[data-tone='good'] {
+  background: linear-gradient(180deg, rgba(91, 214, 138, 0.20), rgba(91, 214, 138, 0.06));
+  border-color: rgba(60, 160, 90, 0.55);
+  color: #1F5E32;
+  font-weight: 600;
+}
+.fx-lufs-status[data-tone='warn'] {
+  background: linear-gradient(180deg, rgba(240, 173, 78, 0.18), rgba(240, 173, 78, 0.05));
+  border-color: rgba(200, 136, 32, 0.55);
+  color: #8C5810;
+}
+.fx-lufs-status[data-tone='too-loud'] {
+  background: linear-gradient(180deg, rgba(255, 107, 107, 0.18), rgba(255, 107, 107, 0.05));
+  border-color: rgba(190, 50, 50, 0.55);
+  color: #8E2828;
+}
+.fx-lufs-status[data-tone='too-quiet'] {
+  background: linear-gradient(180deg, rgba(107, 182, 255, 0.16), rgba(107, 182, 255, 0.04));
+  border-color: rgba(60, 110, 180, 0.5);
+  color: #234A7A;
+}
+.fx-lufs-status[data-tone='idle'] {
+  background: #F4F2EC;
+  border-color: #C7C0B3;
+  color: #6B665C;
+  font-style: italic;
+}
+/* 测量中：醒目橙红 + 慢节奏脉动，告诉用户"正在干活别碰" */
+.fx-lufs-status[data-tone='measuring'] {
+  background: linear-gradient(180deg, rgba(220, 80, 60, 0.16), rgba(220, 80, 60, 0.04));
+  border-color: rgba(180, 50, 40, 0.55);
+  color: #8E2828;
+  font-weight: 600;
+  animation: fx-lufs-status-pulse 1.6s ease-in-out infinite;
+}
+@keyframes fx-lufs-status-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(180, 50, 40, 0); }
+  50%      { box-shadow: 0 0 0 3px rgba(180, 50, 40, 0.18); }
+}
+
+/* 自动达标按钮 cancel 模式：变成深红，突出"取消"语义 */
+.fx-lufs-autofit[data-mode='cancel'] {
+  background: linear-gradient(180deg, #C24747 0%, #9C2F2F 100%);
+  border-color: #7A1F1F;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.25) inset, 0 2px 4px rgba(140, 30, 30, 0.35);
+}
+.fx-lufs-autofit[data-mode='cancel']:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+/* 行动按钮组：左侧成功横幅占满空白 + 右侧两个按钮 */
+.fx-lufs-actions {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+.fx-lufs-actions .fx-lufs-autofit,
+.fx-lufs-actions .fx-lufs-reset {
+  flex: 0 0 auto;
+  align-self: center;
+}
+
+/* 成功横幅：autofit 完成后在按钮左侧显示。比 statusRow 更醒目——
+   大字 + tone 着色 + 左侧 ✓ 图标徽章。data-visible='0' 时占 0 宽（不挡按钮居中） */
+.fx-lufs-success-banner {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.35;
+  min-width: 0;
+  transition: background 200ms ease, border-color 200ms ease, color 200ms ease;
+}
+.fx-lufs-success-banner[data-visible='0'] {
+  flex: 1;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.fx-lufs-success-banner[data-visible='0']::before { content: ''; }
+.fx-lufs-success-banner-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #2E7D44;
+  color: #FFF;
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.3) inset, 0 2px 4px rgba(46, 125, 68, 0.3);
+}
+.fx-lufs-success-banner-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.fx-lufs-success-banner-main strong {
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fx-lufs-success-banner-sub {
+  font-size: 10.5px;
+  opacity: 0.85;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fx-lufs-success-banner[data-tone='good'] {
+  background: linear-gradient(180deg, rgba(91, 214, 138, 0.28), rgba(91, 214, 138, 0.10));
+  border-color: rgba(60, 160, 90, 0.65);
+  color: #1F5E32;
+}
+.fx-lufs-success-banner[data-tone='warn'] {
+  background: linear-gradient(180deg, rgba(240, 173, 78, 0.28), rgba(240, 173, 78, 0.08));
+  border-color: rgba(200, 136, 32, 0.6);
+  color: #7A4F0F;
+}
+.fx-lufs-success-banner[data-tone='warn'] .fx-lufs-success-banner-icon {
+  background: #C88820;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.3) inset, 0 2px 4px rgba(200, 136, 32, 0.3);
+}
+.fx-lufs-success-banner[data-tone='too-loud'] {
+  background: linear-gradient(180deg, rgba(255, 107, 107, 0.28), rgba(255, 107, 107, 0.08));
+  border-color: rgba(190, 50, 50, 0.6);
+  color: #7A1F1F;
+}
+.fx-lufs-success-banner[data-tone='too-loud'] .fx-lufs-success-banner-icon {
+  background: #B23434;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.3) inset, 0 2px 4px rgba(190, 50, 50, 0.3);
+}
+.fx-lufs-success-banner[data-tone='too-quiet'] {
+  background: linear-gradient(180deg, rgba(107, 182, 255, 0.24), rgba(107, 182, 255, 0.06));
+  border-color: rgba(60, 110, 180, 0.55);
+  color: #1F4A82;
+}
+.fx-lufs-success-banner[data-tone='too-quiet'] .fx-lufs-success-banner-icon {
+  background: #2C5C9A;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.3) inset, 0 2px 4px rgba(44, 92, 154, 0.3);
+}
+
+/* 入场动画：autofit 完成时横幅一次性"亮一下"，强化"刚刚成功"的视觉反馈 */
+.fx-lufs-success-banner[data-visible='1'] {
+  animation: fx-lufs-success-banner-in 360ms cubic-bezier(0.18, 0.74, 0.24, 1.04) both;
+}
+@keyframes fx-lufs-success-banner-in {
+  0%   { transform: scale(0.96); opacity: 0; }
+  60%  { transform: scale(1.02); opacity: 1; }
+  100% { transform: scale(1);     opacity: 1; }
+}
+.fx-lufs-autofit {
+  font-size: 11px;
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 5px 14px;
+  border: 1px solid #2E6E6C;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #4FA7A4 0%, #3B8B88 100%);
+  color: #FFF;
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: filter 140ms ease, transform 140ms ease, box-shadow 140ms ease;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.3) inset, 0 2px 4px rgba(46, 110, 108, 0.3);
+}
+.fx-lufs-autofit:hover:not(:disabled) {
+  filter: brightness(1.08);
+  transform: translateY(-0.5px);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.35) inset, 0 3px 8px rgba(46, 110, 108, 0.45);
+}
+.fx-lufs-autofit:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+.fx-lufs-autofit:disabled {
+  cursor: not-allowed;
+  background: #C7C0B3;
+  border-color: #A7A39A;
+  color: rgba(255, 255, 255, 0.7);
+  box-shadow: none;
+}
+
+/* 帮助浮窗——固定定位，max-width 限制；在 body 末尾，不受 dock 滚动影响 */
+.fx-lufs-help-popup {
+  position: fixed;
+  z-index: 1600;
+  width: 480px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  padding: 16px 18px 14px;
+  background: #FFF;
+  border: 1px solid #8F8A80;
+  border-radius: 6px;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #2B2825;
+  animation: fx-lufs-help-popup-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes fx-lufs-help-popup-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.fx-lufs-help-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1F1D1A;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #ECE8DE;
+}
+.fx-lufs-help-body p {
+  margin: 0 0 9px;
+}
+.fx-lufs-help-body strong {
+  color: #1F5E5C;
+  font-weight: 600;
+}
+.fx-lufs-help-body em {
+  color: #B23434;
+  font-style: normal;
+  font-weight: 600;
+}
+.fx-lufs-help-section {
+  font-weight: 700;
+  color: #4A4640;
+  margin: 12px 0 6px;
+  letter-spacing: 0.02em;
+  font-size: 12.5px;
+}
+.fx-lufs-help-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 6px;
+  font-size: 11.5px;
+}
+.fx-lufs-help-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid #F2EFE8;
+}
+.fx-lufs-help-table td:first-child {
+  color: #4A4640;
+  width: 60%;
+}
+.fx-lufs-help-table td:last-child {
+  font-family: 'JetBrains Mono', monospace;
+  color: #1F5E5C;
+  font-weight: 600;
+  text-align: right;
+}
+.fx-lufs-help-list {
+  margin: 0 0 6px;
+  padding-left: 22px;
+}
+.fx-lufs-help-list li {
+  margin-bottom: 4px;
+}
+.fx-lufs-help-close {
+  display: block;
+  margin: 12px auto 0;
+  padding: 5px 16px;
+  background: #3B8B88;
+  color: #FFF;
+  border: 1px solid #2E6E6C;
+  border-radius: 3px;
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 140ms ease;
+}
+.fx-lufs-help-close:hover { filter: brightness(1.08); }
 
 /* 主控母带链模块：点击顶栏电平表会触发短暂高亮脉动，告诉用户"就是这块"。
    1.4s 后自动撤掉，不残留视觉噪音 */
