@@ -206,23 +206,98 @@ function createTrackVolumeControl(track, trackColor, handlers) {
     event.stopPropagation()
   })
 
+  // 与时间轴 clip 拖动一致的阈值：未超过则视作单击。
+  const VOLUME_DRAG_THRESHOLD = 3
+
+  const beginVolumeEdit = () => {
+    if (control.classList.contains('editing')) return
+    control.classList.add('editing')
+
+    const input = document.createElement('input')
+    input.type = 'text'
+    input.inputMode = 'numeric'
+    input.className = 'th-volume-input'
+    input.value = String(formatTrackVolumePercent(currentVolume))
+    input.setAttribute('aria-label', `${track.name} 音量百分比`)
+    input.maxLength = 5
+
+    valueNode.style.display = 'none'
+    readout.appendChild(input)
+    // 等到当前事件循环结束后再 focus，避开同帧 pointerup 引发的 blur 抖动。
+    requestAnimationFrame(() => {
+      input.focus()
+      input.select()
+    })
+
+    let finished = false
+    const finish = (cancel) => {
+      if (finished) return
+      finished = true
+      control.classList.remove('editing')
+      if (input.parentNode) input.parentNode.removeChild(input)
+      valueNode.style.display = ''
+      if (cancel) return
+      const numeric = Number.parseFloat(input.value)
+      if (!Number.isFinite(numeric)) return
+      commitVolume(clamp(numeric, 0, 100) / 100, { commit: true })
+    }
+
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault()
+        event.stopPropagation()
+        finish(false)
+      } else if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+        finish(true)
+      } else {
+        // 阻断全局快捷键（如空格触发播放）。
+        event.stopPropagation()
+      }
+    })
+    input.addEventListener('blur', () => finish(false))
+    input.addEventListener('pointerdown', (event) => event.stopPropagation())
+    input.addEventListener('click', (event) => event.stopPropagation())
+    input.addEventListener('dblclick', (event) => event.stopPropagation())
+  }
+
   const handlePointerDown = (event) => {
     if (event.button !== 0) return
+    // 编辑中再次按下时（点 input 自身已 stopPropagation，所以这里多半是按到 shell 别处），
+    // 直接交给 input 自己处理 blur，跳过常规拖动初始化。
+    if (control.classList.contains('editing')) return
     event.preventDefault()
     event.stopPropagation()
-    control.classList.add('dragging')
-    knob.focus({ preventScroll: true })
-    commitVolume(resolvePointerVolume(event.clientX), { commit: false })
+
+    const startX = event.clientX
+    let dragging = false
+
+    const enterDrag = (clientX) => {
+      dragging = true
+      control.classList.add('dragging')
+      knob.focus({ preventScroll: true })
+      commitVolume(resolvePointerVolume(clientX), { commit: false })
+    }
 
     const handlePointerMove = (moveEvent) => {
+      if (!dragging) {
+        if (Math.abs(moveEvent.clientX - startX) < VOLUME_DRAG_THRESHOLD) return
+        enterDrag(moveEvent.clientX)
+        return
+      }
       commitVolume(resolvePointerVolume(moveEvent.clientX), { commit: false })
     }
 
     const handlePointerUp = () => {
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
-      control.classList.remove('dragging')
-      handlers.onTrackVolumeChanged?.(track.id, currentVolume, { commit: true })
+      if (dragging) {
+        control.classList.remove('dragging')
+        handlers.onTrackVolumeChanged?.(track.id, currentVolume, { commit: true })
+        return
+      }
+      beginVolumeEdit()
     }
 
     window.addEventListener('pointermove', handlePointerMove)

@@ -1259,9 +1259,35 @@ body {
 
 .th-volume:hover .th-volume-readout,
 .th-volume:focus-within .th-volume-readout,
-.th-volume.dragging .th-volume-readout {
+.th-volume.dragging .th-volume-readout,
+.th-volume.editing .th-volume-readout {
   opacity: 1;
   transform: translateY(0);
+}
+
+.th-volume.editing .th-volume-readout {
+  pointer-events: auto;
+}
+
+.th-volume-input {
+  width: 3ch;
+  min-width: 2ch;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-main);
+  text-align: center;
+  outline: none;
+}
+
+.th-volume-input::-webkit-outer-spin-button,
+.th-volume-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .track-item.muted .th-volume-fill {
