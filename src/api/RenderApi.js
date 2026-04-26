@@ -61,6 +61,14 @@ const renderApi = {
     if (!response.ok) throw new Error(`getPitch failed: ${response.status}`)
     return response.json()
   },
+  async getPhonemeTimings(jobId) {
+    const response = await fetch(buildRenderApiUrl(`/api/jobs/${jobId}/phoneme-timings`))
+    const data = await response.json().catch(() => null)
+    if (!response.ok) {
+      throw new Error(data?.error || `getPhonemeTimings failed: ${response.status}`)
+    }
+    return data
+  },
   async applyPitchDeviation(jobId, deviation) {
     const response = await fetch(buildRenderApiUrl(`/api/jobs/${jobId}/pitch`), {
       method: 'POST',

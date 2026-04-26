@@ -118,6 +118,12 @@ public class SynthesisService : IHostedService {
         return job;
     }
 
+    public PhonemeTimingSnapshotResponse GetPhonemeTimings(SynthesisJob job) {
+        lock (job.RenderLock) {
+            return PhonemeTimingAdapter.ReadSnapshot(job);
+        }
+    }
+
     /// <summary>
     /// 客户端心跳：更新 LastHeartbeatAt 告诉服务端"我还在"。
     /// 找不到 job 返回 false（前端据此停止后续心跳）。

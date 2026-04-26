@@ -1,0 +1,39 @@
+namespace DiffSingerApi.Models;
+
+public class PhonemeTimingSnapshotResponse {
+    public string JobId { get; set; } = string.Empty;
+    public int MidiPpq { get; set; } = 480;
+    public string Revision { get; set; } = string.Empty;
+    public List<PhonemeTimingItemDto> Items { get; set; } = new();
+}
+
+public class PhonemeTimingItemDto {
+    public int PhraseIndex { get; set; }
+    public int PartIndex { get; set; }
+    public string NoteKey { get; set; } = string.Empty;
+    public int PhonemeIndex { get; set; }
+    public string Label { get; set; } = string.Empty;
+    public string RawLabel { get; set; } = string.Empty;
+    public int PositionTick { get; set; }
+    public int EndTick { get; set; }
+    public double PositionMs { get; set; }
+    public double EndMs { get; set; }
+    public double PreutterMs { get; set; }
+    public double OverlapMs { get; set; }
+    public double AutoPreutterMs { get; set; }
+    public double AutoOverlapMs { get; set; }
+    public int? OffsetTick { get; set; }
+    public double? PreutterDeltaMs { get; set; }
+    public double? OverlapDeltaMs { get; set; }
+    public bool HasOffsetOverride { get; set; }
+    public bool HasPreutterOverride { get; set; }
+    public bool HasOverlapOverride { get; set; }
+    public List<PhonemeTimingEnvelopePointDto> EnvelopePoints { get; set; } = new();
+    public string? Error { get; set; }
+    public string? HiddenReason { get; set; }
+}
+
+public class PhonemeTimingEnvelopePointDto {
+    public double XMs { get; set; }
+    public double YPercent { get; set; }
+}

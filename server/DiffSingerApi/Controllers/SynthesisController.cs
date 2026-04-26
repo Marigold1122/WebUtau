@@ -283,6 +283,22 @@ public class SynthesisController : ControllerBase {
         return Ok(BuildPitchResponse(job));
     }
 
+    [HttpGet("jobs/{id}/phoneme-timings")]
+    public IActionResult GetPhonemeTimings(string id) {
+        var job = _synthesis.GetJob(id);
+        if (job == null)
+            return NotFound(new { error = "job_not_found" });
+
+        try {
+            return Ok(_synthesis.GetPhonemeTimings(job));
+        } catch (PhonemeTimingReadException ex) {
+            return StatusCode(ex.StatusCode, new {
+                error = ex.Code,
+                message = ex.Message,
+            });
+        }
+    }
+
     /// <summary>
     /// 接收前端的音高偏移编辑，应用到 PITD 曲线并重渲染受影响的短语
     /// </summary>
