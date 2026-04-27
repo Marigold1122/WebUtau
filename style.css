@@ -89,6 +89,7 @@
   justify-content: center;
   width: 32px;
   height: 28px;
+  margin-left: 12px; /* 跟左边的"跟随工具栏"留间隙——之前贴在一起不专业 */
   padding: 0;
   border: 1px solid var(--border-color);
   border-radius: 4px;
@@ -5399,6 +5400,17 @@ body.inline-popover-active { }
   border-color: var(--border-color);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 1px 1px rgba(0, 0, 0, 0.3);
 }
+/* active 状态——specificity 必须高于上一条 [data-theme='dark'] .instrument-editor-tool
+   通用规则，否则两条同 0,2,0 specificity，按 source order 后者赢，active 永远不显 */
+[data-theme='dark'] .instrument-editor-tool.active {
+  background: linear-gradient(180deg, #4FB1AE 0%, #3A8E8B 100%);
+  color: #FFF;
+  border-color: rgba(0, 0, 0, 0.45);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 3px rgba(79, 177, 174, 0.4);
+}
+[data-theme='dark'] .instrument-editor-tool.active .instrument-editor-tool-key {
+  color: rgba(255, 255, 255, 0.88);
+}
 [data-theme='dark'] .instrument-editor-tool .instrument-editor-tool-key {
   color: var(--text-faint);
 }
@@ -5480,10 +5492,13 @@ body.inline-popover-active { }
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 [data-theme='dark'] .editor-runtime-tools .piano-roll-editor-btn:disabled {
-  background: var(--bg-1);
-  color: var(--text-faint);
+  /* 关键修法：用 opacity 0.42 让禁用按钮"褪去"，跟可点按钮拉开明显视觉差。
+     之前用单纯改底色 / 文字色的方法，俩状态色阶相近导致用户分不清能不能点 */
+  background: linear-gradient(180deg, var(--bg-3) 0%, var(--bg-2) 100%);
+  color: var(--text-muted);
   border-color: var(--border-color);
-  opacity: 1; /* 原版用 opacity:0.5，暗模式靠颜色对比就够了，opacity 让字几乎看不清 */
+  opacity: 0.42;
+  cursor: default;
 }
 [data-theme='dark'] .editor-runtime-tools .piano-roll-editor-property-group {
   background: var(--bg-2);

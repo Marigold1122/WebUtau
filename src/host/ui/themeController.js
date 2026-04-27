@@ -94,22 +94,25 @@ export function initThemeController({ buttonId = 'btn-theme-toggle' } = {}) {
   if (!button) return { getTheme: () => document.documentElement.dataset.theme || 'light' }
 
   // 按钮反映当前 effective 主题；点击切到对面，并标记为"显式偏好"
-  const refreshButton = () => {
-    const current = document.documentElement.dataset.theme || 'light'
-    button.dataset.theme = current
-    button.setAttribute('aria-pressed', String(current === 'dark'))
-    button.title = current === 'dark' ? '切换到日间模式' : '切换到夜间模式'
+  const setButtonTheme = (theme) => {
+    const safe = theme === 'dark' ? 'dark' : 'light'
+    button.dataset.theme = safe
+    button.setAttribute('aria-pressed', String(safe === 'dark'))
+    button.title = safe === 'dark' ? '切换到日间模式' : '切换到夜间模式'
   }
-  refreshButton()
+  setButtonTheme(document.documentElement.dataset.theme || 'light')
 
   button.addEventListener('click', (event) => {
     event.preventDefault()
     event.stopPropagation()
     const current = document.documentElement.dataset.theme || 'light'
     const next = current === 'dark' ? 'light' : 'dark'
+    // 注意：applyTheme 内部走 startViewTransition，commit 是异步回调。
+    // 这里不能再调 refreshButton——那会读到 dataset.theme 的旧值，
+    // 导致按钮图标"反向"（暗模式显示太阳）。直接按 next 同步给按钮设新状态
     applyTheme(next, { animated: true })
     safeWriteStorage(next)
-    refreshButton()
+    setButtonTheme(next)
   })
 
   // 用户没有显式偏好时，每分钟检查一次时间——跨过 6:00 / 18:00 自动切。
@@ -127,7 +130,7 @@ export function initThemeController({ buttonId = 'btn-theme-toggle' } = {}) {
       const current = document.documentElement.dataset.theme || 'light'
       if (want !== current) {
         applyTheme(want, { animated: true })
-        refreshButton()
+        setButtonTheme(want)
       }
     }, 60 * 1000)
   }
@@ -135,9 +138,10 @@ export function initThemeController({ buttonId = 'btn-theme-toggle' } = {}) {
   return {
     getTheme: () => document.documentElement.dataset.theme || 'light',
     setTheme: (theme) => {
-      applyTheme(theme, { animated: true })
-      safeWriteStorage(theme === 'dark' ? 'dark' : 'light')
-      refreshButton()
+      const safe = theme === 'dark' ? 'dark' : 'light'
+      applyTheme(safe, { animated: true })
+      safeWriteStorage(safe)
+      setButtonTheme(safe)
     },
   }
 }
