@@ -65,6 +65,12 @@ export class QuickLyricPanel {
 
   close() {
     this._uninstallDrag()
+    // 取消正在飞的 AI 请求——避免回包后写到已经摘掉的 DOM 上
+    if (this._aiAbortController) {
+      try { this._aiAbortController.abort() } catch (_e) {}
+      this._aiAbortController = null
+    }
+    this._aiBusy = false
     if (this._el) {
       this._el.remove()
       this._el = null
@@ -73,6 +79,14 @@ export class QuickLyricPanel {
     this._snapshot = null
     this._parsedLyrics = null
     this._onSave = null
+    // 清理 AI 区 refs——不让下一个 await 回调写到悬空 DOM
+    this._aiSection = null
+    this._aiToggle = null
+    this._aiQuotaEl = null
+    this._aiThemeInput = null
+    this._aiStyleInput = null
+    this._aiBtnGenerate = null
+    this._aiBtnConfig = null
   }
 
   isOpen() {
@@ -230,10 +244,14 @@ export class QuickLyricPanel {
     return wrap
   }
 
-  _refreshAIQuota() {
+  async _refreshAIQuota() {
     if (!this._aiQuotaEl) return
-    if (hasUserApiKey()) {
-      this._aiQuotaEl.textContent = '· 已用自己的 API key 不限次数'
+    // 异步：检查用户是否有自带 key（要解密 localStorage）
+    const userKeyPresent = await hasUserApiKey().catch(() => false)
+    // 解密期间面板可能已经关闭——避免写到悬空 ref
+    if (!this._aiQuotaEl) return
+    if (userKeyPresent) {
+      this._aiQuotaEl.textContent = '· 已用自己的 API key（直连厂商不经过我们服务器）'
       this._aiQuotaEl.classList.add('is-unlimited')
       return
     }
@@ -276,6 +294,9 @@ export class QuickLyricPanel {
       signal: this._aiAbortController.signal,
     })
 
+    // await 期间用户可能已关掉面板，DOM ref 都是悬空的——直接退
+    if (!this._el || !this._textarea) return
+
     this._aiBusy = false
     this._aiAbortController = null
     if (this._aiBtnGenerate) {
@@ -300,9 +321,21 @@ export class QuickLyricPanel {
 
   _formatAIError(result) {
     const reason = result?.reason
+    // ── 平台路径错误（用户用免费额度时） ──
     if (reason === 'quota-exceeded') return 'AI 写词：今日次数已用完，可填自己的 API key 不限次数'
-    if (reason === 'invalid-key') return 'AI 写词：API key 无效，请检查 ⚙ 配置'
+    if (reason === 'invalid-key') return 'AI 写词：平台 API key 无效（管理员问题）'
     if (reason === 'network-error') return `AI 写词：网络错误（${result.error || '请稍后重试'}）`
+    // ── 直连厂商路径错误（用户用自带 key 时） ──
+    if (reason === 'cors-blocked') {
+      return result.message || 'AI 写词：该厂商不允许浏览器直连，建议换 DeepSeek / 通义 / GLM 或用桌面版'
+    }
+    if (reason === 'invalid-user-key') return 'AI 写词：你的 API key 无效（401），点 ⚙ 重新配置'
+    if (reason === 'user-key-forbidden') return 'AI 写词：你的 API key 被厂商拒绝（403）——可能余额不足或权限受限'
+    if (reason === 'user-key-rate-limited') return 'AI 写词：你的 key 被厂商限流（429），稍后再试'
+    if (reason === 'missing-user-key') return 'AI 写词：用户配置缺 API key，点 ⚙ 重新配置'
+    if (reason === 'missing-user-baseurl') return 'AI 写词：用户配置缺 BaseUrl，点 ⚙ 补全'
+    if (reason === 'missing-user-model') return 'AI 写词：用户配置缺 Model，点 ⚙ 补全'
+    // ── 解析错误（LLM 返回字数对不上等） ──
     if (reason === 'parse-failed') {
       const sub = result.parseReason
       if (sub === 'syllable-mismatch') {
@@ -319,9 +352,34 @@ export class QuickLyricPanel {
     return `AI 写词：${result?.message || '生成失败，请重试'}`
   }
 
-  // 简单的 prompt 配置弹窗——直接用 prompt() 三连，避免引入复杂模态
-  _openAPIKeyDialog() {
-    const cur = getUserApiConfig()
+  // 简单的 prompt 配置弹窗——直接用 prompt() 几连，避免引入复杂模态。
+  // 第一步先弹隐私告知，让用户在填 key 前先了解安全模型
+  async _openAPIKeyDialog() {
+    // 第一步：诚实告知——用户必须在看到这段后才会被引导填 key
+    const proceed = window.confirm(
+      [
+        '关于你的 API key 安全（请阅读）：',
+        '',
+        '✓ 你的 key 只保存在本浏览器的 localStorage（已 AES-GCM 加密）',
+        '✓ 调用时浏览器直接发到 LLM 厂商服务器（如 DeepSeek / 通义 / GLM）',
+        '✓ 绝不会经过 WebUtau 服务器——我们的后端看不到、也碰不到你的 key',
+        '',
+        '⚠ 但浏览器侧的本地加密只能防 F12 一眼看明文，',
+        '   无法防御本机木马 / 同源 XSS / 流氓浏览器扩展。',
+        '',
+        '若需绝对安全，建议：',
+        '· 使用桌面版（用系统密钥库存储）',
+        '· 在 LLM 厂商后台为该 key 配置 IP 白名单 / 失效时间',
+        '',
+        '知悉以上风险并继续配置？',
+      ].join('\n'),
+    )
+    if (!proceed) {
+      this._setStatus('已取消配置 API key', 'info')
+      return
+    }
+
+    const cur = await getUserApiConfig().catch(() => ({ apiKey: '', baseUrl: '', model: '' }))
     const apiKey = window.prompt(
       'API key（DeepSeek / 通义 / GLM 等 OpenAI 兼容厂商）。\n填空字符串清除已保存的 key。',
       cur.apiKey || '',
@@ -329,23 +387,28 @@ export class QuickLyricPanel {
     if (apiKey === null) return
     if (!apiKey.trim()) {
       clearUserApiConfig()
-      this._refreshAIQuota()
+      await this._refreshAIQuota()
       this._setStatus('已清除自定义 API key，回到平台默认（每日 5 次）', 'info')
       return
     }
     const baseUrl = window.prompt(
-      'API endpoint（OpenAI 兼容路径，留空走平台默认）。\n例：\n· DeepSeek：https://api.deepseek.com/v1\n· 通义：https://dashscope.aliyuncs.com/compatible-mode/v1\n· GLM：https://open.bigmodel.cn/api/paas/v4',
+      'API endpoint（OpenAI 兼容路径，必填）。\n例：\n· DeepSeek：https://api.deepseek.com/v1\n· 通义：https://dashscope.aliyuncs.com/compatible-mode/v1\n· GLM：https://open.bigmodel.cn/api/paas/v4',
       cur.baseUrl || '',
     )
     if (baseUrl === null) return
     const model = window.prompt(
-      '模型名（留空走平台默认）。\n例：deepseek-chat / qwen-plus / glm-4-flash',
+      '模型名（必填）。\n例：deepseek-chat / qwen-plus / glm-4-flash',
       cur.model || '',
     )
     if (model === null) return
-    setUserApiConfig({ apiKey, baseUrl, model })
-    this._refreshAIQuota()
-    this._setStatus('已保存自定义 API key，下次生成走你自己的额度（不限平台次数）', 'success')
+    try {
+      await setUserApiConfig({ apiKey, baseUrl, model })
+    } catch (error) {
+      this._setStatus(`保存失败：${error?.message || '加密出错'}`, 'error')
+      return
+    }
+    await this._refreshAIQuota()
+    this._setStatus('已保存（已加密本地存储）。生成时浏览器直连厂商，不经过我们服务器', 'success')
   }
 
   /** 根据传入的锚点（通常是轨道列表区域）计算初始位置：x 贴右 12px，y 贴锚点顶部 36px */

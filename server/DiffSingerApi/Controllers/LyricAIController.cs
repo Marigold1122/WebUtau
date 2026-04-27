@@ -23,18 +23,14 @@ public class LyricAIController : ControllerBase {
     public sealed class GenerateLyricRequest {
         public List<MessageDto> Messages { get; set; } = new();
         public object? MusicStructure { get; set; } // 透传日志用，服务端不用解析
-        public UserApiDto? UserApi { get; set; }
+        // 注意：本接口"故意"不接收用户自带 API key——
+        // 用户填了自己 key 时，前端会绕过本后端、浏览器直连 LLM 厂商。
+        // 这里彻底不暴露相关字段，从源头杜绝任何"无意泄露"路径
     }
 
     public sealed class MessageDto {
         public string Role { get; set; } = "";
         public string Content { get; set; } = "";
-    }
-
-    public sealed class UserApiDto {
-        public string? ApiKey { get; set; }
-        public string? BaseUrl { get; set; }
-        public string? Model { get; set; }
     }
 
     public sealed class QuotaDto {
@@ -55,31 +51,23 @@ public class LyricAIController : ControllerBase {
             return BadRequest(new GenerateLyricResponse { Message = "messages 不能为空" });
         }
 
-        bool useUserKey = !string.IsNullOrWhiteSpace(req.UserApi?.ApiKey);
+        // 这一路只走平台 key + 按 IP 限速。用户自带 key 的请求由前端直连 LLM 厂商，
+        // 根本不会到这里——所以不需要也不能区分"是否用户 key"
         var ip = ResolveClientIp();
-
-        // 走平台 key 才扣配额；用户带自己 key 跳过限速
-        QuotaDto? quotaDto = null;
-        if (!useUserKey) {
-            var (allowed, snap) = _limiter.TryConsume(ip, _options.DailyLimitPerIp);
-            quotaDto = new QuotaDto { Used = snap.Used, Remaining = snap.Remaining, Limit = snap.Limit };
-            if (!allowed) {
-                return StatusCode(429, new GenerateLyricResponse {
-                    Quota = quotaDto,
-                    Message = $"今日额度已用完（{snap.Used}/{snap.Limit}），可填写自己的 API key 不限次数",
-                });
-            }
+        var (allowed, snap) = _limiter.TryConsume(ip, _options.DailyLimitPerIp);
+        var quotaDto = new QuotaDto { Used = snap.Used, Remaining = snap.Remaining, Limit = snap.Limit };
+        if (!allowed) {
+            return StatusCode(429, new GenerateLyricResponse {
+                Quota = quotaDto,
+                Message = $"今日额度已用完（{snap.Used}/{snap.Limit}），可填写自己的 API key 不限次数",
+            });
         }
 
         var serviceReq = new LyricAIService.GenerateRequest(
-            Messages: req.Messages.Select(m => new LyricAIService.ChatMessage(m.Role ?? "user", m.Content ?? "")).ToList(),
-            UserApiKey: useUserKey ? req.UserApi!.ApiKey : null,
-            UserBaseUrl: useUserKey ? req.UserApi!.BaseUrl : null,
-            UserModel: useUserKey ? req.UserApi!.Model : null);
+            Messages: req.Messages.Select(m => new LyricAIService.ChatMessage(m.Role ?? "user", m.Content ?? "")).ToList());
 
         var result = await _service.GenerateAsync(serviceReq, ct);
         if (!result.Ok) {
-            // 上游 401 就照样回 401 让前端识别 invalid-key
             int status = result.UpstreamStatus == 401 ? 401 : 500;
             return StatusCode(status, new GenerateLyricResponse {
                 Quota = quotaDto,

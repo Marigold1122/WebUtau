@@ -5,11 +5,11 @@ using Microsoft.Extensions.Options;
 
 namespace DiffSingerApi.Services;
 
-// 调用 OpenAI 兼容的 chat completions endpoint。
+// 调用 OpenAI 兼容的 chat completions endpoint，仅用平台密钥。
 // DeepSeek / 通义 qwen / 智谱 GLM / 月之暗面 Kimi / OpenAI 都用同一套 schema。
-// 我们只做转发：把前端来的 messages 拼到请求体，扣 token、回 raw content 文本。
 //
-// 用户传了自己的 apiKey/baseUrl/model 就用他的，跳过限速；否则走 LyricAIOptions 配置。
+// 安全设计：本服务不接收任何用户 API key——用户自带 key 的请求由前端浏览器
+// 直连 LLM 厂商，根本不到达本后端。从代码源头杜绝"用户 key 经过我们服务器"
 public sealed class LyricAIService {
     private readonly LyricAIOptions _options;
     private readonly HttpClient _http;
@@ -24,29 +24,20 @@ public sealed class LyricAIService {
         _logger = logger;
     }
 
-    public sealed record GenerateRequest(
-        IReadOnlyList<ChatMessage> Messages,
-        string? UserApiKey,
-        string? UserBaseUrl,
-        string? UserModel);
+    public sealed record GenerateRequest(IReadOnlyList<ChatMessage> Messages);
 
     public sealed record ChatMessage(string Role, string Content);
 
     public sealed record GenerateResult(bool Ok, string? Content, string? ErrorMessage, int? UpstreamStatus);
 
     public async Task<GenerateResult> GenerateAsync(GenerateRequest request, CancellationToken ct) {
-        // 决定用哪一套 endpoint / model / key
-        bool useUserKey = !string.IsNullOrWhiteSpace(request.UserApiKey);
-        string apiKey = useUserKey ? request.UserApiKey! : _options.ApiKey;
-        string baseUrl = useUserKey && !string.IsNullOrWhiteSpace(request.UserBaseUrl)
-            ? request.UserBaseUrl!
-            : _options.BaseUrl;
-        string model = useUserKey && !string.IsNullOrWhiteSpace(request.UserModel)
-            ? request.UserModel!
-            : _options.Model;
+        // 只走平台配置——用户 key 路径不在这里
+        string apiKey = _options.ApiKey;
+        string baseUrl = _options.BaseUrl;
+        string model = _options.Model;
 
         if (string.IsNullOrWhiteSpace(apiKey)) {
-            return new GenerateResult(false, null, "AI 未配置 API key（管理员请在 appsettings.json 的 LyricAI 节点填入）", null);
+            return new GenerateResult(false, null, "AI 未配置 API key（管理员请在 appsettings.Local.json 的 LyricAI 节点填入）", null);
         }
         if (string.IsNullOrWhiteSpace(baseUrl) || string.IsNullOrWhiteSpace(model)) {
             return new GenerateResult(false, null, "AI 未配置 BaseUrl 或 Model", null);
