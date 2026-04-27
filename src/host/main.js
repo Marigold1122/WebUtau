@@ -3,6 +3,10 @@ import { initOnboarding } from '../onboarding/index.js'
 import { installVoiceRuntimePanBridge } from './transport/voiceRuntimePanBridge.js'
 import { installTrackViewportPan } from './transport/trackViewportPan.js'
 import { installInspectorAccordionTransition } from './ui/inspectorAccordionTransition.js'
+import { initThemeController } from './ui/themeController.js'
+
+// 主题先初始化——放在 createHostApp 之前，避免首屏先用米色后再切到暗色"闪一下"
+initThemeController()
 
 const hostApp = createHostApp()
 hostApp.init()

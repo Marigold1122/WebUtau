@@ -21,6 +21,134 @@
   --radius-sm: 3px;
 }
 
+/* 暗色模式：host 通过 postMessage 把当前主题推过来，document.documentElement
+   设上 data-theme="dark" 后这里变量重定义。配色与 host 暗皮一致（深炭风） */
+[data-theme='dark'] {
+  --bg-canvas: #1A1B1E;
+  --bg-panel: #232529;
+  --bg-control: #2A2C30;
+  --bg-metal: #1F2024;
+  --bg-press: #303236;
+  --border-main: #383A3F;
+  --border-dark: #4E5158;
+  --atomic-teal: #4FB1AE;
+  --nuka-red: #DD5C4E;
+  --vault-gold: #E3B254;
+  --bakelite-dark: #E8E4DC;
+  --screen-bg: #11181A;
+  --screen-phosphor: #6FD482;
+  --text-main: #E8E4DC;
+  --text-muted: #A09A8E;
+  --text-faint: #6A6862;
+  --shadow-engraved: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 1px 0 rgba(0, 0, 0, 0.5);
+  --shadow-panel: 0 10px 30px rgba(0, 0, 0, 0.6);
+}
+
+/* 主题切换瞬间的全局过渡——跟 host 那边同款机制 */
+.theme-transitioning,
+.theme-transitioning *,
+.theme-transitioning *::before,
+.theme-transitioning *::after {
+  transition:
+    background-color 360ms ease,
+    color 360ms ease,
+    border-color 360ms ease,
+    fill 360ms ease,
+    stroke 360ms ease,
+    box-shadow 360ms ease !important;
+}
+
+/* 钢琴卷帘里硬编码的浅色背景：暗模式针对性反相
+   这些色值在 voice-runtime.css 各处写死，没走变量——单独覆盖 */
+[data-theme='dark'] #toolbar {
+  background: var(--bg-panel);
+}
+[data-theme='dark'] #toolbar::after {
+  background: rgba(255, 255, 255, 0.04);
+}
+[data-theme='dark'] #toolbar button {
+  background: linear-gradient(180deg, var(--bg-control) 0%, var(--bg-press) 100%);
+  color: var(--text-main);
+  border-color: var(--border-dark);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+[data-theme='dark'] #toolbar button:hover {
+  background: var(--bg-press);
+  border-color: var(--atomic-teal);
+}
+
+/* 钢琴卷帘上方的浮动工具栏（音符 / 歌词 / 音高 / 快速填词 / 将该轨道渲染为人声 ...）*/
+[data-theme='dark'] .piano-roll-editor-toolbar--floating {
+  background: rgba(35, 37, 41, 0.92);
+  border-color: var(--border-dark);
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+[data-theme='dark'] .piano-roll-editor-mode-group {
+  border-right-color: rgba(160, 154, 142, 0.25);
+}
+[data-theme='dark'] .piano-roll-editor-property-group {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(160, 154, 142, 0.25);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+[data-theme='dark'] .piano-roll-editor-property-title {
+  background: rgba(232, 228, 220, 0.08);
+  color: var(--text-main);
+}
+[data-theme='dark'] .piano-roll-editor-number {
+  color: var(--text-muted);
+}
+
+/* 工具栏按钮：默认态 / hover / active / disabled 全套
+   关键：disabled 文字必须保持可读——之前 text-faint 在浅底上灰糊一团，
+   现在底变深，配套用更浅的灰让用户能看清"哪个按钮是禁用的，写着什么字" */
+[data-theme='dark'] .piano-roll-editor-btn {
+  background: linear-gradient(180deg, var(--bg-control) 0%, var(--bg-press) 100%);
+  color: var(--text-main);
+  border-color: var(--border-dark);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+[data-theme='dark'] .piano-roll-editor-btn:hover:not(:disabled) {
+  background: var(--bg-press);
+  border-color: var(--atomic-teal);
+}
+[data-theme='dark'] .piano-roll-editor-btn.active {
+  background: linear-gradient(180deg, var(--atomic-teal) 0%, #3A8E8B 100%);
+  border-color: rgba(0, 0, 0, 0.4);
+  color: #FFF;
+}
+[data-theme='dark'] .piano-roll-editor-btn:disabled {
+  background: linear-gradient(180deg, var(--bg-panel) 0%, var(--bg-metal) 100%);
+  border-color: rgba(160, 154, 142, 0.25);
+  /* 用 text-muted 而不是 text-faint——禁用按钮的字也要让用户看得清 */
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+/* 钢琴卷帘下方按钮 / 提示 */
+[data-theme='dark'] .piano-roll-editor-hint {
+  color: var(--text-muted);
+}
+[data-theme='dark'] .lyric-edit-input,
+[data-theme='dark'] .lyric-dialog-input {
+  background: var(--bg-control);
+  color: var(--text-main);
+  border-color: var(--atomic-teal);
+}
+[data-theme='dark'] .context-menu,
+[data-theme='dark'] .lyric-dialog {
+  background: var(--bg-panel);
+  border-color: var(--border-dark);
+  color: var(--text-main);
+  box-shadow: var(--shadow-panel), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* scrollbar */
+[data-theme='dark'] ::-webkit-scrollbar-thumb {
+  background: var(--border-dark);
+  border-color: var(--bg-canvas);
+}
+
 *,
 *::before,
 *::after {

@@ -6,26 +6,26 @@
   --bg-2: #E2DDD1; /* Sub-panel: 略深一点的金属漆 */
   --bg-3: #F8F5EE; /* Control: 高对比度纯白控件 */
   --bg-4: #CCC5B7; /* Hover: 物理下压/深灰 */
-  
+
   /* 精密五金雕刻线 */
   --border-color: #C2BCAE; /* 常规分割线 */
   --border-light: #8F8A80; /* 深色边界 (用于硬件模块外框) */
-  
+
   /* 战前标志性功能色 */
   --accent-color: #3B8B88; /* Atomic Teal: 原子蓝/巡航蓝 */
   --accent-dim: rgba(59, 139, 136, 0.22);
   --accent-mid: rgba(59, 139, 136, 0.34);
-  
+
   --green: #66C275;  /* Phosphor Green: 磷光屏绿 */
   --orange: #D4A035; /* Vault Gold: 避难所黄/复古模拟金 */
   --red: #C94234;    /* Nuka Red: 核子红/录音警告 */
   --pink: #C05640;   /* Terracotta: 赤陶色 */
-  
+
   /* 高级模拟仪表盘字体颜色 */
   --text-main: #2B2825;  /* Bakelite Dark: 碳黑色/电木色 */
   --text-muted: #666158; /* 中灰刻度线色 */
   --text-faint: #8F8A80; /* 极浅灰 */
-  
+
   --bg-fx-panel: #DCDAD5;
   --fx-module-bg: #F4F3EF;
   --fx-module-header: #E5E4DF;
@@ -33,6 +33,145 @@
   --track-header-width: 240px;
   --radius: 4px;    /* 收敛的专业硬件圆角 */
   --radius-sm: 2px;
+}
+
+/* 暗色模式：保留同一套语义变量名，只重定义颜色值——绝大多数选择器无需改写。
+   核心思路：
+     - bg-0 ~ bg-4 从米色阶梯改成深炭色阶梯
+     - 文字反相：底色深 → 文字浅
+     - accent 不变（青色在暗背景上仍然好看，提供识别一致性）
+     - 功能色（绿橙红粉）适度提亮以保留警告意义
+   配色取自专业 DAW 暗皮 (Logic Pro X, Pro Tools) 的低饱和深炭风 */
+[data-theme='dark'] {
+  --bg-0: #1A1B1E; /* Canvas: 深炭底 */
+  --bg-1: #232529; /* Panel: 模块面板 */
+  --bg-2: #2A2C30; /* Sub-panel: 分区底 */
+  --bg-3: #303236; /* Control: 控件常态底 */
+  --bg-4: #3D4046; /* Hover */
+
+  --border-color: #383A3F;
+  --border-light: #4E5158;
+
+  --accent-color: #4FB1AE;
+  --accent-dim: rgba(79, 177, 174, 0.22);
+  --accent-mid: rgba(79, 177, 174, 0.36);
+
+  --green: #6FD482;
+  --orange: #E3B254;
+  --red: #DD5C4E;
+  --pink: #D77866;
+
+  --text-main: #E8E4DC;
+  --text-muted: #A09A8E;
+  --text-faint: #6A6862;
+
+  --bg-fx-panel: #1F2024;
+  --fx-module-bg: #2B2D31;
+  --fx-module-header: #353740;
+  --fx-knob-track: #3F4248;
+}
+
+/* 切换主题时给 <html> 加这个临时 class，让全局色值过渡 ~360ms。
+   只在切换瞬间挂上，过完撤掉，避免常驻 transition 拖累性能。
+   *::before/after 也要包含——很多视觉组件靠伪元素（按钮高光、刻度线等） */
+.theme-transitioning,
+.theme-transitioning *,
+.theme-transitioning *::before,
+.theme-transitioning *::after {
+  transition:
+    background-color 360ms ease,
+    color 360ms ease,
+    border-color 360ms ease,
+    fill 360ms ease,
+    stroke 360ms ease,
+    box-shadow 360ms ease,
+    opacity 360ms ease !important;
+}
+
+/* ===== 顶栏明暗切换按钮：太阳 ⇄ 月亮 ===== */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-3);
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 200ms ease, border-color 200ms ease, color 200ms ease, transform 140ms ease;
+}
+.theme-toggle:hover {
+  background: var(--bg-1);
+  border-color: var(--border-light);
+  transform: translateY(-0.5px);
+}
+.theme-toggle:active {
+  transform: translateY(0.5px);
+}
+
+/* 舞台用来给两个图标做绝对叠放，外加一点点旋转空间 */
+.theme-toggle-stage {
+  position: relative;
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+}
+.theme-toggle-icon {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  /* 图标过渡：透明度 + 旋转 + 缩放 三件套，做出"翻面"效果 */
+  transition:
+    opacity 360ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 360ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+
+/* light 模式下：太阳显，月亮藏到下方右侧并旋转 -90° */
+.theme-toggle[data-theme='light'] .theme-toggle-icon--sun {
+  opacity: 1;
+  transform: rotate(0deg) scale(1);
+  color: #D4A035; /* 暖金 */
+}
+.theme-toggle[data-theme='light'] .theme-toggle-icon--moon {
+  opacity: 0;
+  transform: rotate(-90deg) scale(0.5);
+}
+/* dark 模式下：月亮显，太阳藏到上方左侧并旋转 +90° */
+.theme-toggle[data-theme='dark'] .theme-toggle-icon--sun {
+  opacity: 0;
+  transform: rotate(90deg) scale(0.5);
+}
+.theme-toggle[data-theme='dark'] .theme-toggle-icon--moon {
+  opacity: 1;
+  transform: rotate(0deg) scale(1);
+  color: #D9D2C4; /* 冷月白 */
+  fill: currentColor;
+  stroke: none;
+}
+
+/* 太阳光线：跟主圆同色，hover 时整个按钮稍微亮一档让用户知道是可点的 */
+.theme-toggle-icon--sun circle {
+  fill: currentColor;
+  stroke: none;
+}
+.theme-toggle-icon--sun .theme-toggle-sun-rays line {
+  stroke: currentColor;
+}
+.theme-toggle:hover .theme-toggle-icon--sun {
+  filter: drop-shadow(0 0 3px rgba(212, 160, 53, 0.55));
+}
+.theme-toggle:hover .theme-toggle-icon--moon {
+  filter: drop-shadow(0 0 3px rgba(217, 210, 196, 0.45));
 }
 
 *, *::before, *::after {
@@ -4971,5 +5110,517 @@ body.inline-popover-active { }
   font-variant-numeric: tabular-nums;
   line-height: 1.5;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+
+/* ============================================================
+   暗色模式：硬编码颜色的针对性覆盖
+   策略：上方 :root 重定义已经覆盖了 90% 的语义变量；这一段补的是
+   那些直接写死 #FFF / #444 / rgba(0,0,0,...) 等无法靠变量切换的选择器。
+   只覆盖明显走样的视觉表面（按钮 / 控件底色 / 模块文字 / 模态框 等）。
+   ============================================================ */
+
+[data-theme='dark'] .fx-header {
+  color: var(--text-main);
+}
+[data-theme='dark'] .fx-screen-select {
+  background: var(--bg-3);
+  color: var(--text-main);
+  border-color: var(--border-color);
+}
+[data-theme='dark'] .fx-screen-select:disabled {
+  background: var(--bg-2);
+  color: var(--text-faint);
+}
+
+/* 旋钮内圈：原本 #F4F3EF 是浅灰；暗模式换成炭灰但保留 inset 高光感 */
+[data-theme='dark'] .knob-large-inner {
+  background: var(--bg-4);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+[data-theme='dark'] .knob-large {
+  border-color: var(--border-light);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+/* param 数值显示框 */
+[data-theme='dark'] .param-value {
+  background: var(--bg-3);
+  color: var(--text-main);
+  border-color: var(--border-color);
+}
+[data-theme='dark'] .param-value:hover {
+  background: var(--bg-4);
+  border-color: var(--border-light);
+}
+[data-theme='dark'] .param-group.editing .param-value {
+  background: var(--bg-3);
+  border-color: var(--accent-color);
+}
+[data-theme='dark'] .param-value-input {
+  color: var(--text-main);
+}
+[data-theme='dark'] .param-label {
+  color: var(--text-muted);
+}
+
+/* LUFS 面板：cell 底色 / 边框反相 */
+[data-theme='dark'] .fx-lufs-panel {
+  background: linear-gradient(180deg, var(--bg-2) 0%, var(--bg-1) 100%);
+  border-color: var(--border-color);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+[data-theme='dark'] .fx-lufs-cell {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--border-color);
+}
+[data-theme='dark'] .fx-lufs-cell-value { color: var(--text-main); }
+[data-theme='dark'] .fx-lufs-cell-label,
+[data-theme='dark'] .fx-lufs-delta-label,
+[data-theme='dark'] .fx-lufs-target-label {
+  color: var(--text-muted);
+}
+[data-theme='dark'] .fx-lufs-target-select,
+[data-theme='dark'] .fx-lufs-reset {
+  background: var(--bg-3);
+  color: var(--text-main);
+  border-color: var(--border-color);
+}
+[data-theme='dark'] .fx-lufs-reset:hover {
+  background: var(--bg-4);
+  border-color: var(--border-light);
+}
+[data-theme='dark'] .fx-lufs-delta-track {
+  background: var(--bg-4);
+  border-color: var(--border-color);
+}
+[data-theme='dark'] .fx-lufs-delta-track::before { background: var(--text-faint); opacity: 0.5; }
+[data-theme='dark'] .fx-lufs-delta-text { color: var(--text-main); }
+[data-theme='dark'] .fx-lufs-status {
+  background: var(--bg-3);
+  border-color: var(--border-color);
+  color: var(--text-main);
+}
+[data-theme='dark'] .fx-lufs-status[data-tone='idle'] {
+  background: var(--bg-2);
+  color: var(--text-muted);
+}
+[data-theme='dark'] .fx-lufs-help {
+  background: var(--bg-3);
+  border-color: var(--border-color);
+  color: var(--text-muted);
+}
+
+/* LUFS 帮助浮窗 */
+[data-theme='dark'] .fx-lufs-help-popup {
+  background: var(--bg-1);
+  border-color: var(--border-light);
+  color: var(--text-main);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(0, 0, 0, 0.4);
+}
+[data-theme='dark'] .fx-lufs-help-title {
+  color: var(--text-main);
+  border-bottom-color: var(--border-color);
+}
+[data-theme='dark'] .fx-lufs-help-section { color: var(--text-main); }
+[data-theme='dark'] .fx-lufs-help-table td { border-bottom-color: var(--border-color); }
+[data-theme='dark'] .fx-lufs-help-table td:first-child { color: var(--text-muted); }
+[data-theme='dark'] .fx-lufs-help-body strong { color: var(--accent-color); }
+
+/* fx-module note */
+[data-theme='dark'] .fx-module {
+  border-color: var(--border-light);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
+}
+[data-theme='dark'] .fx-header {
+  background: var(--fx-module-header);
+  border-bottom-color: var(--border-color);
+}
+[data-theme='dark'] .fx-power.is-off {
+  background: var(--text-faint);
+}
+
+/* 底部 fx 面板 */
+[data-theme='dark'] .bottom-fx-panel {
+  border-top-color: var(--border-light);
+  box-shadow: inset 0 5px 10px rgba(0, 0, 0, 0.25);
+}
+
+/* 通用模态：原本写死 #FFF 当背景 */
+[data-theme='dark'] .modal-overlay { background: rgba(0, 0, 0, 0.55); }
+[data-theme='dark'] .modal,
+[data-theme='dark'] .modal-content,
+[data-theme='dark'] .modal-body,
+[data-theme='dark'] .dialog,
+[data-theme='dark'] [role='dialog'] {
+  background: var(--bg-1);
+  color: var(--text-main);
+}
+
+/* 输入框 / 文本域：很多写死 #FFF */
+[data-theme='dark'] input[type='text'],
+[data-theme='dark'] input[type='number'],
+[data-theme='dark'] input[type='search'],
+[data-theme='dark'] input[type='range'],
+[data-theme='dark'] textarea,
+[data-theme='dark'] select {
+  background-color: var(--bg-3);
+  color: var(--text-main);
+  border-color: var(--border-color);
+}
+
+/* 顶栏铭牌、状态栏等：白底文字组件颜色反相 */
+[data-theme='dark'] .menubar-project-plate {
+  background: var(--bg-3);
+  color: var(--text-main);
+  border-color: var(--border-color);
+}
+[data-theme='dark'] .menubar-project-plate-name { color: var(--text-main); }
+
+/* 加载占位符、轨道空状态提示 */
+[data-theme='dark'] .loading-text,
+[data-theme='dark'] .track-empty-hint {
+  color: var(--text-muted);
+}
+[data-theme='dark'] .loading-spinner {
+  border-color: var(--border-color);
+  border-top-color: var(--accent-color);
+}
+
+/* 主控母带链 banner 暗色版：金黄色保留（语义"全局"），背景偏冷 */
+[data-theme='dark'] .fx-module-scope-banner {
+  background: linear-gradient(90deg, rgba(232, 176, 64, 0.16) 0%, rgba(232, 176, 64, 0.04) 100%);
+  border-bottom-color: rgba(232, 176, 64, 0.3);
+  color: #E8B040;
+}
+
+/* 主控母带链入场聚焦动画的 box-shadow 用 accent，暗模式也走 accent */
+[data-theme='dark'] @keyframes master-chain-focus-pulse {
+  0%, 100% {
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
+    border-color: var(--border-light);
+  }
+  20% {
+    box-shadow:
+      0 0 0 2px rgba(79, 177, 174, 0.55),
+      0 0 18px rgba(79, 177, 174, 0.45),
+      0 2px 5px rgba(0, 0, 0, 0.5);
+    border-color: rgba(79, 177, 174, 0.85);
+  }
+}
+
+/* panel-action-btn 系列：默认走白底渐变，暗模式反相到深底 */
+[data-theme='dark'] .panel-action-btn {
+  background: linear-gradient(180deg, var(--bg-3) 0%, var(--bg-2) 100%);
+  color: var(--text-main);
+  border-color: var(--border-color);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+[data-theme='dark'] .panel-action-btn:hover:not(:disabled) {
+  background: linear-gradient(180deg, var(--bg-4) 0%, var(--bg-3) 100%);
+  border-color: var(--border-light);
+}
+[data-theme='dark'] .panel-action-btn:disabled {
+  background: var(--bg-2);
+  color: var(--text-faint);
+}
+[data-theme='dark'] .panel-action-btn--primary {
+  background: var(--accent-color);
+  color: #fff;
+  border-color: rgba(0, 0, 0, 0.3);
+}
+[data-theme='dark'] .panel-action-btn--primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+[data-theme='dark'] .panel-action-btn--danger {
+  background: linear-gradient(180deg, rgba(221, 92, 78, 0.22) 0%, rgba(221, 92, 78, 0.10) 100%);
+  color: #E48A7E;
+  border-color: rgba(221, 92, 78, 0.5);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 1px 1px rgba(0, 0, 0, 0.3);
+}
+[data-theme='dark'] .panel-action-btn--danger:hover:not(:disabled) {
+  background: linear-gradient(180deg, rgba(221, 92, 78, 0.32) 0%, rgba(221, 92, 78, 0.16) 100%);
+}
+
+/* share-panel 整体（标题 / 状态点 / 链接框）：暗模式 */
+[data-theme='dark'] .share-panel {
+  background: var(--bg-1);
+  color: var(--text-main);
+  border-color: var(--border-color);
+}
+
+/* 通用：bg-3 / 渐变白底的小按钮 / 控件如果没单独覆盖，到这里兜底 */
+[data-theme='dark'] button:not([class*="theme-toggle"]):not([class*="panel-action-btn--primary"]):not([class*="panel-action-btn--danger"]):not([class*="fx-power"]):not([class*="fx-lufs-autofit"]):not([class*="menubar-meter-clip"]) {
+  /* 留给具体类自己定，这里只兜底文字色，避免出现"白按钮黑字 + 浅色边" */
+  color: var(--text-main);
+}
+
+/* ================================================================
+   钢琴卷帘 / instrument-editor 暗模式覆盖
+   钢琴卷帘的 toolbar 按钮（音符 / 歌词 / 音高 / 将该轨道渲染为人声 等）
+   是 iframe 创建后 mount 到 host 的 #editor-runtime-tools 里的——所以
+   它们活在 host DOM，要 host 的 CSS 来管。同样 instrument-editor 主体
+   也是 host 渲染的钢琴卷帘
+   ================================================================ */
+
+/* instrument-editor 主容器与其工具栏底色 */
+[data-theme='dark'] .instrument-editor-root {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0) 16%),
+    linear-gradient(180deg, var(--bg-1) 0%, var(--bg-0) 100%);
+  --instrument-note-fill: var(--accent-color);
+  --instrument-note-border: #2E6E6C;
+}
+[data-theme='dark'] .instrument-editor-toolbar {
+  background: linear-gradient(180deg, var(--bg-2) 0%, var(--bg-1) 100%);
+  border-bottom-color: var(--border-color);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+/* 钢琴卷帘上方 transport / 模式按钮（▶ ⏮ 等） */
+[data-theme='dark'] .instrument-editor-transport {
+  background: var(--bg-2);
+  border-color: var(--border-light);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+[data-theme='dark'] .instrument-editor-transport-btn {
+  background: linear-gradient(180deg, var(--bg-3) 0%, var(--bg-2) 100%);
+  color: var(--text-main);
+  border-color: var(--border-color);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+[data-theme='dark'] .instrument-editor-transport-btn:hover:not(:disabled) {
+  background: var(--bg-4);
+}
+[data-theme='dark'] .instrument-editor-transport-btn:disabled {
+  /* 用 opacity + 颜色明示禁用，但 bg 还是要换暗的 */
+  background: var(--bg-1);
+  border-color: var(--border-color);
+  color: var(--text-faint);
+}
+
+/* V / B / E 工具按钮 */
+[data-theme='dark'] .instrument-editor-tool {
+  background: linear-gradient(180deg, var(--bg-3) 0%, var(--bg-2) 100%);
+  color: var(--text-main);
+  border-color: var(--border-color);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 1px 1px rgba(0, 0, 0, 0.3);
+}
+[data-theme='dark'] .instrument-editor-tool .instrument-editor-tool-key {
+  color: var(--text-faint);
+}
+
+/* SNAP / 未保存更改 / 已保存 等小标签 */
+[data-theme='dark'] .instrument-editor-meta {
+  color: var(--text-muted);
+}
+[data-theme='dark'] .instrument-editor-meta-chip {
+  background: linear-gradient(180deg, var(--bg-3) 0%, var(--bg-2) 100%);
+  border-color: var(--border-color);
+  color: var(--text-main);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 1px 1px rgba(0, 0, 0, 0.3);
+}
+
+/* 钢琴键盘行 */
+[data-theme='dark'] .instrument-editor-key-row {
+  background: var(--bg-2);
+  color: var(--text-muted);
+  border-bottom-color: var(--border-color);
+}
+[data-theme='dark'] .instrument-editor-key-row.is-black {
+  background: var(--bg-1);
+  color: var(--text-faint);
+}
+
+/* 网格主区域 + 网格线 */
+[data-theme='dark'] .instrument-editor-grid-viewport {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0) 26%),
+    var(--bg-0);
+}
+[data-theme='dark'] .instrument-editor-grid-content {
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      rgba(232, 228, 220, 0.025) 0,
+      rgba(232, 228, 220, 0.025) calc(var(--instrument-row-height) - 1px),
+      rgba(232, 228, 220, 0.06) calc(var(--instrument-row-height) - 1px),
+      rgba(232, 228, 220, 0.06) var(--instrument-row-height)
+    );
+}
+[data-theme='dark'] .instrument-editor-grid-line {
+  background: rgba(232, 228, 220, 0.05);
+}
+[data-theme='dark'] .instrument-editor-grid-line.is-bar {
+  background: rgba(232, 228, 220, 0.22);
+}
+[data-theme='dark'] .instrument-editor-grid-line.is-beat {
+  background: rgba(232, 228, 220, 0.10);
+}
+[data-theme='dark'] .instrument-editor-grid-line.is-sub {
+  background: rgba(232, 228, 220, 0.04);
+}
+[data-theme='dark'] .instrument-editor-hover-band {
+  background: rgba(255, 255, 255, 0.05);
+  border-top-color: rgba(255, 255, 255, 0.06);
+  border-bottom-color: rgba(0, 0, 0, 0.2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+/* editor-runtime-tools 里的"音符 / 歌词 / 音高 / 快速填词 /
+   将该轨道渲染为人声 / 恢复所选 / 恢复全部"——这些是 iframe mount 过来的，
+   走 host CSS。原版 disabled 只有 opacity:0.5，浅底浅字看不清，暗模式也得明确换底 */
+[data-theme='dark'] .editor-runtime-tools .piano-roll-editor-btn {
+  background: linear-gradient(180deg, var(--bg-3) 0%, var(--bg-2) 100%);
+  color: var(--text-main);
+  border-color: var(--border-color);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+[data-theme='dark'] .editor-runtime-tools .piano-roll-editor-btn:hover:not(:disabled) {
+  background: var(--bg-4);
+  border-color: var(--accent-color);
+}
+[data-theme='dark'] .editor-runtime-tools .piano-roll-editor-btn.active {
+  background: linear-gradient(180deg, var(--accent-color) 0%, #2E6E6C 100%);
+  color: #FFF;
+  border-color: rgba(0, 0, 0, 0.4);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+[data-theme='dark'] .editor-runtime-tools .piano-roll-editor-btn:disabled {
+  background: var(--bg-1);
+  color: var(--text-faint);
+  border-color: var(--border-color);
+  opacity: 1; /* 原版用 opacity:0.5，暗模式靠颜色对比就够了，opacity 让字几乎看不清 */
+}
+[data-theme='dark'] .editor-runtime-tools .piano-roll-editor-property-group {
+  background: var(--bg-2);
+  border-color: var(--border-color);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+[data-theme='dark'] .editor-runtime-tools .piano-roll-editor-property-title {
+  background: rgba(232, 228, 220, 0.08);
+  color: var(--text-main);
+}
+[data-theme='dark'] .editor-runtime-tools .piano-roll-editor-number {
+  color: var(--text-muted);
+}
+[data-theme='dark'] .editor-runtime-tools .piano-roll-editor-number-input {
+  background: var(--bg-3);
+  color: var(--text-main);
+  border-color: var(--border-color);
+}
+[data-theme='dark'] .editor-runtime-tools .piano-roll-editor-select {
+  background: var(--bg-3);
+  color: var(--text-main);
+  border-color: var(--border-color);
+}
+
+/* editor-header (PIANO ROLL 标题栏) + 关闭按钮 */
+[data-theme='dark'] .editor-header {
+  background: var(--bg-2);
+  color: var(--text-main);
+  border-bottom-color: var(--border-color);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+[data-theme='dark'] .editor-header::before {
+  background: var(--bg-4);
+  color: var(--text-main);
+}
+[data-theme='dark'] .editor-close,
+[data-theme='dark'] .editor-runtime-tools button {
+  /* editor-close + 其它非 .piano-roll-editor-btn 的 host editor 按钮 */
+}
+[data-theme='dark'] .editor-close {
+  background: linear-gradient(180deg, var(--bg-3) 0%, var(--bg-2) 100%);
+  color: var(--text-main);
+  border-color: var(--border-color);
+}
+[data-theme='dark'] .editor-close:hover {
+  background: var(--bg-4);
+}
+
+/* "ROLL" 时间标尺行：保留其作为"导航锚"的存在感，但配色融入暗皮——
+   用一档稍亮的中灰（介于画布黑与工具栏灰之间），底部加一道青色细线强调。
+   bar 标签 / bar 线提亮——让 1/2/3... 数字在暗背景里更显眼 */
+[data-theme='dark'] .instrument-editor-corner {
+  background: linear-gradient(180deg, var(--bg-2) 0%, var(--bg-1) 100%);
+  color: var(--text-main);
+  border-right-color: var(--border-color);
+  border-bottom-color: var(--accent-color);
+  font-weight: 700;
+}
+[data-theme='dark'] .instrument-editor-ruler-viewport {
+  background: linear-gradient(180deg, var(--bg-3) 0%, var(--bg-2) 100%);
+  border-bottom: 1px solid var(--accent-color);
+  box-shadow: 0 1px 0 rgba(79, 177, 174, 0.18);
+}
+[data-theme='dark'] .instrument-editor-ruler-line {
+  background: rgba(232, 228, 220, 0.12);
+}
+[data-theme='dark'] .instrument-editor-ruler-line.is-bar {
+  background: var(--text-muted);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+[data-theme='dark'] .instrument-editor-ruler-line.is-beat {
+  background: rgba(232, 228, 220, 0.30);
+}
+[data-theme='dark'] .instrument-editor-ruler-line.is-sub {
+  background: rgba(232, 228, 220, 0.10);
+}
+[data-theme='dark'] .instrument-editor-ruler-label {
+  color: var(--text-main);
+  font-weight: 700;
+}
+[data-theme='dark'] .instrument-editor-ruler-meta-marker {
+  background: var(--bg-1);
+  color: var(--text-main);
+  border-color: var(--border-light);
+}
+
+/* instrument-editor 整个网格容器（钢琴键左列 + ROLL + 主画布）外层底色 */
+[data-theme='dark'] .instrument-editor-piano-area,
+[data-theme='dark'] .instrument-editor-grid-shell {
+  background: var(--bg-0);
+}
+
+/* ===== 顶栏播放控件 + 跟随工具：原本写死 #FFF→#F0EDE5 渐变，暗模式反相 ===== */
+[data-theme='dark'] .menubar-transport,
+[data-theme='dark'] .menubar-follow-mode-group {
+  background: var(--bg-2);
+  border-color: var(--border-light);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+[data-theme='dark'] .menubar-transport-btn,
+[data-theme='dark'] .menubar-follow-btn {
+  background: linear-gradient(180deg, var(--bg-3) 0%, var(--bg-2) 100%);
+  color: var(--text-main);
+  border-color: var(--border-color);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+[data-theme='dark'] .menubar-transport-btn:active,
+[data-theme='dark'] .menubar-follow-btn:active {
+  background: var(--bg-2);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+  border-color: var(--border-light);
+}
+[data-theme='dark'] .menubar-transport-btn--play.is-playing,
+[data-theme='dark'] .menubar-follow-btn.active {
+  background: var(--accent-color);
+  color: #FFF;
+  border-color: rgba(0, 0, 0, 0.4);
+}
+[data-theme='dark'] .menubar-transport-btn:disabled,
+[data-theme='dark'] .menubar-follow-btn:disabled {
+  background: var(--bg-1);
+  color: var(--text-faint);
+  border-color: var(--border-color);
+}
+/* 注意：glyph 用 currentColor 画三角 / 圆 / 矩形（border-top: ... transparent;
+   border-left: 7px solid currentColor 这种 trick），所以 glyph 自己不能再被
+   background 重绘——会把整个矩形填实，三角变方块。
+   按钮的 color 已经在上面 .menubar-transport-btn 里被设成 var(--text-main)，
+   currentColor 自动跟随，glyph 在暗模式下自然变浅色。这里无需手动覆盖 glyph */
+[data-theme='dark'] .menubar-follow-label {
+  color: var(--text-muted);
 }
 

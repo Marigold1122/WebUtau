@@ -143,7 +143,10 @@ export class ShellLayoutView {
     }
     document.addEventListener('pointerdown', this._handleDocumentPointerDown)
     if (this.refs.voiceRuntimeFrame) {
-      this.refs.voiceRuntimeFrame.src = '/voice-runtime.html?embedded=1'
+      // theme 通过 URL 参数带过去——这样 iframe 装载首屏就能用对的主题画 canvas，
+      // 不用等 postMessage 握手回来才切。后续切换仍走 postMessage
+      const initialTheme = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'
+      this.refs.voiceRuntimeFrame.src = `/voice-runtime.html?embedded=1&theme=${initialTheme}`
     }
     this._mountMenubarFollowControls()
     this._mountEditorModeControls()

@@ -57,6 +57,32 @@
         </div>
         <div class="menubar-tail">
           <div class="menubar-follow-tools" id="menubar-follow-tools" aria-label="播放头跟随模式"></div>
+          <button type="button" class="theme-toggle" id="btn-theme-toggle" aria-label="切换明暗模式" title="切换明暗模式">
+            <span class="theme-toggle-stage" aria-hidden="true">
+              <svg class="theme-toggle-icon theme-toggle-icon--sun" viewBox="-12 -12 24 24">
+                <circle cx="0" cy="0" r="4.5" />
+                <g class="theme-toggle-sun-rays">
+                  <line x1="0" y1="-9" x2="0" y2="-7" />
+                  <line x1="0" y1="7" x2="0" y2="9" />
+                  <line x1="-9" y1="0" x2="-7" y2="0" />
+                  <line x1="7" y1="0" x2="9" y2="0" />
+                  <line x1="-6.4" y1="-6.4" x2="-5" y2="-5" />
+                  <line x1="5" y1="5" x2="6.4" y2="6.4" />
+                  <line x1="5" y1="-5" x2="6.4" y2="-6.4" />
+                  <line x1="-6.4" y1="6.4" x2="-5" y2="5" />
+                </g>
+              </svg>
+              <svg class="theme-toggle-icon theme-toggle-icon--moon" viewBox="-12 -12 24 24">
+                <defs>
+                  <mask id="theme-toggle-moon-mask">
+                    <rect x="-12" y="-12" width="24" height="24" fill="white" />
+                    <circle cx="3.5" cy="-3.5" r="7.2" fill="black" />
+                  </mask>
+                </defs>
+                <circle cx="0" cy="0" r="7.6" mask="url(#theme-toggle-moon-mask)" />
+              </svg>
+            </span>
+          </button>
         </div>
       </header>
 
