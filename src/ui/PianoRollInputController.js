@@ -3,6 +3,7 @@ import noteSelection from './NoteSelection.js'
 import contextMenu from './ContextMenu.js'
 import lyricDialog from './LyricDialog.js'
 import lyricEditor from '../modules/LyricEditor.js'
+import phonemeEditor from '../modules/PhonemeEditor.js'
 import pitchEditor, { PITCH_POINT_SHAPES } from '../modules/PitchEditor.js'
 import phraseStore from '../core/PhraseStore.js'
 import viewport from './PianoRollViewport.js'
@@ -26,6 +27,7 @@ const STATE = {
   BATCH_EDIT: 'batch-edit',
   PITCH_POINT_PENDING: 'pitch-point-pending',
   PITCH_POINT_DRAG: 'pitch-point-drag',
+  PHONEME_TIMING: 'phoneme-timing',
 }
 
 class PianoRollInputController {
@@ -48,6 +50,7 @@ class PianoRollInputController {
   bindTo(container, noteCanvas) {
     this._container = container
     this._noteCanvas = noteCanvas
+    phonemeEditor.setLaneRectProvider(() => phonemeTiming.canvas?.getBoundingClientRect?.() || null)
     container.addEventListener('mousedown', (e) => this._onMouseDown(e))
     window.addEventListener('mousemove', (e) => this._onMouseMove(e))
     window.addEventListener('mouseup', (e) => this._onMouseUp(e))
@@ -92,6 +95,12 @@ class PianoRollInputController {
     if (this._state === STATE.CONTEXT_MENU) {
       contextMenu.hide()
       this._state = STATE.READY
+    }
+
+    if (phonemeEditor.handlePointerDown(e)) {
+      e.preventDefault()
+      this._state = STATE.PHONEME_TIMING
+      return
     }
 
     if (pitchEditor.isEnabled()) {
@@ -158,6 +167,11 @@ class PianoRollInputController {
       return
     }
     if (playheadController.isDraggingPlayhead?.()) return
+
+    if ((this._state === STATE.READY || this._state === STATE.PHONEME_TIMING) && phonemeEditor.handlePointerMove(e)) {
+      e.preventDefault()
+      return
+    }
 
     if (pitchEditor.isEnabled()) {
       this._onPitchMouseMove(e)
@@ -235,6 +249,15 @@ class PianoRollInputController {
       return
     }
     if (playheadController.isDraggingPlayhead?.()) return
+
+    if (this._state === STATE.PHONEME_TIMING || phonemeEditor.hasSession()) {
+      phonemeEditor.handlePointerUp(e)
+      this._state = STATE.READY
+      this._downPos = null
+      this._downNote = null
+      this._hasDragged = false
+      return
+    }
 
     if (pitchEditor.isEnabled()) {
       void this._onPitchMouseUp(e)

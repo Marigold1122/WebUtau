@@ -11,6 +11,7 @@
 import { PIANO_ROLL } from '../config/constants.js'
 import grid from '../ui/PianoRollGrid.js'
 import notes from '../ui/PianoRollNotes.js'
+import phonemeTiming from '../ui/PhonemeTimingVisual.js'
 
 const DARK_COLORS = {
   WHITE_KEY_COLOR: '#2A2C30',
@@ -85,5 +86,5 @@ export function applyPianoRollTheme(_theme) {
   // 只用刷 canvas，颜色自动跟当前 data-theme
   try { grid.draw?.() } catch (_e) {}
   try { notes.requestDraw?.() } catch (_e) {}
-  // phonemeTiming 也得刷——但它没暴露 draw() 方法，靠下次 notes 触发
+  try { phonemeTiming.draw?.(notes.getPhrases?.() || []) } catch (_e) {}
 }

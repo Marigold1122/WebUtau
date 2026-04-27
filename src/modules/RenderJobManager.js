@@ -3,6 +3,7 @@ import { EVENTS } from '../config/constants.js'
 import renderApi from '../api/RenderApi.js'
 import renderCache from './RenderCache.js'
 import phraseStore from '../core/PhraseStore.js'
+import phonemeTimingStore from './PhonemeTimingStore.js'
 
 const M = '[渲染管理]'
 
@@ -30,6 +31,7 @@ class RenderJobManager {
   }
 
   async submitMidi(midiFile, singerId, language, options = {}) {
+    phonemeTimingStore.clear()
     const { jobId } = await renderApi.submitJob(midiFile, singerId, language, options)
     phraseStore.setJobId(jobId)
     this._jobStatus = null
@@ -80,6 +82,7 @@ class RenderJobManager {
   restartForEdit(newPhraseCount) {
     const oldGen = this._generation
     this._generation++
+    phonemeTimingStore.clear()
     const oldSize = this._knownCompleted.size
     const validCompleted = new Set()
     for (const idx of this._knownCompleted) {
@@ -108,6 +111,7 @@ class RenderJobManager {
     this._interactiveEditBlocks.clear()
     this._rebuilt = false
     this._jobStatus = null
+    phonemeTimingStore.clear()
     this.stopPolling()
     console.log(`${M} 重置 | 世代=${oldGen}→${this._generation}, 已完成集合已清空`)
   }
@@ -242,6 +246,7 @@ class RenderJobManager {
           console.log(`${M} 首次后端分句完成 | 句数=${phrases.length}`)
           // 异步获取音高数据（不阻塞轮询）
           this._fetchPitch()
+          this._fetchPhonemeTimings(gen)
         }
       }
 
@@ -394,6 +399,19 @@ class RenderJobManager {
       phraseStore.setPitchData(pitchData)
     } catch (error) {
       console.warn(`${M} 音高数据获取失败 | ${error.message}`)
+    }
+  }
+
+  async _fetchPhonemeTimings(gen = this._generation) {
+    const jobId = phraseStore.getJobId()
+    if (!jobId) return
+    try {
+      const snapshot = await renderApi.getPhonemeTimings(jobId)
+      if (gen !== this._generation || jobId !== phraseStore.getJobId()) return
+      phonemeTimingStore.setSnapshot(snapshot)
+    } catch (error) {
+      if (gen === this._generation && jobId === phraseStore.getJobId()) phonemeTimingStore.clear()
+      console.warn(`${M} 音素时机数据获取失败 | ${error?.message || error}`)
     }
   }
 }
