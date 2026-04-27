@@ -205,11 +205,15 @@ export function createHostApp() {
     container: document.getElementById('menubar-meter'),
     audioGraph: projectAudioGraph,
     // D 方案：点击电平表 bezel 打开 reverb dock 并高亮 master chain 模块。
-    // 电平表显示问题（爆音 / 太响），master chain 是修问题的入口——一键直达
+    // 电平表显示问题（爆音 / 太响），master chain 是修问题的入口——一键直达。
+    // 已经开着时再点一次直接收回 dock——toggle 行为，省得用户绕路去找 fx 关闭
     onBezelClick: () => {
-      if (!sessionStore.isReverbDockOpen()) {
-        sessionStore.setReverbDockOpen(true)
+      if (sessionStore.isReverbDockOpen()) {
+        sessionStore.setReverbDockOpen(false)
+        render('reverb-dock-closed')
+        return
       }
+      sessionStore.setReverbDockOpen(true)
       render('master-chain-focus-requested')
       // render 之后 ReverbDockView 会重建 DOM，找到 master chain 模块加高亮
       requestAnimationFrame(() => {

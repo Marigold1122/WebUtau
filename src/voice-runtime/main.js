@@ -50,23 +50,29 @@ window.voiceRuntimeApp = app
 
 // 主题同步：iframe 自身有独立 document
 //   首屏：从 URL 参数 ?theme=dark 立即应用，避免"先米色一闪再切到暗"
-//   动态切换：监听 host 发来的 postMessage
+//   动态切换：监听 host 发来的 postMessage，同样走 View Transitions API
 //
 // 注意：host 现在会直接 mutate 我们的 documentElement.dataset.theme，所以
 // 不能用 "data-theme 已等于 safe 就 early return"——那样 PIANO_ROLL 常量
 // 永远不会被换成暗色版（host 跨过了我们的 bridge）。每次都要走完整流程
-function applyIframeTheme(next, { animated = true } = {}) {
-  const safe = next === 'dark' ? 'dark' : 'light'
-  const wasSame = document.documentElement.dataset.theme === safe
-  if (animated && !wasSame) {
-    document.documentElement.classList.add('theme-transitioning')
-    setTimeout(() => document.documentElement.classList.remove('theme-transitioning'), 410)
-  }
+function commitIframeTheme(safe) {
   document.documentElement.dataset.theme = safe
   // canvas 画的钢琴卷帘 / 音符 / 音素时序图——直接改 PIANO_ROLL 常量并触发重绘。
   // 即使 data-theme 没变，也仍要调一次：PIANO_ROLL 默认是浅色快照，
   // 必须显式应用一次暗色 palette 才能让 canvas 对
   try { applyPianoRollTheme(safe) } catch (_e) {}
+}
+
+function applyIframeTheme(next, { animated = true } = {}) {
+  const safe = next === 'dark' ? 'dark' : 'light'
+  if (!animated || typeof document.startViewTransition !== 'function') {
+    commitIframeTheme(safe)
+    return
+  }
+  const transition = document.startViewTransition(() => {
+    commitIframeTheme(safe)
+  })
+  transition?.finished?.catch?.(() => {})
 }
 
 // 首屏检测主题——三道兜底，任意一道命中就行：

@@ -71,21 +71,15 @@
   --fx-knob-track: #3F4248;
 }
 
-/* 切换主题时给 <html> 加这个临时 class，让全局色值过渡 ~360ms。
-   只在切换瞬间挂上，过完撤掉，避免常驻 transition 拖累性能。
-   *::before/after 也要包含——很多视觉组件靠伪元素（按钮高光、刻度线等） */
-.theme-transitioning,
-.theme-transitioning *,
-.theme-transitioning *::before,
-.theme-transitioning *::after {
-  transition:
-    background-color 360ms ease,
-    color 360ms ease,
-    border-color 360ms ease,
-    fill 360ms ease,
-    stroke 360ms ease,
-    box-shadow 360ms ease,
-    opacity 360ms ease !important;
+/* 主题过渡：用 View Transitions API（document.startViewTransition）做合成器层
+   交叉淡入——GPU 一次性合成两张纹理，整页几千个 DOM 元素的色值"同时"插值
+   跟单个元素一样便宜。之前用 * 选择器给所有元素挂 transition 的方案性能崩坏
+   （丢帧到 4-5 帧）已经废弃。
+   下面这两条只调过渡时长 + 缓动，别的浏览器默认帮你处理 */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 360ms;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* ===== 顶栏明暗切换按钮：太阳 ⇄ 月亮 ===== */

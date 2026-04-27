@@ -44,18 +44,12 @@
   --shadow-panel: 0 10px 30px rgba(0, 0, 0, 0.6);
 }
 
-/* 主题切换瞬间的全局过渡——跟 host 那边同款机制 */
-.theme-transitioning,
-.theme-transitioning *,
-.theme-transitioning *::before,
-.theme-transitioning *::after {
-  transition:
-    background-color 360ms ease,
-    color 360ms ease,
-    border-color 360ms ease,
-    fill 360ms ease,
-    stroke 360ms ease,
-    box-shadow 360ms ease !important;
+/* 主题切换：iframe 也用 View Transitions API（document.startViewTransition）
+   做合成器层交叉淡入。之前 * 选择器全局 transition 性能崩坏已废弃 */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 360ms;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* 钢琴卷帘里硬编码的浅色背景：暗模式针对性反相
