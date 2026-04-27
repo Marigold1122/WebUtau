@@ -1,11 +1,11 @@
-// 用户自带 LLM API key 的本地存储。
+// 用户自带 LLM API key 的本地存储——双层路由：
 //
-// 安全等级（诚实告知）：
-//   ✓ AES-GCM (Web Crypto) 加密后存 localStorage
-//   ✓ KDF 输入含 origin，跨域无法解密
-//   ✓ key 永不进我们后端——只在浏览器里、调用 LLM 时直接发到厂商
-//   ✗ 不防本机木马 / 同源 XSS / 流氓浏览器扩展（任何浏览器侧加密都做不到）
-//   ✗ 真要绝对安全请用桌面版（OS keychain）
+// 桌面版（Tauri）：走 OS Keychain（Rust 端 keyring crate）。Key 存在 OS 进程外的
+//   隔离存储里，浏览器 JS / 浏览器扩展 / 同源 XSS 都碰不到，安全等级最高
+// 网页版（浏览器）：走 AES-GCM 加密的 localStorage。安全等级"行业天花板"，
+//   但不防本机木马 / 同源 XSS / 流氓浏览器扩展
+//
+// 上层调用方无需关心走哪条路——通过这一层统一 API 就行
 //
 // 旧版本 plaintext 数据迁移：开机时检测旧格式 → 自动加密迁移一次（用户无感）。
 // API：
@@ -13,7 +13,14 @@
 //   - hasUserApiKey()     Promise<boolean>
 //   - setUserApiConfig()  Promise<void>
 //   - clearUserApiConfig() void
+//   - getStorageKindLabel() 'desktop-keychain' | 'browser-encrypted-localstorage'
 
+import {
+  isDesktopVaultAvailable,
+  vaultClearConfig,
+  vaultGetConfig,
+  vaultSaveConfig,
+} from './desktopKeyVault.js'
 import { decryptString, encryptString, isCryptoSupported } from './lyricKeyCipher.js'
 
 const STORAGE_KEY = 'webutau:ai-lyric-config'
@@ -95,6 +102,21 @@ export async function getUserApiConfig() {
   if (cachedConfig) return cachedConfig
   if (cachedConfigPromise) return cachedConfigPromise
   cachedConfigPromise = (async () => {
+    // 桌面版优先走 OS keychain；vault 失败 / 非 Tauri 才落到 localStorage 加密
+    if (isDesktopVaultAvailable()) {
+      const v = await vaultGetConfig()
+      if (v.ok) {
+        const cfg = { apiKey: v.apiKey, baseUrl: v.baseUrl, model: v.model }
+        cachedConfig = cfg
+        cachedConfigPromise = null
+        return cfg
+      }
+      // vault 异常（极少数情况）—— 不落到 web fallback，避免桌面版 key 被偷偷
+      // 写到 localStorage。返回空让用户重填
+      cachedConfig = { apiKey: '', baseUrl: '', model: '' }
+      cachedConfigPromise = null
+      return cachedConfig
+    }
     const cfg = await readDecrypted()
     cachedConfig = cfg
     cachedConfigPromise = null
@@ -109,15 +131,39 @@ export async function hasUserApiKey() {
 }
 
 export async function setUserApiConfig(config) {
+  // 桌面版直接走 keychain；vault 写失败抛异常让上层提示
+  if (isDesktopVaultAvailable()) {
+    const v = await vaultSaveConfig(config)
+    if (!v.ok) {
+      throw new Error(v.error || 'OS Keychain 写入失败')
+    }
+    const result = {
+      apiKey: typeof config?.apiKey === 'string' ? config.apiKey.trim() : '',
+      baseUrl: typeof config?.baseUrl === 'string' ? config.baseUrl.trim() : '',
+      model: typeof config?.model === 'string' ? config.model.trim() : '',
+    }
+    cachedConfig = result
+    return result
+  }
   const result = await writeEncrypted(config)
   cachedConfig = result
   return result
 }
 
 export function clearUserApiConfig() {
+  // 桌面版：异步清 keychain（不等结果，允许失败），同时清 localStorage 兜底
+  // （万一以前在网页版填过迁移到桌面版，老的 localStorage 也得跟着清）
+  if (isDesktopVaultAvailable()) {
+    vaultClearConfig().catch(() => {})
+  }
   try { globalThis.localStorage?.removeItem?.(STORAGE_KEY) } catch (_e) {}
   cachedConfig = { apiKey: '', baseUrl: '', model: '' }
   cachedConfigPromise = null
+}
+
+// UI 用：告知用户当前 key 存在哪里——桌面版用 OS keychain 是亮点要展示出来
+export function getStorageKindLabel() {
+  return isDesktopVaultAvailable() ? 'desktop-keychain' : 'browser-encrypted-localstorage'
 }
 
 // 给单测 / dev tools：清缓存让下次读重走 decrypt

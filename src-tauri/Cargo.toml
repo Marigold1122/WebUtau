@@ -20,3 +20,7 @@ reqwest = { version = "0.12", default-features = false, features = ["stream", "r
 bytes = "1"
 once_cell = "1"
 futures-util = "0.3"
+# OS 级密钥库——macOS Keychain / Windows Credential Manager / Linux Secret Service。
+# 桌面版用户填的 LLM API key 走这里存，比加密 localStorage 安全等级高一档：
+# 钥匙在 OS 进程外的安全存储，恶意网页 / 浏览器扩展碰不到
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }

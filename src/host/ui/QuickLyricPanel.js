@@ -13,11 +13,13 @@ import { extractMusicStructure } from '../ai/extractMusicStructure.js'
 import { LyricAIClient } from '../ai/LyricAIClient.js'
 import {
   clearUserApiConfig,
+  getStorageKindLabel,
   getUserApiConfig,
   hasUserApiKey,
   setUserApiConfig,
 } from '../ai/lyricApiKeyStore.js'
 import { DAILY_LIMIT_DEFAULT, getQuotaSnapshot } from '../ai/lyricUsageQuota.js'
+import { openLyricAIKeyDialog } from './LyricAIKeyDialog.js'
 
 export class QuickLyricPanel {
   constructor() {
@@ -251,7 +253,8 @@ export class QuickLyricPanel {
     // 解密期间面板可能已经关闭——避免写到悬空 ref
     if (!this._aiQuotaEl) return
     if (userKeyPresent) {
-      this._aiQuotaEl.textContent = '· 已用自己的 API key（直连厂商不经过我们服务器）'
+      const where = getStorageKindLabel() === 'desktop-keychain' ? '系统钥匙库' : '浏览器加密存储'
+      this._aiQuotaEl.textContent = `· 已用自己的 API key（存于${where}，直连厂商不经过我们服务器）`
       this._aiQuotaEl.classList.add('is-unlimited')
       return
     }
@@ -352,63 +355,39 @@ export class QuickLyricPanel {
     return `AI 写词：${result?.message || '生成失败，请重试'}`
   }
 
-  // 简单的 prompt 配置弹窗——直接用 prompt() 几连，避免引入复杂模态。
-  // 第一步先弹隐私告知，让用户在填 key 前先了解安全模型
+  // 用自定义模态弹窗替代 window.prompt/confirm——后者在 Tauri webview 里
+  // 被静默拦截（点了没反应），自定义模态两端表现一致 + 单弹窗收齐 3 字段 +
+  // 厂商预设 chip 一键填 baseUrl + model
   async _openAPIKeyDialog() {
-    // 第一步：诚实告知——用户必须在看到这段后才会被引导填 key
-    const proceed = window.confirm(
-      [
-        '关于你的 API key 安全（请阅读）：',
-        '',
-        '✓ 你的 key 只保存在本浏览器的 localStorage（已 AES-GCM 加密）',
-        '✓ 调用时浏览器直接发到 LLM 厂商服务器（如 DeepSeek / 通义 / GLM）',
-        '✓ 绝不会经过 WebUtau 服务器——我们的后端看不到、也碰不到你的 key',
-        '',
-        '⚠ 但浏览器侧的本地加密只能防 F12 一眼看明文，',
-        '   无法防御本机木马 / 同源 XSS / 流氓浏览器扩展。',
-        '',
-        '若需绝对安全，建议：',
-        '· 使用桌面版（用系统密钥库存储）',
-        '· 在 LLM 厂商后台为该 key 配置 IP 白名单 / 失效时间',
-        '',
-        '知悉以上风险并继续配置？',
-      ].join('\n'),
-    )
-    if (!proceed) {
+    const isDesktop = getStorageKindLabel() === 'desktop-keychain'
+    const cur = await getUserApiConfig().catch(() => ({ apiKey: '', baseUrl: '', model: '' }))
+    const result = await openLyricAIKeyDialog({ initial: cur, isDesktop })
+
+    if (result.action === 'cancel') {
       this._setStatus('已取消配置 API key', 'info')
       return
     }
-
-    const cur = await getUserApiConfig().catch(() => ({ apiKey: '', baseUrl: '', model: '' }))
-    const apiKey = window.prompt(
-      'API key（DeepSeek / 通义 / GLM 等 OpenAI 兼容厂商）。\n填空字符串清除已保存的 key。',
-      cur.apiKey || '',
-    )
-    if (apiKey === null) return
-    if (!apiKey.trim()) {
+    if (result.action === 'clear') {
       clearUserApiConfig()
       await this._refreshAIQuota()
       this._setStatus('已清除自定义 API key，回到平台默认（每日 5 次）', 'info')
       return
     }
-    const baseUrl = window.prompt(
-      'API endpoint（OpenAI 兼容路径，必填）。\n例：\n· DeepSeek：https://api.deepseek.com/v1\n· 通义：https://dashscope.aliyuncs.com/compatible-mode/v1\n· GLM：https://open.bigmodel.cn/api/paas/v4',
-      cur.baseUrl || '',
-    )
-    if (baseUrl === null) return
-    const model = window.prompt(
-      '模型名（必填）。\n例：deepseek-chat / qwen-plus / glm-4-flash',
-      cur.model || '',
-    )
-    if (model === null) return
-    try {
-      await setUserApiConfig({ apiKey, baseUrl, model })
-    } catch (error) {
-      this._setStatus(`保存失败：${error?.message || '加密出错'}`, 'error')
-      return
+    if (result.action === 'save' && result.config) {
+      try {
+        await setUserApiConfig(result.config)
+      } catch (error) {
+        this._setStatus(`保存失败：${error?.message || '存储出错'}`, 'error')
+        return
+      }
+      await this._refreshAIQuota()
+      this._setStatus(
+        isDesktop
+          ? '已保存到系统钥匙库（OS 级加密，浏览器扩展碰不到）。生成时直连厂商'
+          : '已保存（浏览器加密存储）。生成时浏览器直连厂商，不经过我们服务器',
+        'success',
+      )
     }
-    await this._refreshAIQuota()
-    this._setStatus('已保存（已加密本地存储）。生成时浏览器直连厂商，不经过我们服务器', 'success')
   }
 
   /** 根据传入的锚点（通常是轨道列表区域）计算初始位置：x 贴右 12px，y 贴锚点顶部 36px */

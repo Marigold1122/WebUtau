@@ -5780,3 +5780,216 @@ body.inline-popover-active { }
   color: var(--text-muted);
 }
 
+/* ============================================================
+   AI 写词 API key 配置模态弹窗（替代 window.prompt/confirm，
+   两端通用——Tauri webview 不允许原生弹窗）
+   ============================================================ */
+.lyric-ai-key-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: lyric-ai-key-overlay-in 180ms ease both;
+}
+@keyframes lyric-ai-key-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.lyric-ai-key-dialog {
+  width: 540px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+  background: var(--bg-1);
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  padding: 18px 20px 16px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  font-family: 'Inter', sans-serif;
+  color: var(--text-main);
+  animation: lyric-ai-key-dialog-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes lyric-ai-key-dialog-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.lyric-ai-key-title {
+  margin: 0 0 14px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-main);
+}
+
+.lyric-ai-key-notice {
+  background: rgba(59, 139, 136, 0.08);
+  border: 1px solid rgba(59, 139, 136, 0.32);
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+.lyric-ai-key-notice-title {
+  font-weight: 700;
+  color: var(--accent-color);
+  margin-bottom: 4px;
+}
+.lyric-ai-key-notice-line {
+  color: var(--text-muted);
+  margin: 1px 0;
+}
+
+.lyric-ai-key-presets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  font-size: 11px;
+}
+.lyric-ai-key-presets-label {
+  color: var(--text-muted);
+  font-weight: 600;
+  margin-right: 2px;
+}
+.lyric-ai-key-preset-chip {
+  padding: 3px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--bg-3);
+  color: var(--text-main);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.lyric-ai-key-preset-chip:hover {
+  background: var(--accent-color);
+  color: #FFF;
+  border-color: var(--accent-color);
+}
+
+.lyric-ai-key-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.lyric-ai-key-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lyric-ai-key-field-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+.lyric-ai-key-field-input {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  background: var(--bg-3);
+  color: var(--text-main);
+  font-size: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  outline: none;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.lyric-ai-key-field-input:focus {
+  border-color: var(--accent-color);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04), 0 0 0 2px rgba(59, 139, 136, 0.18);
+}
+
+.lyric-ai-key-error {
+  padding: 6px 10px;
+  border-radius: 3px;
+  font-size: 11.5px;
+  margin-bottom: 10px;
+}
+.lyric-ai-key-error[data-tone='error'] {
+  background: rgba(201, 66, 52, 0.12);
+  color: #B23434;
+  border: 1px solid rgba(201, 66, 52, 0.35);
+}
+.lyric-ai-key-error[data-tone='warn'] {
+  background: rgba(212, 160, 53, 0.14);
+  color: #8B5A0F;
+  border: 1px solid rgba(212, 160, 53, 0.42);
+}
+
+.lyric-ai-key-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.lyric-ai-key-btn {
+  min-height: 30px;
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.12s;
+  font-family: 'Inter', sans-serif;
+}
+.lyric-ai-key-btn--ghost {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+}
+.lyric-ai-key-btn--ghost:hover {
+  background: var(--bg-3);
+  color: var(--text-main);
+}
+.lyric-ai-key-btn--danger {
+  background: transparent;
+  border: 1px solid rgba(201, 66, 52, 0.45);
+  color: #B23434;
+}
+.lyric-ai-key-btn--danger:hover:not(:disabled) {
+  background: rgba(201, 66, 52, 0.10);
+}
+.lyric-ai-key-btn--danger:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.lyric-ai-key-btn--danger[data-confirming='1'] {
+  background: rgba(201, 66, 52, 0.18);
+  font-weight: 700;
+}
+.lyric-ai-key-btn--primary {
+  background: var(--accent-color);
+  color: #FFF;
+  border: 1px solid #276B69;
+  margin-left: auto;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 2px rgba(59, 139, 136, 0.24);
+}
+.lyric-ai-key-btn--primary:hover {
+  background: #327A77;
+}
+
+/* 暗模式下 modal 视觉一致 */
+[data-theme='dark'] .lyric-ai-key-dialog {
+  background: var(--bg-1);
+  border-color: var(--border-light);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+[data-theme='dark'] .lyric-ai-key-notice {
+  background: rgba(79, 177, 174, 0.10);
+  border-color: rgba(79, 177, 174, 0.4);
+}
+[data-theme='dark'] .lyric-ai-key-preset-chip {
+  background: var(--bg-3);
+  border-color: var(--border-color);
+}
+

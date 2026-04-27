@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod api_key_vault;
 mod backend;
 mod local_server;
 mod tunnel;
@@ -35,6 +36,9 @@ fn main() {
             tunnel_start,
             tunnel_stop,
             updater::check_for_updates,
+            api_key_vault::save_api_key_config,
+            api_key_vault::get_api_key_config,
+            api_key_vault::clear_api_key_config,
         ])
         .setup(move |app| {
             app.manage(backend::BackendState::default());
