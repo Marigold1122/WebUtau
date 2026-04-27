@@ -16,6 +16,20 @@ server/DiffSingerApi/voicebanks/
 server/DiffSingerApi/tempdiffsingertest/
 server/DiffSingerApi/TestBuild/
 
+# ===== 不要提交含敏感信息的本地配置 =====
+# appsettings.json 是仓库里的"空模板"——所有 key 字段必须留空
+# 本地填了真实 LLM API key 的覆盖文件走这几个名字之一，全部 ignore：
+#   - appsettings.Local.json
+#   - appsettings.Development.json (ASPNETCORE_ENVIRONMENT=Development 时自动加载)
+#   - appsettings.Production.json
+# 推荐改用环境变量 LyricAI__ApiKey，根本不写文件，最安全
+#
+# 注意：上面 `!server/DiffSingerApi/**` 把整个目录 force-include 了，单文件
+# negation 不奏效。这里改用 ** 通配前缀直接匹配文件名，绕过 !**
+**/appsettings.Local.json
+**/appsettings.Development.json
+**/appsettings.Production.json
+
 # Vendored OpenUtau source subset required by the backend source.
 OpenUtau/*
 !OpenUtau/OpenUtau.Core/

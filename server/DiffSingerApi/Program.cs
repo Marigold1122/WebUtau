@@ -118,10 +118,22 @@ builder.Host.UseSerilog();
         string.IsNullOrEmpty(Preferences.Default.OnnxRunner) ? "CPU" : Preferences.Default.OnnxRunner);
 }
 
+// 让 appsettings.Local.json（gitignore）不依赖 ASPNETCORE_ENVIRONMENT 也能覆盖
+// 主配置——本地填 LLM API key 用，避免误把 key 提交到仓库
+builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
+
 // Services
 builder.Services.AddSingleton<SynthesisService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<SynthesisService>());
 builder.Services.AddScoped<VoicebankService>();
+
+// AI 写词：选项绑定 + 单例限速器 + 服务（HttpClient 工厂下的命名 client）
+builder.Services.Configure<LyricAIOptions>(
+    builder.Configuration.GetSection(LyricAIOptions.SectionName));
+builder.Services.AddSingleton<LyricAIRateLimiter>();
+builder.Services.AddHttpClient("lyric-ai");
+builder.Services.AddSingleton<LyricAIService>();
+
 builder.Services.AddControllers();
 
 // CORS — allow frontend dev server

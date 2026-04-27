@@ -5,7 +5,19 @@
  * 用户编辑后点击「解析」：去除所有空白，按字拆分，校验数量是否与音符数一致；
  * 若一致则重新按分句换行排列，方便用户二次检查；「保存」按钮变为可用。
  * 点击「保存」后，将歌词变更构造成 lyric-edit 数组，交由外部回调提交。
+ *
+ * AI 协作填词：toggle 开启后展开 AI 区——用户输入主题/风格 → 后端调 LLM →
+ * 返回符合音节数的歌词 → 自动填入文本框（用户仍可二次编辑后再保存）
  */
+import { extractMusicStructure } from '../ai/extractMusicStructure.js'
+import { LyricAIClient } from '../ai/LyricAIClient.js'
+import {
+  clearUserApiConfig,
+  getUserApiConfig,
+  hasUserApiKey,
+  setUserApiConfig,
+} from '../ai/lyricApiKeyStore.js'
+import { DAILY_LIMIT_DEFAULT, getQuotaSnapshot } from '../ai/lyricUsageQuota.js'
 
 export class QuickLyricPanel {
   constructor() {
@@ -24,6 +36,18 @@ export class QuickLyricPanel {
     this._onSave = null
     this._btnFix = null
     this._languageCode = null
+
+    // AI 协作填词相关
+    this._aiSection = null
+    this._aiToggle = null
+    this._aiQuotaEl = null
+    this._aiThemeInput = null
+    this._aiStyleInput = null
+    this._aiBtnGenerate = null
+    this._aiBtnConfig = null
+    this._aiClient = new LyricAIClient()
+    this._aiBusy = false
+    this._aiAbortController = null
   }
 
   /** 打开面板并填充当前歌词。anchor 决定初次弹出的位置，后续可由用户拖动 */
@@ -118,11 +142,210 @@ export class QuickLyricPanel {
     this._btnSave.addEventListener('click', () => this._handleSave())
     actions.append(this._btnFix, this._btnParse, this._btnSave)
 
-    el.append(header, this._textarea, this._statusEl, actions)
+    // AI 协作填词区——默认折叠，toggle 打开后展开
+    const aiSection = this._buildAISection()
+
+    el.append(header, this._textarea, this._statusEl, aiSection, actions)
     // 使用 position: fixed，挂到 body 避免被编辑面板的 overflow:hidden 裁剪
     document.body.appendChild(el)
     this._el = el
     this._textarea.focus()
+  }
+
+  // 构造 AI 协作填词子面板：toggle + 主题输入 + 风格输入 + 配额显示 + 生成按钮
+  _buildAISection() {
+    const wrap = document.createElement('div')
+    wrap.className = 'quick-lyric-ai'
+
+    // toggle 行
+    const toggleRow = document.createElement('label')
+    toggleRow.className = 'quick-lyric-ai-toggle'
+    const toggleInput = document.createElement('input')
+    toggleInput.type = 'checkbox'
+    toggleInput.className = 'quick-lyric-ai-toggle-input'
+    const toggleText = document.createElement('span')
+    toggleText.className = 'quick-lyric-ai-toggle-text'
+    toggleText.innerHTML = '<span class="quick-lyric-ai-icon" aria-hidden="true">✨</span> 启用 AI 协助填词'
+    toggleRow.append(toggleInput, toggleText)
+    this._aiToggle = toggleInput
+    toggleInput.addEventListener('change', () => {
+      const open = toggleInput.checked
+      body.hidden = !open
+      wrap.classList.toggle('is-open', open)
+      if (open) this._refreshAIQuota()
+    })
+    wrap.appendChild(toggleRow)
+
+    // 展开后的内容区（默认隐藏）
+    const body = document.createElement('div')
+    body.className = 'quick-lyric-ai-body'
+    body.hidden = true
+
+    const themeLabel = document.createElement('div')
+    themeLabel.className = 'quick-lyric-ai-label'
+    themeLabel.textContent = '主题 / 情绪'
+    const themeInput = document.createElement('textarea')
+    themeInput.className = 'quick-lyric-ai-theme'
+    themeInput.placeholder = '例如：夏夜河边离别，淡淡感伤'
+    themeInput.rows = 2
+    themeInput.addEventListener('keydown', (e) => e.stopPropagation())
+    this._aiThemeInput = themeInput
+
+    const styleLabel = document.createElement('div')
+    styleLabel.className = 'quick-lyric-ai-label'
+    styleLabel.textContent = '风格（可选）'
+    const styleInput = document.createElement('input')
+    styleInput.type = 'text'
+    styleInput.className = 'quick-lyric-ai-style'
+    styleInput.placeholder = '例如：古风 / 流行 / 电子 / 民谣'
+    styleInput.addEventListener('keydown', (e) => e.stopPropagation())
+    this._aiStyleInput = styleInput
+
+    // 第三行：配额 + 配置链接 + 生成按钮
+    const footer = document.createElement('div')
+    footer.className = 'quick-lyric-ai-footer'
+    const quotaEl = document.createElement('span')
+    quotaEl.className = 'quick-lyric-ai-quota'
+    this._aiQuotaEl = quotaEl
+    const btnConfig = document.createElement('button')
+    btnConfig.type = 'button'
+    btnConfig.className = 'quick-lyric-ai-config-btn'
+    btnConfig.textContent = '⚙ 用我自己的 API key'
+    btnConfig.addEventListener('click', (event) => {
+      event.preventDefault()
+      this._openAPIKeyDialog()
+    })
+    this._aiBtnConfig = btnConfig
+    const btnGenerate = document.createElement('button')
+    btnGenerate.type = 'button'
+    btnGenerate.className = 'quick-lyric-ai-generate modal-btn primary'
+    btnGenerate.textContent = '✨ 生成歌词'
+    btnGenerate.addEventListener('click', () => this._handleAIGenerate())
+    this._aiBtnGenerate = btnGenerate
+    footer.append(quotaEl, btnConfig, btnGenerate)
+
+    body.append(themeLabel, themeInput, styleLabel, styleInput, footer)
+    wrap.appendChild(body)
+    this._aiSection = wrap
+    return wrap
+  }
+
+  _refreshAIQuota() {
+    if (!this._aiQuotaEl) return
+    if (hasUserApiKey()) {
+      this._aiQuotaEl.textContent = '· 已用自己的 API key 不限次数'
+      this._aiQuotaEl.classList.add('is-unlimited')
+      return
+    }
+    this._aiQuotaEl.classList.remove('is-unlimited')
+    const q = getQuotaSnapshot()
+    if (q.remaining > 0) {
+      this._aiQuotaEl.textContent = `· 今日剩余 ${q.remaining} / ${q.limit} 次`
+      this._aiQuotaEl.classList.toggle('is-low', q.remaining <= 1)
+    } else {
+      this._aiQuotaEl.textContent = `· 今日次数已用完（${q.limit}/${q.limit}），可填自己的 API key 不限`
+      this._aiQuotaEl.classList.add('is-low')
+    }
+  }
+
+  async _handleAIGenerate() {
+    if (this._aiBusy) return
+    if (!this._snapshot) {
+      this._setStatus('请先选择有 MIDI 的轨道', 'error')
+      return
+    }
+    const theme = this._aiThemeInput?.value?.trim()
+    if (!theme) {
+      this._aiThemeInput?.focus()
+      this._setStatus('请填写主题 / 情绪', 'error')
+      return
+    }
+    const style = this._aiStyleInput?.value?.trim() || ''
+
+    this._aiBusy = true
+    this._aiBtnGenerate.disabled = true
+    this._aiBtnGenerate.textContent = '生成中…'
+    this._setStatus('AI 正在写词，可能需要 5-15 秒…', 'info')
+
+    this._aiAbortController = new AbortController()
+    const musicStructure = extractMusicStructure(this._snapshot)
+    const result = await this._aiClient.generate({
+      musicStructure,
+      theme,
+      style,
+      signal: this._aiAbortController.signal,
+    })
+
+    this._aiBusy = false
+    this._aiAbortController = null
+    if (this._aiBtnGenerate) {
+      this._aiBtnGenerate.disabled = false
+      this._aiBtnGenerate.textContent = '✨ 生成歌词'
+    }
+    this._refreshAIQuota()
+
+    if (!result.ok) {
+      this._setStatus(this._formatAIError(result), 'error')
+      return
+    }
+
+    // 把生成出来的字按句换行填进文本框——用户还可手改后点解析 / 保存
+    const lines = result.phrases.map((p) => p.lyric.join(''))
+    this._textarea.value = lines.join('\n')
+    this._parsedLyrics = null
+    this._btnSave.disabled = true
+    this._hideFix()
+    this._setStatus(`✓ AI 生成 ${result.flatChars.length} 字，请点"解析"再"保存"`, 'success')
+  }
+
+  _formatAIError(result) {
+    const reason = result?.reason
+    if (reason === 'quota-exceeded') return 'AI 写词：今日次数已用完，可填自己的 API key 不限次数'
+    if (reason === 'invalid-key') return 'AI 写词：API key 无效，请检查 ⚙ 配置'
+    if (reason === 'network-error') return `AI 写词：网络错误（${result.error || '请稍后重试'}）`
+    if (reason === 'parse-failed') {
+      const sub = result.parseReason
+      if (sub === 'syllable-mismatch') {
+        return `AI 写词：字数对不上音符数，建议重试或换个主题（${result.details?.phraseIndex} 句应 ${result.details?.expected} 字，AI 给了 ${result.details?.actual} 字）`
+      }
+      if (sub === 'phrase-count-mismatch') {
+        return `AI 写词：句数对不上（应 ${result.details?.expected}，AI 给 ${result.details?.actual}），重试一次`
+      }
+      return `AI 写词：解析失败（${sub}），重试一次`
+    }
+    if (typeof reason === 'string' && reason.startsWith('http-')) {
+      return `AI 写词：服务器错误 ${reason}，${result.message || '请稍后重试'}`
+    }
+    return `AI 写词：${result?.message || '生成失败，请重试'}`
+  }
+
+  // 简单的 prompt 配置弹窗——直接用 prompt() 三连，避免引入复杂模态
+  _openAPIKeyDialog() {
+    const cur = getUserApiConfig()
+    const apiKey = window.prompt(
+      'API key（DeepSeek / 通义 / GLM 等 OpenAI 兼容厂商）。\n填空字符串清除已保存的 key。',
+      cur.apiKey || '',
+    )
+    if (apiKey === null) return
+    if (!apiKey.trim()) {
+      clearUserApiConfig()
+      this._refreshAIQuota()
+      this._setStatus('已清除自定义 API key，回到平台默认（每日 5 次）', 'info')
+      return
+    }
+    const baseUrl = window.prompt(
+      'API endpoint（OpenAI 兼容路径，留空走平台默认）。\n例：\n· DeepSeek：https://api.deepseek.com/v1\n· 通义：https://dashscope.aliyuncs.com/compatible-mode/v1\n· GLM：https://open.bigmodel.cn/api/paas/v4',
+      cur.baseUrl || '',
+    )
+    if (baseUrl === null) return
+    const model = window.prompt(
+      '模型名（留空走平台默认）。\n例：deepseek-chat / qwen-plus / glm-4-flash',
+      cur.model || '',
+    )
+    if (model === null) return
+    setUserApiConfig({ apiKey, baseUrl, model })
+    this._refreshAIQuota()
+    this._setStatus('已保存自定义 API key，下次生成走你自己的额度（不限平台次数）', 'success')
   }
 
   /** 根据传入的锚点（通常是轨道列表区域）计算初始位置：x 贴右 12px，y 贴锚点顶部 36px */

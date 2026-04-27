@@ -3269,7 +3269,9 @@ body {
 /* ── 快速填词浮窗 ── */
 .quick-lyric-panel {
   position: fixed; top: 0; left: 0; z-index: 900;
-  width: 280px; padding: 12px 14px 10px;
+  /* AI 协作填词区展开后下方塞下 textarea + style input + 配额行——
+     窗口加宽到 480px 才不挤；不展开时也保持新宽度，视觉一致 */
+  width: 480px; padding: 12px 14px 10px;
   border: 1px solid #8F8A80; border-radius: 4px; background: #ECE8DE;
   box-shadow: 0 8px 28px rgba(0,0,0,0.18), inset 0 1px 0 #FFF;
 }
@@ -3303,6 +3305,151 @@ body {
 .quick-lyric-status--error  { color: #B34040; }
 .quick-lyric-status--success { color: #3B8B88; }
 .quick-lyric-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* ── 快速填词内的 AI 协作子面板 ── */
+.quick-lyric-ai {
+  margin: 8px 0 6px;
+  border-top: 1px dashed #C2BCAE;
+  padding-top: 8px;
+}
+.quick-lyric-ai-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  color: var(--text-main);
+}
+.quick-lyric-ai-toggle-input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  cursor: pointer;
+}
+.quick-lyric-ai-toggle-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.quick-lyric-ai-icon {
+  font-size: 13px;
+  filter: saturate(1.2);
+}
+.quick-lyric-ai.is-open .quick-lyric-ai-toggle-text {
+  color: var(--accent-color);
+}
+
+.quick-lyric-ai-body {
+  margin-top: 10px;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: rgba(59, 139, 136, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.quick-lyric-ai-body[hidden] { display: none; }
+
+.quick-lyric-ai-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+.quick-lyric-ai-label:first-child { margin-top: 0; }
+
+.quick-lyric-ai-theme,
+.quick-lyric-ai-style {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  background: var(--bg-3);
+  color: var(--text-main);
+  font: 12px/1.5 'Inter', sans-serif;
+  resize: vertical;
+  outline: none;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.04);
+}
+.quick-lyric-ai-theme:focus,
+.quick-lyric-ai-style:focus {
+  border-color: var(--accent-color);
+}
+.quick-lyric-ai-style {
+  height: 28px;
+  resize: none;
+}
+
+.quick-lyric-ai-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+.quick-lyric-ai-quota {
+  flex: 1;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  min-width: 0;
+}
+.quick-lyric-ai-quota.is-low { color: #C94234; }
+.quick-lyric-ai-quota.is-unlimited { color: var(--accent-color); }
+.quick-lyric-ai-config-btn {
+  font-size: 10.5px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.quick-lyric-ai-config-btn:hover {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+}
+.quick-lyric-ai-generate {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 0 14px;
+  font-size: 12px;
+}
+.quick-lyric-ai-generate:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 暗模式：textarea / 风格 input 用更深的底；header / footer 文字反相 */
+[data-theme='dark'] .quick-lyric-panel {
+  background: var(--bg-1);
+  border-color: var(--border-light);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+[data-theme='dark'] .quick-lyric-textarea,
+[data-theme='dark'] .quick-lyric-ai-theme,
+[data-theme='dark'] .quick-lyric-ai-style {
+  background: var(--bg-3);
+  color: var(--text-main);
+  border-color: var(--border-color);
+}
+[data-theme='dark'] .quick-lyric-ai {
+  border-top-color: var(--border-color);
+}
+[data-theme='dark'] .quick-lyric-ai-body {
+  background: rgba(79, 177, 174, 0.10);
+  border-color: var(--border-color);
+}
+[data-theme='dark'] .quick-lyric-close {
+  color: var(--text-muted);
+}
+[data-theme='dark'] .quick-lyric-close:hover {
+  background: var(--bg-3);
+}
 
 .editor-body { flex: 1; min-height: 0; display: flex; overflow: hidden; background: var(--bg-0); }
 .voice-runtime-frame { flex: 1; width: 100%; height: auto; border: 0; display: block; background: var(--bg-0); }
