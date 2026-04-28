@@ -5,16 +5,42 @@ import {
   requestStopTunnel,
   watchTunnelStatus,
 } from '../services/tunnelService.js'
+import { onLocaleChange, t } from '../i18n/index.js'
 
-const STATE_LABELS = {
-  idle: '未启动',
-  preparing: '准备中',
-  downloading: '正在下载 cloudflared',
-  starting: '正在建立隧道',
-  ready: '已就绪',
-  error: '失败',
-  stopped: '已停止',
-  disabled: '不可用',
+function stateLabel(state) {
+  if (!state) return t('share.state.unknown')
+  return t(`share.state.${state}`)
+}
+
+// 后端 (Tauri / dev server) 返回的 message 是中文。前端按 state + 原文做映射，
+// 命中已知文案时用 i18n 替换；未命中则原样显示（便于用户/开发者排错）
+const MESSAGE_BY_STATE = {
+  ready: 'public_ready',
+  starting: 'starting',
+  stopped: 'stopped',
+  idle: 'not_yet',
+}
+const MESSAGE_BY_TEXT = new Map([
+  ['公开链接已就绪', 'public_ready'],
+  ['正在建立 Cloudflare quick tunnel', 'starting'],
+  ['隧道已停止', 'stopped'],
+  ['尚未生成分享链接', 'not_yet'],
+  ['未找到 cloudflared 二进制', 'cloudflared_missing'],
+  ['启动 cloudflared 失败', 'start_failed'],
+  ['cloudflared 异常退出', 'cloudflared_exited'],
+  ['无法读取隧道状态', 'no_status'],
+  ['无法连接到隧道状态服务', 'no_connect'],
+  ['获取状态失败', 'fetch_failed'],
+  ['隧道服务不可用', 'not_available'],
+])
+
+function localizeMessage(message, state) {
+  if (!message) return ''
+  const directKey = MESSAGE_BY_TEXT.get(message)
+  if (directKey) return t(`shareMessage.${directKey}`)
+  const fromState = MESSAGE_BY_STATE[state]
+  if (fromState) return t(`shareMessage.${fromState}`)
+  return message
 }
 
 function formatMB(bytes) {
@@ -30,6 +56,7 @@ class SharePanel {
     this._root = null
     this._refs = null
     this._stopWatch = null
+    this._stopLocaleWatch = null
     this._lastStatus = null
     this._busy = false
   }
@@ -39,11 +66,11 @@ class SharePanel {
     this._root = container
     container.classList.add('share-panel-section')
     container.innerHTML = `
-      <h2>分享链接</h2>
+      <h2 data-i18n="share.heading">${t('share.heading')}</h2>
       <div class="share-panel" data-share-root>
         <div class="share-state-row">
           <span class="share-state-dot" data-share-dot></span>
-          <span class="share-state-text" data-share-state>初始化中…</span>
+          <span class="share-state-text" data-share-state></span>
         </div>
         <div class="share-message" data-share-message></div>
         <div class="share-progress" data-share-progress hidden>
@@ -53,14 +80,14 @@ class SharePanel {
         <div class="share-url-block" data-share-url-block hidden>
           <div class="share-url-row">
             <code class="share-url" data-share-url></code>
-            <button type="button" class="panel-action-btn share-copy-btn" data-share-copy>复制</button>
+            <button type="button" class="panel-action-btn share-copy-btn" data-share-copy></button>
           </div>
-          <a class="share-url-open" data-share-open target="_blank" rel="noreferrer noopener">在浏览器中打开 ↗</a>
+          <a class="share-url-open" data-share-open target="_blank" rel="noreferrer noopener"></a>
         </div>
         <div class="share-error" data-share-error hidden></div>
         <div class="share-actions" data-share-actions hidden>
-          <button type="button" class="panel-action-btn panel-action-btn--primary" data-share-start>生成分享链接</button>
-          <button type="button" class="panel-action-btn" data-share-stop hidden>停止分享</button>
+          <button type="button" class="panel-action-btn panel-action-btn--primary" data-share-start></button>
+          <button type="button" class="panel-action-btn" data-share-stop hidden></button>
         </div>
         <div class="share-hint" data-share-hint></div>
       </div>
@@ -83,6 +110,11 @@ class SharePanel {
       stop: container.querySelector('[data-share-stop]'),
       hint: container.querySelector('[data-share-hint]'),
     }
+    this._refs.state.textContent = t('share.initializing')
+    this._refs.copy.textContent = t('share.copy')
+    this._refs.open.textContent = t('share.open_browser')
+    this._refs.start.textContent = t('share.btn_start')
+    this._refs.stop.textContent = t('share.btn_stop')
 
     this._refs.copy.addEventListener('click', () => this._handleCopy())
     this._refs.start.addEventListener('click', () => this._handleStart())
@@ -92,12 +124,21 @@ class SharePanel {
     getTunnelStatus().then((status) => this._render(status)).catch(() => {})
 
     this._stopWatch = watchTunnelStatus((status) => this._render(status))
+    // locale 切换时重渲（按钮文字、状态文字都来自 t()）
+    this._stopLocaleWatch = onLocaleChange(() => {
+      if (this._lastStatus) this._render(this._lastStatus)
+      else if (this._refs) this._refs.state.textContent = t('share.initializing')
+    })
   }
 
   destroy() {
     if (this._stopWatch) {
       this._stopWatch()
       this._stopWatch = null
+    }
+    if (this._stopLocaleWatch) {
+      try { this._stopLocaleWatch() } catch (_e) {}
+      this._stopLocaleWatch = null
     }
     this._root = null
     this._refs = null
@@ -108,15 +149,15 @@ class SharePanel {
     if (!url || !this._refs) return
     try {
       await navigator.clipboard.writeText(url)
-      this._refs.copy.textContent = '已复制 ✓'
+      this._refs.copy.textContent = t('share.copied')
       window.setTimeout(() => {
-        if (this._refs) this._refs.copy.textContent = '复制'
+        if (this._refs) this._refs.copy.textContent = t('share.copy')
       }, 1500)
     } catch (err) {
       console.warn('[SharePanel] 复制失败:', err)
-      this._refs.copy.textContent = '复制失败'
+      this._refs.copy.textContent = t('share.copy_failed')
       window.setTimeout(() => {
-        if (this._refs) this._refs.copy.textContent = '复制'
+        if (this._refs) this._refs.copy.textContent = t('share.copy')
       }, 1500)
     }
   }
@@ -131,7 +172,7 @@ class SharePanel {
       this._render(status)
     } catch (err) {
       this._refs.error.hidden = false
-      this._refs.error.textContent = `启动失败: ${err?.message || err}`
+      this._refs.error.textContent = t('share.start_failed', { message: err?.message || err })
     } finally {
       this._busy = false
       if (this._refs) this._refs.start.disabled = false
@@ -147,7 +188,7 @@ class SharePanel {
       this._render(status)
     } catch (err) {
       this._refs.error.hidden = false
-      this._refs.error.textContent = `停止失败: ${err?.message || err}`
+      this._refs.error.textContent = t('share.stop_failed', { message: err?.message || err })
     } finally {
       this._busy = false
       if (this._refs) this._refs.stop.disabled = false
@@ -159,11 +200,11 @@ class SharePanel {
     this._lastStatus = status
     const refs = this._refs
 
-    const stateLabel = STATE_LABELS[status.state] || status.state || '未知'
-    refs.state.textContent = stateLabel
+    refs.state.textContent = stateLabel(status.state)
     refs.dot.dataset.state = status.state || 'unknown'
-    refs.message.textContent = status.message || ''
-    refs.message.hidden = !status.message
+    const localized = localizeMessage(status.message, status.state)
+    refs.message.textContent = localized
+    refs.message.hidden = !localized
 
     const showProgress = status.state === 'downloading' && status.totalBytes > 0
     if (showProgress) {
@@ -179,6 +220,7 @@ class SharePanel {
       refs.urlBlock.hidden = false
       refs.url.textContent = status.url
       refs.open.href = status.url
+      refs.open.textContent = t('share.open_browser')
     } else {
       refs.urlBlock.hidden = true
       refs.open.removeAttribute('href')
@@ -186,7 +228,12 @@ class SharePanel {
 
     if (status.error) {
       refs.error.hidden = false
-      refs.error.textContent = status.error
+      // error 字段也可能是后端返回的中文长文，用同样的字典做替换；命中失败时原样显示
+      refs.error.textContent = MESSAGE_BY_TEXT.has(status.error)
+        ? t(`shareMessage.${MESSAGE_BY_TEXT.get(status.error)}`)
+        : (status.error === '应用资源目录中缺少 cloudflared，请重新安装或检查打包流程'
+            ? t('shareMessage.cloudflared_missing_detail')
+            : status.error)
     } else {
       refs.error.hidden = true
     }
@@ -196,9 +243,10 @@ class SharePanel {
     if (showActions) {
       const canStart = isStartableState(status.state)
       refs.start.hidden = !canStart
-      refs.start.textContent = status.state === 'error' || status.state === 'stopped'
-        ? '重新生成分享链接'
-        : '生成分享链接'
+      refs.start.textContent = (status.state === 'error' || status.state === 'stopped')
+        ? t('share.btn_regenerate')
+        : t('share.btn_start')
+      refs.stop.textContent = t('share.btn_stop')
       refs.stop.hidden = !(status.state === 'ready' || status.state === 'starting' || status.state === 'downloading' || status.state === 'preparing')
     }
 
@@ -206,28 +254,16 @@ class SharePanel {
   }
 
   _buildHint(status) {
-    if (status.state === 'ready') {
-      return '链接每次启动都会变化；分享给他人即可临时访问。关闭应用后链接立即失效。'
-    }
-    if (status.state === 'downloading') {
-      return '首次启动需要从 GitHub 下载 cloudflared，约 20–35 MB。'
-    }
-    if (status.state === 'preparing') {
-      return '正在准备 cloudflared，请稍候。'
-    }
-    if (status.state === 'starting') {
-      return '正在与 Cloudflare 建立隧道，通常几秒内完成。'
-    }
-    if (status.state === 'error') {
-      return '常见原因：网络无法访问 GitHub 或 Cloudflare；点击按钮可重试。'
-    }
+    if (status.state === 'ready') return t('share.hint.ready')
+    if (status.state === 'downloading') return t('share.hint.downloading')
+    if (status.state === 'preparing') return t('share.hint.preparing')
+    if (status.state === 'starting') return t('share.hint.starting')
+    if (status.state === 'error') return t('share.hint.error')
     if (status.state === 'disabled') {
-      if (isTauriRuntime()) return '点击上方按钮以生成临时分享链接。'
-      return '当前会话未启用分享隧道。可在启动 dev 脚本时保留 MELODY_TUNNEL=1。'
+      if (isTauriRuntime()) return t('share.hint.tauri_disabled')
+      return t('share.hint.web_disabled')
     }
-    if (status.state === 'stopped') {
-      return '隧道已停止。点击按钮可重新生成。'
-    }
+    if (status.state === 'stopped') return t('share.hint.stopped')
     return ''
   }
 }

@@ -9,6 +9,7 @@ import { normalizeReverbConfig } from '../../project/reverbConfigState.js'
 import { getProjectDuration } from '../../services/PreviewProjector.js'
 import { collectConvertedTrackRefs } from '../../vocal/VocalPlaybackResolver.js'
 import { encodeWavFile } from './encodeWavFile.js'
+import { t } from '../../../i18n/index.js'
 
 const REVERB_TAIL_EXTRA_SEC = 1.5
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
@@ -459,21 +460,21 @@ export class OfflineAudioExporter {
 
   async exportWav({ sampleRate = 44100, bitDepth = 16, channels = 2, trackIds = null, onProgress = null } = {}) {
     const project = this.projectStore.getProject()
-    if (!project?.tracks?.length) throw new Error('当前没有可导出的项目')
+    if (!project?.tracks?.length) throw new Error(t('modal.export.err_no_project'))
 
     const tracks = project.tracks
     const audibleTrackIds = trackIds
       ? new Set(trackIds)
       : resolveAudibleTrackIds(tracks, { ...this.sessionStore.getSnapshot(), focusSoloTrackId: null })
     const baseDuration = getProjectDuration(tracks)
-    if (baseDuration <= 0) throw new Error('项目时长为零，没有可导出的内容')
+    if (baseDuration <= 0) throw new Error(t('modal.export.err_zero_duration'))
 
     const reverbTailSec = getMaxReverbDecaySec(tracks)
     const totalDuration = baseDuration + reverbTailSec + REVERB_TAIL_EXTRA_SEC
     const numCh = channels === 1 ? 1 : 2
     const totalSamples = Math.ceil(totalDuration * sampleRate)
 
-    onProgress?.({ phase: 'prepare', message: '正在准备...', percent: 0 })
+    onProgress?.({ phase: 'prepare', message: t('modal.export.progress_prepare'), percent: 0 })
 
     // 分配输出缓冲区
     const dryMix = Array.from({ length: numCh }, () => new Float32Array(totalSamples))
@@ -493,7 +494,7 @@ export class OfflineAudioExporter {
 
     // ── 1. 收集所有音源 ──
 
-    onProgress?.({ phase: 'collect', message: '正在收集音频资源...', percent: 2 })
+    onProgress?.({ phase: 'collect', message: t('modal.export.progress_collect'), percent: 2 })
     const convertedVocalEntries = await collectConvertedVocalEntries(tracks, audibleTrackIds, this.convertedVocalAssetRegistry)
     const convertedTrackIds = new Set(convertedVocalEntries.map((e) => e.trackId))
     const { notes: instrumentNotes, trackSourceMeta } = collectInstrumentNotes(tracks, audibleTrackIds)
@@ -502,7 +503,7 @@ export class OfflineAudioExporter {
 
     // ── 2. 加载乐器采样 ──
 
-    onProgress?.({ phase: 'load', message: '正在加载乐器采样...', percent: 5 })
+    onProgress?.({ phase: 'load', message: t('modal.export.progress_load_samples'), percent: 5 })
     const sourceIds = [...new Set(instrumentNotes.map((n) => n.sourceId))]
     const sampleCaches = new Map()
     await Promise.all(sourceIds.map(async (id) => {
@@ -514,7 +515,7 @@ export class OfflineAudioExporter {
 
     const missingVocals = vocalEntries.filter((e) => !this.vocalAssetRegistry.getAsset(e)?.buffer && e.jobId)
     if (missingVocals.length > 0) {
-      onProgress?.({ phase: 'load', message: `正在下载 ${missingVocals.length} 个人声片段...`, percent: 8 })
+      onProgress?.({ phase: 'load', message: t('modal.export.progress_download_vocals', { count: missingVocals.length }), percent: 8 })
       await Promise.allSettled(missingVocals.map((e) => this.vocalAssetRegistry.ensurePhraseAsset(e)))
     }
 
@@ -533,11 +534,11 @@ export class OfflineAudioExporter {
       .sort((a, b) => b.notes.length - a.notes.length)
     const trackCount = instrumentTracks.length
     let completedTracks = 0
-    onProgress?.({ phase: 'mix', message: `正在并发渲染 ${trackCount} 条乐器轨 (0/${trackCount})...`, percent: 10 })
+    onProgress?.({ phase: 'mix', message: t('modal.export.progress_render_tracks', { count: trackCount }), percent: 10 })
     const instrumentResults = await Promise.all(instrumentTracks.map(({ trackId, notes, meta }) =>
       renderInstrumentTrack(notes, sampleCaches, sampleRate, numCh, totalSamples).then((buffer) => {
         completedTracks++
-        onProgress?.({ phase: 'mix', message: `正在并发渲染乐器轨 (${completedTracks}/${trackCount})...`, percent: 10 + (completedTracks / trackCount) * 25 })
+        onProgress?.({ phase: 'mix', message: t('modal.export.progress_render_tracks_n', { done: completedTracks, total: trackCount }), percent: 10 + (completedTracks / trackCount) * 25 })
         return { trackId, meta, buffer }
       }),
     ))
@@ -550,7 +551,7 @@ export class OfflineAudioExporter {
 
     // ── 5. 混合人声片段（重采样到导出采样率）──
 
-    onProgress?.({ phase: 'mix', message: '正在混合人声片段...', percent: 38 })
+    onProgress?.({ phase: 'mix', message: t('modal.export.progress_mix_vocals'), percent: 38 })
     for (const entry of vocalEntries) {
       const asset = this.vocalAssetRegistry.getAsset(entry)
       if (asset?.buffer) {
@@ -582,14 +583,14 @@ export class OfflineAudioExporter {
       mixAudioBuffer(dryMix, revCh, buf, Math.round(entry.startSec * sampleRate), dryGain, sendGain, numCh, totalSamples)
     }
 
-    onProgress?.({ phase: 'mix', message: '混合完成', percent: 50 })
+    onProgress?.({ phase: 'mix', message: t('modal.export.progress_mix_done'), percent: 50 })
 
     // ── 8. 混响处理（每组配置一个 ConvolverNode）──
 
     const groupKeys = [...reverbGroups.keys()]
     for (let gi = 0; gi < groupKeys.length; gi++) {
       const group = reverbGroups.get(groupKeys[gi])
-      onProgress?.({ phase: 'reverb', message: `正在处理混响 (${gi + 1}/${groupKeys.length})...`, percent: 50 + ((gi + 1) / Math.max(1, groupKeys.length)) * 35 })
+      onProgress?.({ phase: 'reverb', message: t('modal.export.progress_reverb', { done: gi + 1, total: groupKeys.length }), percent: 50 + ((gi + 1) / Math.max(1, groupKeys.length)) * 35 })
       const wetBuffer = await applyReverbChain(group.config, group.channels, sampleRate, numCh)
       for (let ch = 0; ch < numCh; ch++) {
         const wet = wetBuffer.getChannelData(ch)
@@ -606,13 +607,13 @@ export class OfflineAudioExporter {
 
     // ── 10. 裁剪尾部静音 ──
 
-    onProgress?.({ phase: 'encode', message: '正在裁剪并编码...', percent: 88 })
+    onProgress?.({ phase: 'encode', message: t('modal.export.progress_trim'), percent: 88 })
     const trimLength = findTrimLength(dryMix, numCh, totalSamples, Math.ceil(baseDuration * sampleRate), sampleRate)
     const finalChannels = dryMix.map((ch) => ch.subarray(0, trimLength))
 
     // ── 10. 编码 WAV ──
 
-    onProgress?.({ phase: 'encode', message: '正在编码 WAV 文件...', percent: 92 })
+    onProgress?.({ phase: 'encode', message: t('modal.export.progress_encode_wav'), percent: 92 })
     const audioLike = {
       numberOfChannels: numCh,
       sampleRate,
@@ -621,7 +622,7 @@ export class OfflineAudioExporter {
     }
     const wavBlob = encodeWavFile(audioLike, bitDepth)
 
-    onProgress?.({ phase: 'done', message: '导出完成', percent: 100 })
+    onProgress?.({ phase: 'done', message: t('modal.export.progress_done'), percent: 100 })
     const fileName = `${project.fileName?.replace(/\.[^.]+$/, '') || 'export'}_mix_${sampleRate}hz_${bitDepth}bit.wav`
     return new File([wavBlob], fileName, { type: 'audio/wav' })
   }

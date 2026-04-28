@@ -4,9 +4,17 @@ import { installVoiceRuntimePanBridge } from './transport/voiceRuntimePanBridge.
 import { installTrackViewportPan } from './transport/trackViewportPan.js'
 import { installInspectorAccordionTransition } from './ui/inspectorAccordionTransition.js'
 import { initThemeController } from './ui/themeController.js'
+import '../i18n/i18n-overrides.css'
+import { applyI18n, onLocaleChange } from '../i18n/index.js'
+import { installLanguageSwitcher } from '../i18n/languageSwitcher.js'
+import { installVoiceRuntimeLocaleBridge } from '../i18n/voiceRuntimeBridge.js'
 
 // 主题先初始化——放在 createHostApp 之前，避免首屏先用米色后再切到暗色"闪一下"
 initThemeController()
+
+// i18n：先扫 HTML 静态节点，后续每次 locale 变更也重扫一次
+applyI18n(document)
+onLocaleChange(() => applyI18n(document))
 
 const hostApp = createHostApp()
 hostApp.init()
@@ -17,6 +25,8 @@ window.webutauOnboarding = onboarding
 installVoiceRuntimePanBridge()
 installTrackViewportPan(document.getElementById('track-viewport'))
 installInspectorAccordionTransition()
+installLanguageSwitcher()
+installVoiceRuntimeLocaleBridge()
 
 const replayBtn = document.getElementById('btn-onboarding-replay')
 if (replayBtn) {

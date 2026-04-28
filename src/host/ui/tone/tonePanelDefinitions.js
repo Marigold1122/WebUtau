@@ -250,40 +250,64 @@ export const GUITAR_TONE_PRESETS = Object.freeze([
   }),
 ])
 
-export const GUITAR_TONE_PANEL_MODULES = Object.freeze([
-  Object.freeze({
-    title: '前级 Drive',
-    note: '输入、两级前级与驱动会直接改变吉他放大器的推挽感。',
-    controls: Object.freeze([
-      Object.freeze({ key: 'inputGain', label: '输入', min: 0, max: 2, step: 0.01, tone: 'orange', format: formatGain }),
-      Object.freeze({ key: 'preampStage1Gain', label: '前级 1', min: 0, max: 2, step: 0.01, tone: 'orange', format: formatGain }),
-      Object.freeze({ key: 'distoStage1Drive', label: '驱动 1', min: 0, max: 10, step: 0.1, tone: 'orange', format: formatKnob }),
-      Object.freeze({ key: 'preampStage2Gain', label: '前级 2', min: 0, max: 2, step: 0.01, tone: 'orange', format: formatGain }),
-      Object.freeze({ key: 'distoStage2Drive', label: '驱动 2', min: 0, max: 10, step: 0.1, tone: 'orange', format: formatKnob }),
-      Object.freeze({ key: 'outputGain', label: '输出', min: 0, max: 2, step: 0.01, tone: 'orange', format: formatGain }),
-    ]),
-  }),
-  Object.freeze({
-    title: 'Tone Stack',
-    note: '对应吉他箱头常见的 Bass / Mid / Treble / Presence。',
-    controls: Object.freeze([
-      Object.freeze({ key: 'bass', label: '低频', min: 0, max: 10, step: 0.1, tone: 'blue', format: formatKnob }),
-      Object.freeze({ key: 'mid', label: '中频', min: 0, max: 10, step: 0.1, tone: 'blue', format: formatKnob }),
-      Object.freeze({ key: 'treble', label: '高频', min: 0, max: 10, step: 0.1, tone: 'blue', format: formatKnob }),
-      Object.freeze({ key: 'presence', label: 'Presence', min: 0, max: 10, step: 0.1, tone: 'blue', format: formatKnob }),
-      Object.freeze({ key: 'cabinetMix', label: '箱体', min: 0, max: 1, step: 0.01, tone: 'green', format: formatPercent }),
-    ]),
-  }),
-  Object.freeze({
-    title: 'Graphic EQ',
-    note: '6 段图示均衡直接作用在吉他后级之后。',
-    controls: Object.freeze([
-      Object.freeze({ key: 'eq60', label: '60 Hz', min: -18, max: 18, step: 0.1, tone: 'green', format: formatSignedDb }),
-      Object.freeze({ key: 'eq170', label: '170 Hz', min: -18, max: 18, step: 0.1, tone: 'green', format: formatSignedDb }),
-      Object.freeze({ key: 'eq350', label: '350 Hz', min: -18, max: 18, step: 0.1, tone: 'green', format: formatSignedDb }),
-      Object.freeze({ key: 'eq1000', label: '1 kHz', min: -18, max: 18, step: 0.1, tone: 'green', format: formatSignedDb }),
-      Object.freeze({ key: 'eq3500', label: '3.5 kHz', min: -18, max: 18, step: 0.1, tone: 'green', format: formatSignedDb }),
-      Object.freeze({ key: 'eq10000', label: '10 kHz', min: -18, max: 18, step: 0.1, tone: 'green', format: formatSignedDb }),
-    ]),
-  }),
-])
+// title / note / control.label 的具体文案随 locale 变化，所以 GUITAR_TONE_PANEL_MODULES 暴露
+// 成 getter 数组：每次访问时按当前 i18n 语境重新生成，调用方仍可像数组一样 .forEach
+import { t as i18nT } from '../../../i18n/index.js'
+
+function buildGuitarToneModules() {
+  return [
+    {
+      title: i18nT('tonePanel.preamp_drive'),
+      note: i18nT('tonePanel.preamp_note'),
+      controls: [
+        { key: 'inputGain',        label: i18nT('tonePanel.input'),        min: 0, max: 2,  step: 0.01, tone: 'orange', format: formatGain },
+        { key: 'preampStage1Gain', label: i18nT('tonePanel.preamp_1'),     min: 0, max: 2,  step: 0.01, tone: 'orange', format: formatGain },
+        { key: 'distoStage1Drive', label: i18nT('tonePanel.drive_1'),      min: 0, max: 10, step: 0.1,  tone: 'orange', format: formatKnob },
+        { key: 'preampStage2Gain', label: i18nT('tonePanel.preamp_2'),     min: 0, max: 2,  step: 0.01, tone: 'orange', format: formatGain },
+        { key: 'distoStage2Drive', label: i18nT('tonePanel.drive_2'),      min: 0, max: 10, step: 0.1,  tone: 'orange', format: formatKnob },
+        { key: 'outputGain',       label: i18nT('tonePanel.output'),       min: 0, max: 2,  step: 0.01, tone: 'orange', format: formatGain },
+      ],
+    },
+    {
+      title: 'Tone Stack',
+      note: i18nT('tonePanel.tone_stack_note'),
+      controls: [
+        { key: 'bass',       label: i18nT('tonePanel.bass'),     min: 0, max: 10, step: 0.1,  tone: 'blue',  format: formatKnob },
+        { key: 'mid',        label: i18nT('tonePanel.mid'),      min: 0, max: 10, step: 0.1,  tone: 'blue',  format: formatKnob },
+        { key: 'treble',     label: i18nT('tonePanel.treble'),   min: 0, max: 10, step: 0.1,  tone: 'blue',  format: formatKnob },
+        { key: 'presence',   label: 'Presence',                  min: 0, max: 10, step: 0.1,  tone: 'blue',  format: formatKnob },
+        { key: 'cabinetMix', label: i18nT('tonePanel.cabinet'),  min: 0, max: 1,  step: 0.01, tone: 'green', format: formatPercent },
+      ],
+    },
+    {
+      title: 'Graphic EQ',
+      note: i18nT('tonePanel.eq_note'),
+      controls: [
+        { key: 'eq60',    label: '60 Hz',   min: -18, max: 18, step: 0.1, tone: 'green', format: formatSignedDb },
+        { key: 'eq170',   label: '170 Hz',  min: -18, max: 18, step: 0.1, tone: 'green', format: formatSignedDb },
+        { key: 'eq350',   label: '350 Hz',  min: -18, max: 18, step: 0.1, tone: 'green', format: formatSignedDb },
+        { key: 'eq1000',  label: '1 kHz',   min: -18, max: 18, step: 0.1, tone: 'green', format: formatSignedDb },
+        { key: 'eq3500',  label: '3.5 kHz', min: -18, max: 18, step: 0.1, tone: 'green', format: formatSignedDb },
+        { key: 'eq10000', label: '10 kHz',  min: -18, max: 18, step: 0.1, tone: 'green', format: formatSignedDb },
+      ],
+    },
+  ]
+}
+
+// Proxy：消费方原本是 `GUITAR_TONE_PANEL_MODULES.forEach`，所以包成数组语义；
+// 每次属性读取（forEach / [0] / .length）都现算一遍，即时跟上 locale 切换
+export const GUITAR_TONE_PANEL_MODULES = new Proxy([], {
+  get(_t, prop) {
+    const modules = buildGuitarToneModules()
+    const value = modules[prop]
+    if (typeof value === 'function') return value.bind(modules)
+    return value
+  },
+  has(_t, prop) { return prop in buildGuitarToneModules() },
+  ownKeys() { return Object.keys(buildGuitarToneModules()).concat(['length']) },
+  getOwnPropertyDescriptor(_t, prop) {
+    const modules = buildGuitarToneModules()
+    if (prop in modules) return Object.getOwnPropertyDescriptor(modules, prop)
+    return undefined
+  },
+})

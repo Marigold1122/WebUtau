@@ -4,6 +4,7 @@ import { renderTrackPreviewCanvas } from '../renderTrackPreviewCanvas.js'
 import { createTrackMonitorBadge } from './TrackMonitorBadge.js'
 import { resolveTrackColor } from './trackColorPalette.js'
 import { createTrackSourcePicker } from './TrackSourcePicker.js'
+import { t } from '../../../i18n/index.js'
 
 export const TRACK_ROW_HEIGHT = 64
 const CLIP_TOP = 5
@@ -198,7 +199,7 @@ function createTrackVolumeControl(track, trackColor, handlers) {
   knob.type = 'button'
   knob.className = 'th-volume-knob'
   knob.setAttribute('role', 'slider')
-  knob.setAttribute('aria-label', `${track.name} 音量`)
+  knob.setAttribute('aria-label', t('trackList.volume_aria', { name: track.name }))
   knob.setAttribute('aria-valuemin', '0')
   knob.setAttribute('aria-valuemax', '100')
   knob.setAttribute('aria-orientation', 'horizontal')
@@ -256,7 +257,7 @@ function createTrackVolumeControl(track, trackColor, handlers) {
     input.inputMode = 'numeric'
     input.className = 'th-volume-input'
     input.value = String(formatTrackVolumePercent(currentVolume))
-    input.setAttribute('aria-label', `${track.name} 音量百分比`)
+    input.setAttribute('aria-label', t('trackList.volume_pct_aria', { name: track.name }))
     input.maxLength = 5
 
     valueNode.style.display = 'none'
@@ -398,7 +399,7 @@ function createTrackPanControl(track, trackColor, handlers) {
   knob.type = 'button'
   knob.className = 'th-pan-knob'
   knob.setAttribute('role', 'slider')
-  knob.setAttribute('aria-label', `${track.name} 声像`)
+  knob.setAttribute('aria-label', t('trackList.pan_aria', { name: track.name }))
   knob.setAttribute('aria-valuemin', '-100')
   knob.setAttribute('aria-valuemax', '100')
   knob.setAttribute('aria-orientation', 'horizontal')
@@ -449,7 +450,7 @@ function createTrackPanControl(track, trackColor, handlers) {
     input.className = 'th-pan-input'
     // 编辑时显示带符号的纯数字（-100 ~ 100），方便精确输入
     input.value = String(Math.round(currentPan * 100))
-    input.setAttribute('aria-label', `${track.name} 声像 -100 到 100`)
+    input.setAttribute('aria-label', t('trackList.pan_range_aria', { name: track.name }))
     input.maxLength = 5
 
     valueNode.style.display = 'none'
@@ -618,7 +619,7 @@ function createTrackItem({ track, index, selectedTrackId, viewState, handlers })
   const trackNumber = document.createElement('span')
   trackNumber.className = 'trk-num'
   trackNumber.style.background = trackColor
-  trackNumber.title = '点击更改轨道颜色'
+  trackNumber.title = t('trackSource.color_change')
 
   const trackNumberLabel = document.createElement('span')
   trackNumberLabel.className = 'trk-num-label'
@@ -628,7 +629,7 @@ function createTrackItem({ track, index, selectedTrackId, viewState, handlers })
   colorInput.type = 'color'
   colorInput.className = 'trk-num-picker'
   colorInput.value = trackColor
-  colorInput.setAttribute('aria-label', '轨道颜色')
+  colorInput.setAttribute('aria-label', t('trackList.color_aria'))
   // 阻断点击冒泡，避免触发 row.click → onTrackSelected → 立刻 render 重建 DOM
   // 把取色器对话框打散
   colorInput.addEventListener('click', (event) => event.stopPropagation())
@@ -648,7 +649,7 @@ function createTrackItem({ track, index, selectedTrackId, viewState, handlers })
   name.className = 'track-name'
   name.textContent = track.name
   name.style.setProperty('--track-color', trackColor)
-  name.title = '双击重命名'
+  name.title = t('inspector.track.rename_hint')
   // 单击 name 时阻止冒泡到 row.click，把"选中"挂在延迟 timer 上；
   // 若紧接着触发原生 dblclick，把 pending timer 撤掉、改派重命名。
   // 这样既保证单击能选中（无闪烁），又让双击重命名稳定生效——

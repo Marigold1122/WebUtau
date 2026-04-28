@@ -40,6 +40,7 @@ export function findTrackRowByBranch(branch) {
 
 export function resolveBody(body, branch) {
   if (!body) return ''
+  if (typeof body === 'function') return body(branch) || ''
   if (typeof body === 'string') return body
   if (typeof body === 'object') {
     return body[branch] || body.default || Object.values(body)[0] || ''

@@ -3,6 +3,7 @@ import { buildPredictionOverlayText } from '../app/trackPredictionProgress.js'
 import { isTrackPrepReady } from '../project/trackPrepState.js'
 import { isVoiceRuntimeSource } from '../project/trackSourceAssignment.js'
 import { hasTracksRequiringVoiceLanguageSelection } from '../project/voiceTrackLanguageGate.js'
+import { t } from '../../i18n/index.js'
 
 const VOICE_LANGUAGE_TOAST_ID = 'voice-language-reminder'
 
@@ -54,7 +55,9 @@ export class TrackPredictionGateController {
 
     const gateResult = await this._promptTrackLanguage(track, intent)
     if (!gateResult) {
-      this.view.setStatus(intent === 'play' ? '未选择语言，已取消播放前准备' : `已取消打开 ${track.name}`)
+      this.view.setStatus(intent === 'play'
+        ? t('predictionGate.canceled_play')
+        : t('predictionGate.canceled_open', { name: track.name }))
       this.render('prediction-gate-cancelled')
       return false
     }
@@ -70,7 +73,7 @@ export class TrackPredictionGateController {
     this.view.showTrackSynthesisOverlay(
       preparedTrack.name,
       buildPredictionOverlayText(8),
-      { title: `${preparedTrack.name} 准备中`, initialPercent: 8 },
+      { title: t('predictionGate.track_preparing', { name: preparedTrack.name }), initialPercent: 8 },
     )
 
     try {
@@ -88,12 +91,12 @@ export class TrackPredictionGateController {
         this.onEditorOpened?.(preparedTrack.id)
         this.render('editor-opened-after-prediction')
         this.view.notifyRuntimeLayoutChanged()
-        this.view.setStatus(`已打开 ${preparedTrack.name} | 准备完成`)
+        this.view.setStatus(t('predictionGate.open_done', { name: preparedTrack.name }))
         return true
       }
 
       this.render('playback-start-after-prediction')
-      this.view.setStatus(`已完成 ${preparedTrack.name} 的准备，开始播放`)
+      this.view.setStatus(t('predictionGate.play_done', { name: preparedTrack.name }))
       await this.onPlaybackRequested?.()
       return true
     } finally {
@@ -116,11 +119,11 @@ export class TrackPredictionGateController {
     // 注意：此弹窗出现在 singerId 确定之前，无法按音源类型个性化文案。
     // 改用对 DiffSinger / Classic UTAU 都适用的"准备"字样。
     const result = await this.view.promptTrackLanguage(track.name, track.languageCode, {
-      title: `为 ${track.name} 选择语言`,
+      title: t('predictionGate.title_for', { name: track.name }),
       hint: intent === 'play'
-        ? '开始播放前，必须先确认语言并准备音轨。'
-        : '进入人声编辑器前，必须先确认语言并准备音轨。',
-      actionLabel: intent === 'play' ? '准备并播放' : '准备并打开',
+        ? t('predictionGate.hint_play')
+        : t('predictionGate.hint_open'),
+      actionLabel: intent === 'play' ? t('predictionGate.action_play') : t('predictionGate.action_open'),
       singerId: track.singerId,
     })
     if (!result) return null

@@ -1,3 +1,5 @@
+import { t } from '../../i18n/index.js'
+
 export function createProjectImportHandler({
   view,
   transportCoordinator,
@@ -30,7 +32,7 @@ export function createProjectImportHandler({
     if (!file) return
 
     try {
-      view.setStatus('正在解析 MIDI...')
+      view.setStatus(t('voiceRuntime.parsing_midi'))
       view.hidePlaybackToast('voice-language-reminder')
 
       const previousProject = store.getProject()
@@ -52,7 +54,7 @@ export function createProjectImportHandler({
           hasCurrentProject,
         })
         if (!timingChoice) {
-          view.setStatus('已取消导入')
+          view.setStatus(t('hostStatus.import_canceled'))
           return
         }
         if (timingChoice === 'keep') {
@@ -89,10 +91,10 @@ export function createProjectImportHandler({
       if (wasBlankState) {
         view.showEditorPlaceholder()
       }
-      view.setStatus(`已导入 ${nextProject.tracks.length} 条轨道，点击左侧 + 选择声源`)
+      view.setStatus(t('hostStatus.project_imported', { count: nextProject.tracks.length }))
     } catch (error) {
       console.error('MIDI 导入失败:', error)
-      view.setStatus('MIDI 导入失败')
+      view.setStatus(t('voiceRuntime.midi_failed'))
     } finally {
       view.refs.fileInput.value = ''
     }

@@ -48,6 +48,7 @@ import { ProjectTransportCoordinator } from '../transport/ProjectTransportCoordi
 import { ProjectTransportStore } from '../transport/ProjectTransportStore.js'
 import { ShellLayoutView } from '../ui/ShellLayoutView.js'
 import { installMenubarMeter } from '../ui/menubarMeter.js'
+import { t } from '../../i18n/index.js'
 import { ConvertedVocalAssetRegistry } from '../vocal/ConvertedVocalAssetRegistry.js'
 import { ConvertedVocalScheduler } from '../vocal/ConvertedVocalScheduler.js'
 import { HostVocalAssetRegistry } from '../vocal/HostVocalAssetRegistry.js'
@@ -137,7 +138,7 @@ function triggerDownload(file) {
   return true
 }
 
-function extractErrorDetails(error, fallback = '未知错误') {
+function extractErrorDetails(error, fallback = t('hostStatus.unknown_error')) {
   const message = typeof error?.message === 'string' && error.message.trim()
     ? error.message.trim()
     : fallback
@@ -159,7 +160,7 @@ function extractErrorDetails(error, fallback = '未知错误') {
 }
 
 function buildAudioImportFailurePayload(file, error) {
-  const details = extractErrorDetails(error, '音频轨导入失败')
+  const details = extractErrorDetails(error, t('hostStatus.audio_import_failure_default'))
   return {
     fileName: typeof file?.name === 'string' && file.name ? file.name : null,
     fileType: typeof file?.type === 'string' && file.type ? file.type : null,
@@ -169,10 +170,10 @@ function buildAudioImportFailurePayload(file, error) {
 }
 
 function getAudioImportFailureMessage(error) {
-  const details = extractErrorDetails(error, '音频轨导入失败')
+  const details = extractErrorDetails(error, t('hostStatus.audio_import_failure_default'))
   const fingerprint = `${details.name} ${details.message} ${details.cause || ''}`.toLowerCase()
   if (fingerprint.includes('无法解码音频文件') || fingerprint.includes('encodingerror') || fingerprint.includes('decode')) {
-    return '浏览器无法解码这个音频文件，请优先换成 WAV 或常规 MP3'
+    return t('hostStatus.cant_decode_audio')
   }
   return details.message
 }
@@ -356,18 +357,22 @@ export function createHostApp() {
     const result = projectMixController.finalizeAutoFitMeasurement()
     render('master-chain-auto-fit')
     if (!result || !result.ok) {
-      view.setStatus('⚠ 自动达标完成测量但调整失败：可能数据太少，请重新点一次')
+      view.setStatus(t('hostStatus.autofit_measure_failed'))
       return
     }
     if (result.alreadyOnTarget) {
-      view.setStatus(`✓ 完整测量后已达标（差 ${result.deltaLu.toFixed(1)} LU），无需调整`)
+      view.setStatus(t('hostStatus.autofit_already_target', { delta: result.deltaLu.toFixed(1) }))
       return
     }
     const sign = result.appliedDb >= 0 ? '+' : ''
-    let msg = `✓ 完整测量后已自动调整 makeup gain ${sign}${result.appliedDb.toFixed(1)} dB → 目标 ${result.chain.loudnessTarget} LUFS`
-    if (result.hitLimit) msg += '（已达调节上限，建议再点一次或手动调整 EQ / 压缩）'
-    else if (result.largeAdjustment) msg += '（调整量较大，建议再听一遍音质）'
-    else msg += '——可点保存导出'
+    let msg = t('hostStatus.autofit_done_base', {
+      sign,
+      db: result.appliedDb.toFixed(1),
+      target: result.chain.loudnessTarget,
+    })
+    if (result.hitLimit) msg += t('hostStatus.autofit_hit_limit')
+    else if (result.largeAdjustment) msg += t('hostStatus.autofit_large')
+    else msg += t('hostStatus.autofit_save_hint')
     view.setStatus(msg)
   }
   function cancelAutoFitDueToInterrupt() {
@@ -375,7 +380,7 @@ export function createHostApp() {
     projectMixController.cancelAutoFitMeasurement()
     clearAutoFitWatcher()
     render('master-chain-auto-fit-cancelled')
-    view.setStatus('⚠ 自动达标已取消——必须完整播放一首歌才能自动达标')
+    view.setStatus(t('hostStatus.autofit_canceled'))
   }
   // 中断检测：每 250ms 检查 transport 状态。若 measuring 期间 playing 突然变 false 而
   // 不是自然结束（自然结束会先调 onPlaybackEndedNaturally 把状态切到 idle），就算中断
@@ -452,7 +457,7 @@ export function createHostApp() {
     onEditorCleared: () => clearEditorTrackState(),
     onTrackPreparationInvalidated: (trackId) => {
       vocalManifestController.resetTrackFromSnapshot(trackId)
-      invalidateVoiceConversion(trackId, '轨道语言或准备状态已变化，需要重新转换')
+      invalidateVoiceConversion(trackId, t('hostStatus.voicebank_changed'))
     },
     persistEditorSnapshot,
     render,
@@ -555,7 +560,7 @@ export function createHostApp() {
     captureStartPerf: 0,
   }
 
-  function onTrackContentEdited(trackId, reason = '轨道内容已变更，需要重新转换') {
+  function onTrackContentEdited(trackId, reason = t('hostStatus.track_content_changed')) {
     taskCoordinator.markTrackEdited(trackId)
     vocalManifestController.resetTrackFromSnapshot(trackId)
     invalidateVoiceConversion(trackId, reason)
@@ -581,7 +586,7 @@ export function createHostApp() {
     view.refs.audioFileInput.value = ''
 
     try {
-      view.setStatus('正在导入音频轨...')
+      view.setStatus(t('hostStatus.importing_audio'))
       const asset = await importedAudioAssetRegistry.registerFile(file)
       const selectedTrackId = store.getSelectedTrack()?.id || null
       const project = store.ensureProject({
@@ -602,11 +607,11 @@ export function createHostApp() {
       if (transportCoordinator.isProjectPlaybackActive()) {
         await refreshProjectPlaybackWithModeSync('audio-track-imported')
       }
-      view.setStatus(`已导入音频轨 ${track.name}`)
+      view.setStatus(t('hostStatus.audio_imported', { name: track.name }))
       return true
     } catch (error) {
       logger.error('Audio track import failed', buildAudioImportFailurePayload(file, error))
-      view.setStatus(`音频轨导入失败：${getAudioImportFailureMessage(error)}`)
+      view.setStatus(t('hostStatus.audio_import_failed', { detail: getAudioImportFailureMessage(error) }))
       return false
     }
   }
@@ -616,11 +621,11 @@ export function createHostApp() {
     const project = store.getProject()
     const file = importService.buildProjectMidiFile(project)
     if (!file) {
-      view.setStatus('当前项目没有可导出的 MIDI 音符轨')
+      view.setStatus(t('hostStatus.no_midi_to_export'))
       return false
     }
     triggerDownload(file)
-    view.setStatus(`已导出 MIDI：${file.name}`)
+    view.setStatus(t('hostStatus.midi_exported', { file: file.name }))
     return true
   }
 
@@ -645,14 +650,14 @@ export function createHostApp() {
     })
     if (incomplete.length === 0) return null
     const names = incomplete.map((t) => t.name || t.id).join('、')
-    return `人声轨 ${names} 渲染尚未完成，无法导出`
+    return t('hostStatus.vocal_unfinished', { names })
   }
 
   async function handleExportAudio() {
     await persistEditorSnapshot()
     const project = store.getProject()
     if (!project?.tracks?.length) {
-      view.setStatus('当前没有可导出的项目')
+      view.setStatus(t('hostStatus.no_project_to_export'))
       return false
     }
 
@@ -672,8 +677,10 @@ export function createHostApp() {
     const trackIds = settings.mode === 'selected' && selectedTrack
       ? [selectedTrack.id]
       : null
-    const label = trackIds ? `轨道 ${selectedTrack.name}` : '项目'
-    view.setStatus(`正在导出${label}音频...`)
+    const label = trackIds
+      ? t('hostStatus.exporting_track_label', { name: selectedTrack.name })
+      : t('hostStatus.exporting_project_label')
+    view.setStatus(t('hostStatus.exporting_audio', { label }))
     try {
       const file = await offlineAudioExporter.exportWav({
         sampleRate: settings.sampleRate,
@@ -683,14 +690,14 @@ export function createHostApp() {
         onProgress: (progress) => exportAudioModal.setProgress(progress),
       })
       triggerDownload(file)
-      exportAudioModal.setProgress({ message: `导出完成：${file.name}`, percent: 100 })
-      view.setStatus(`已导出音频：${file.name}`)
+      exportAudioModal.setProgress({ message: t('hostStatus.export_progress_done', { file: file.name }), percent: 100 })
+      view.setStatus(t('hostStatus.audio_exported', { file: file.name }))
       setTimeout(() => exportAudioModal.close(), 1500)
       return true
     } catch (error) {
-      const message = error?.message || '音频导出失败'
-      exportAudioModal.setProgress({ message: `导出失败：${message}`, percent: 0 })
-      view.setStatus(`音频导出失败：${message}`)
+      const message = error?.message || t('hostStatus.audio_export_default_err')
+      exportAudioModal.setProgress({ message: t('hostStatus.export_progress_failed', { message }), percent: 0 })
+      view.setStatus(t('hostStatus.audio_export_failed', { message }))
       logger.error('Audio export failed', { error: message })
       return false
     }
@@ -874,7 +881,7 @@ export function createHostApp() {
       pendingVoiceEditState: pendingState.needsVoiceRerender ? structuredClone(pendingState) : null,
     })
     view.markInstrumentEditorSaved()
-    invalidateVoiceConversion(track.id, '音符已改动，现有转换结果需要重新生成')
+    invalidateVoiceConversion(track.id, t('hostStatus.notes_changed'))
     logger.info('Prepared voice track note draft persisted', {
       trackId: track.id,
       editCount: pendingState.edits.length,
@@ -890,8 +897,8 @@ export function createHostApp() {
     if (!silent) {
       view.setStatus(
         pendingState.needsVoiceRerender
-          ? `${track.name} 的音符已修改，受影响片段先按钢琴预览；切到歌词或音高以重新生成人声`
-          : `已保存 ${track.name} 的音符调整`,
+          ? t('hostStatus.voice_changed_pending', { name: track.name })
+          : t('hostStatus.saved_track_notes', { name: track.name }),
       )
     }
     return true
@@ -904,7 +911,7 @@ export function createHostApp() {
       pendingVoiceEditState: null,
     })
     vocalManifestController.applyNoteEditSnapshot(trackId, snapshot, affectedIndices)
-    invalidateVoiceConversion(trackId, '人声音符已更新，需要重新转换')
+    invalidateVoiceConversion(trackId, t('hostStatus.voice_notes_changed'))
     render('voice-note-edits-applied')
     return true
   }
@@ -929,8 +936,8 @@ export function createHostApp() {
     onTrackContentEdited(
       track.id,
       isVoiceRuntimeSource(track.playbackState?.assignedSourceId)
-        ? '音符已更新，需要重新进行人声准备'
-        : '乐器卷帘已更新，需要重新转换',
+        ? t('hostStatus.notes_need_voice_prep')
+        : t('hostStatus.instrument_changed'),
     )
     view.markInstrumentEditorSaved()
     logger.info('Instrument editor draft persisted', {
@@ -944,7 +951,7 @@ export function createHostApp() {
       render(reason)
     }
     if (!silent) {
-      view.setStatus(`已保存 ${track.name} 的乐器卷帘`)
+      view.setStatus(t('hostStatus.instrument_saved', { name: track.name }))
     }
     return true
   }
@@ -1032,14 +1039,14 @@ export function createHostApp() {
         logger.info('MIDI recording stopped because input disconnected', { capturedCount })
       }
       updateMidiInputView(Boolean(midiInputState.access))
-      if (!silent) view.setStatus('MIDI 输入已断开')
+      if (!silent) view.setStatus(t('hostStatus.midi_input_disconnected'))
       return
     }
     const input = midiInputState.access.inputs.get(deviceId)
     if (!input) {
       stopPreviewMidiNotes('midi-input-missing')
       updateMidiInputView(Boolean(midiInputState.access))
-      if (!silent) view.setStatus('未找到指定的 MIDI 输入设备')
+      if (!silent) view.setStatus(t('hostStatus.midi_input_not_found'))
       return
     }
     input.onmidimessage = onMidiMessage
@@ -1047,7 +1054,7 @@ export function createHostApp() {
     midiInputState.selectedInputId = input.id
     updateMidiInputView(true)
     if (!silent) {
-      view.setStatus(`已连接 MIDI 设备：${input.name || input.id}`)
+      view.setStatus(t('hostStatus.midi_input_connected', { name: input.name || input.id }))
     }
   }
 
@@ -1072,8 +1079,8 @@ export function createHostApp() {
     } catch (error) {
       updateMidiInputView(false)
       logger.warn('MIDI 设备初始化失败', {
-        ...extractErrorDetails(error, 'Web MIDI 初始化失败'),
-        note: '通常是浏览器拒绝了 Web MIDI 权限，或者当前没有可访问的 MIDI 设备',
+        ...extractErrorDetails(error, t('hostStatus.web_midi_init_failed')),
+        note: t('hostStatus.web_midi_note'),
       })
     }
   }
@@ -1119,11 +1126,11 @@ export function createHostApp() {
   async function startInstrumentMidiRecording() {
     const editorTrack = store.getEditorTrack()
     if (!isInstrumentEditorTrack(editorTrack)) {
-      view.setStatus('请先打开一个可编辑音符的卷帘')
+      view.setStatus(t('hostStatus.open_editor_first'))
       return false
     }
     if (!midiInputState.boundInput) {
-      view.setStatus('请先连接 MIDI 输入设备')
+      view.setStatus(t('hostStatus.connect_midi_first'))
       return false
     }
     if (midiInputState.recording) return true
@@ -1141,7 +1148,7 @@ export function createHostApp() {
     view.setMidiRecordingActive(true)
     view.setInstrumentEditorRecording(true)
     prepareInstrumentMonitor(editorTrack)
-    view.setStatus(`已开始录制 ${editorTrack.name} 的 MIDI`)
+    view.setStatus(t('hostStatus.record_started', { name: editorTrack.name }))
     logger.info('Instrument MIDI recording started', {
       trackId: editorTrack.id,
       inputId: midiInputState.selectedInputId || null,
@@ -1183,7 +1190,9 @@ export function createHostApp() {
       })
     }
     if (!silent) {
-      view.setStatus(capturedCount > 0 ? `已停止录制，捕获 ${capturedCount} 个音符` : 'MIDI 录制已停止')
+      view.setStatus(capturedCount > 0
+        ? t('hostStatus.record_stopped_count', { count: capturedCount })
+        : t('hostStatus.record_stopped'))
     }
     return capturedCount > 0
   }
@@ -1259,7 +1268,7 @@ export function createHostApp() {
       const handled = view.undoInstrumentEditorEdit?.()
       if (!handled) return
       render('instrument-editor-undo')
-      view.setStatus(`已撤回 ${editorTrack.name} 的音符编辑`)
+      view.setStatus(t('hostStatus.undo_done', { name: editorTrack.name }))
       return
     }
 
@@ -1295,7 +1304,7 @@ export function createHostApp() {
     render('host-init')
     // 初始化铭牌为"未命名工程"——render 已经调过 onAfterRender，这里补一次保平安
     view.setProjectFileState({ name: null, dirty: false })
-    view.setStatus('系统就绪')
+    view.setStatus(t('status.ready'))
     logger.info('宿主初始化完成')
     // 启动恢复：如果上次会话留下了未保存的自动快照，弹对话框让用户决定是否恢复
     void checkProjectRecoverySnapshot()
@@ -1341,7 +1350,7 @@ export function createHostApp() {
       if (!ok) await projectAutoSave.clearSnapshot()
     } else {
       await projectAutoSave.clearSnapshot()
-      view.setStatus('已丢弃上次的自动备份')
+      view.setStatus(t('hostStatus.backup_discarded'))
     }
   }
   function handleTrackSelected(trackId) {
@@ -1362,7 +1371,7 @@ export function createHostApp() {
     if (wasBlank) {
       view.showEditorPlaceholder()
     }
-    view.setStatus(`已新建轨道 ${createdTrack.name}`)
+    view.setStatus(t('hostStatus.track_created', { name: createdTrack.name }))
   }
 
   async function handleTrackContextDelete(trackId) {
@@ -1400,7 +1409,7 @@ export function createHostApp() {
     const removedTrack = store.removeTrack(trackId)
     if (!removedTrack) return
     render('track-deleted')
-    view.setStatus(`已删除轨道 ${removedTrack.name}`)
+    view.setStatus(t('hostStatus.track_removed', { name: removedTrack.name }))
     if (transportCoordinator.isProjectPlaybackActive()) {
       await refreshProjectPlaybackWithModeSync('track-deleted')
     }
@@ -1426,12 +1435,12 @@ export function createHostApp() {
       }
       sessionStore.setEditorMode('note')
       render('editor-mode-note')
-      view.setStatus(`已切到 ${track.name} 的音符模式`)
+      view.setStatus(t('hostStatus.switched_note_mode', { name: track.name }))
       return true
     }
 
     if (!isVoiceRuntimeSource(track.playbackState?.assignedSourceId)) {
-      view.setStatus('该轨道尚未设为人声，无法进入歌词或音高模式')
+      view.setStatus(t('hostStatus.not_voice_track'))
       return false
     }
 
@@ -1443,7 +1452,7 @@ export function createHostApp() {
       view.showTrackSynthesisOverlay(
         refreshedTrack.name,
         '正在同步音符改动...',
-        { title: `${refreshedTrack.name} 重新合成中`, initialPercent: 12 },
+        { title: t('predictionGate.rerender_title', { name: refreshedTrack.name }), initialPercent: 12 },
       )
       try {
         await ensureRuntimeAvailableForTrack(refreshedTrack.id)
@@ -1457,11 +1466,13 @@ export function createHostApp() {
         }
         view.updateTrackSynthesisOverlay('音高已更新，正在切换编辑视图...', 0.96)
         await bridge.setEditorMode(nextMode)
-        view.setStatus(`已切到 ${refreshedTrack.name} 的${nextMode === 'pitch' ? '音高' : '歌词'}模式，受影响语句音频继续后台重渲`)
+        view.setStatus(nextMode === 'pitch'
+          ? t('hostStatus.switched_pitch', { name: refreshedTrack.name })
+          : t('hostStatus.switched_lyric', { name: refreshedTrack.name }))
         return true
       } catch (error) {
         const details = extractErrorDetails(error, '音符改动提交失败')
-        view.setStatus(`切换失败: ${refreshedTrack.name} | ${details.summary}`)
+        view.setStatus(t('hostStatus.switch_failed', { name: refreshedTrack.name, detail: details.summary }))
         logger.warn('Prepared voice track note edit apply failed', {
           trackId: refreshedTrack.id,
           ...details,
@@ -1484,7 +1495,9 @@ export function createHostApp() {
 
     await ensureRuntimeAvailableForTrack(refreshedTrack.id)
     await loadTrackIntoVoiceEditor(refreshedTrack.id, { editorMode: nextMode })
-    view.setStatus(`已切到 ${refreshedTrack.name} 的${nextMode === 'pitch' ? '音高' : '歌词'}模式`)
+    view.setStatus(nextMode === 'pitch'
+      ? t('hostStatus.switched_pitch_simple', { name: refreshedTrack.name })
+      : t('hostStatus.switched_lyric_simple', { name: refreshedTrack.name }))
     return true
   }
 
@@ -1507,7 +1520,7 @@ export function createHostApp() {
     render('render-track-as-voice-opened')
     await bridge.setEditorMode('lyric')
     view.notifyRuntimeLayoutChanged()
-    view.setStatus(`已将 ${updatedTrack.name} 设为人声并打开歌词模式`)
+    view.setStatus(t('hostStatus.voice_set_done', { name: updatedTrack.name }))
     return true
   }
 
@@ -1520,11 +1533,11 @@ export function createHostApp() {
         await closeEditor()
       }
       render('audio-track-selected')
-      view.setStatus(`${track.name} 是音频轨，当前不支持卷帘编辑`)
+      view.setStatus(t('hostStatus.audio_track_no_pianoroll', { name: track.name }))
       return
     }
     await loadTrackIntoInstrumentEditor(track.id)
-    view.setStatus(`已打开 ${track.name} 的通用卷帘`)
+    view.setStatus(t('hostStatus.opened_pianoroll', { name: track.name }))
   }
 
   async function closeEditor() {
@@ -1629,7 +1642,7 @@ export function createHostApp() {
     }
 
     render('transport-stopped')
-    view.setStatus('已停止')
+    view.setStatus(t('hostStatus.stopped'))
     logger.info('Transport stopped', buildPlaybackDiagnosticPayload())
     return true
   }
@@ -1649,7 +1662,7 @@ export function createHostApp() {
       await refreshProjectPlaybackWithModeSync('track-clip-moved')
     }
 
-    view.setStatus(`已移动 ${track.name}`)
+    view.setStatus(t('hostStatus.moved', { name: track.name }))
     logger.info('Track clip moved', {
       trackId,
       deltaTime: shift.deltaTime,
@@ -1790,7 +1803,7 @@ export function createHostApp() {
       const current = projectMixController.getMasterChain()
       projectMixController.setMasterChainEnabled(!current.enabled, { commit: true })
       render('master-chain-toggled')
-      view.setStatus(current.enabled ? '主控母带链已关闭 / Master chain off' : '主控母带链已开启 / Master chain on')
+      view.setStatus(current.enabled ? t('hostStatus.master_chain_off') : t('hostStatus.master_chain_on'))
     },
     onMasterEqBandChanged: (bandIndex, patch, options = {}) => {
       projectMixController.setMasterEqBand(bandIndex, patch, options)
@@ -1809,16 +1822,16 @@ export function createHostApp() {
       if (!result) return
       render('master-chain-preset-applied')
       const preset = projectMixController.getMasterChainPresets().find((p) => p.id === presetId)
-      if (preset) view.setStatus(`已应用预设 / Preset applied: ${preset.name}`)
+      if (preset) view.setStatus(t('hostStatus.preset_applied', { name: preset.name }))
     },
     onMasterChainLoudnessTargetChanged: (target) => {
       projectMixController.setMasterChainLoudnessTarget(target, { commit: true })
       render('master-loudness-target-changed')
-      view.setStatus(`响度目标 / Target: ${target} LUFS`)
+      view.setStatus(t('hostStatus.loudness_target', { value: target }))
     },
     onLufsResetRequested: () => {
       projectMixController.resetLufsIntegrated()
-      view.setStatus('已重置积分响度 / Integrated LUFS reset')
+      view.setStatus(t('hostStatus.integrated_reset'))
     },
     onLufsAutoFitRequested: async () => {
       // 已经在测了——再点视为"取消重来"，避免按钮卡住
@@ -1828,14 +1841,14 @@ export function createHostApp() {
       }
       const project = store.getProject()
       if (!project) {
-        view.setStatus('请先导入工程再使用自动达标')
+        view.setStatus(t('hostStatus.autofit_open_project'))
         return
       }
       // 进 measuring → 重置 LUFS → 拖到 0 → 起播。要等 transport 启动完成再开 watcher，
       // 否则 watcher 第一帧就看到 playing=false（还没 toggle）会立刻误判为中断
       projectMixController.beginAutoFitMeasurement()
       render('master-chain-auto-fit-start')
-      view.setStatus('🔴 自动达标测量中——请勿暂停 / 拖动，完整播放后将自动调整')
+      view.setStatus(t('hostStatus.autofit_measuring'))
       try {
         await transportCoordinator.seekToTime(0)
         // 此时 playing 仍是 false。toggle 会启动它（如果之前是暂停状态）
@@ -1932,11 +1945,11 @@ export function createHostApp() {
         store.updateTrackRenderState(selectedTrack.id, { status: 'queued', completed: 0, total: 0, error: null })
         vocalManifestController.resetTrackFromSnapshot(selectedTrack.id)
         invalidateVoiceConversion(selectedTrack.id, '声库已切换，需要重新转换')
-        view.setStatus(`正在使用新声库重新合成 ${selectedTrack.name}...`)
+        view.setStatus(t('hostStatus.rerendering_voicebank', { name: selectedTrack.name }))
         try {
           await bridge.startSynthesis({ languageCode: selectedTrack.languageCode, singerId })
         } catch (error) {
-          view.setStatus(`重新合成失败: ${error?.message || '未知错误'}`)
+          view.setStatus(t('hostStatus.rerender_failed', { message: error?.message || t('hostStatus.unknown_error') }))
         }
       }
     },
@@ -1956,7 +1969,7 @@ export function createHostApp() {
       try {
         const snapshot = await bridge.requestSnapshot()
         if (!snapshot?.phrases?.length) {
-          view.setStatus('当前轨道没有可编辑的歌词')
+          view.setStatus(t('hostStatus.no_lyric_to_edit'))
           return
         }
         view.openQuickLyricPanel(snapshot, {
@@ -1968,11 +1981,11 @@ export function createHostApp() {
             if (result?.snapshot) {
               applyRuntimeNoteEditSnapshot(editorTrack.id, result.snapshot, affectedIndices)
             }
-            view.setStatus(`已更新 ${editorTrack.name} 的歌词`)
+            view.setStatus(t('hostStatus.lyric_updated', { name: editorTrack.name }))
           },
         })
       } catch (error) {
-        view.setStatus(`获取歌词失败: ${error?.message || '未知错误'}`)
+        view.setStatus(t('hostStatus.lyric_fetch_failed', { message: error?.message || t('hostStatus.unknown_error') }))
       }
     },
     onRenderTrackAsVoice: handleRenderTrackAsVoice,

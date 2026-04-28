@@ -8,9 +8,10 @@ import {
 import { hasPredictedPitch, isTrackPrepReady } from '../project/trackPrepState.js'
 import eventBus from '../../core/EventBus.js'
 import { EVENTS } from '../../config/constants.js'
+import { t } from '../../i18n/index.js'
 
 function getTrackName(store, trackId) {
-  return store.getTrack(trackId)?.name || '当前轨道'
+  return store.getTrack(trackId)?.name || t('toneLabels.track_default')
 }
 
 function matchesTrackJob(store, trackId, jobId) {
@@ -58,7 +59,7 @@ export function createHostBridgeHandlers({
 
   return {
     onRuntimeReady() {
-      view.setStatus('运行时已连接')
+      view.setStatus(t('hostStatus.runtime_connected'))
     },
     onSeekRequested(payload) {
       const trackId = payload?.trackId
@@ -153,7 +154,7 @@ export function createHostBridgeHandlers({
         store.updateTrackPrepState(snapshot.trackId, { status: 'ready', progress: 100, error: null })
       }
       render('bridge-render-complete')
-      view.setStatus(`渲染完成: ${getTrackName(store, snapshot.trackId)}`)
+      view.setStatus(t('hostStatus.render_done_for', { name: getTrackName(store, snapshot.trackId) }))
     },
     onRenderFailed(payload) {
       if (!payload?.trackId || !taskCoordinator.markFailed(payload.trackId, payload.error || '未知错误', payload.jobId)) return
@@ -171,7 +172,7 @@ export function createHostBridgeHandlers({
         prepWaiters.resolve(payload.trackId, { ok: false, error: payload.error || '未知错误' })
       }
       render('bridge-render-failed')
-      view.setStatus(`渲染失败: ${getTrackName(store, payload.trackId)} | ${payload.error || '未知错误'}`)
+      view.setStatus(t('hostStatus.render_failed_for', { name: getTrackName(store, payload.trackId), error: payload.error || t('hostStatus.unknown_error') }))
     },
   }
 }

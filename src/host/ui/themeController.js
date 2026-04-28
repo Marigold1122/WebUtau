@@ -1,3 +1,5 @@
+import { onLocaleChange, t } from '../../i18n/index.js'
+
 // 明暗主题控制：把当前主题写到 <html data-theme="light|dark">；
 // 默认按系统时间自动决定（傍晚 18 点到次日清晨 6 点为暗），用户在按钮上点击后
 // 就当作"显式偏好"持久化到 localStorage，之后不再被自动逻辑覆盖。
@@ -98,9 +100,10 @@ export function initThemeController({ buttonId = 'btn-theme-toggle' } = {}) {
     const safe = theme === 'dark' ? 'dark' : 'light'
     button.dataset.theme = safe
     button.setAttribute('aria-pressed', String(safe === 'dark'))
-    button.title = safe === 'dark' ? '切换到日间模式' : '切换到夜间模式'
+    button.title = safe === 'dark' ? t('themeToggle.to_day') : t('themeToggle.to_night')
   }
   setButtonTheme(document.documentElement.dataset.theme || 'light')
+  onLocaleChange(() => setButtonTheme(document.documentElement.dataset.theme || 'light'))
 
   button.addEventListener('click', (event) => {
     event.preventDefault()

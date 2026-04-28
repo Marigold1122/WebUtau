@@ -12,10 +12,10 @@ import {
   createPresetControl,
   createReverbDockModule,
 } from './reverb/reverbDockDom.js'
+import { t } from '../../i18n/index.js'
 
 const PROJECT_TEMPLATE_NOTE = 'This template only seeds new tracks and does not overwrite existing track settings.'
 const TRACK_TEMPLATE_NOTE = 'This track uses an independent reverb. Send, decay, pre-delay, damp, and return only affect this track.'
-const MASTER_CHAIN_NOTE = '主控母带链作用于所有轨道汇总后的最终输出（EQ → 压缩 → 限幅）。默认开启以防爆音，追求原声请关闭。'
 const MASTER_CHAIN_ONBOARDING_KEY = 'webutau:master-chain-onboarded'
 
 function readOnboardingFlag() {
@@ -174,10 +174,10 @@ export class ReverbDockView {
 
     // EQ：4 段都有固定的频率中心点；label 用"频率 (中文位置)"格式
     const eqLabels = [
-      { label: '80 Hz (低频)',     bandIndex: 0 },
-      { label: '400 Hz (中低频)',  bandIndex: 1 },
-      { label: '2.5 kHz (中高频)', bandIndex: 2 },
-      { label: '10 kHz (高频)',    bandIndex: 3 },
+      { label: t('reverb.eq.band_low'),     bandIndex: 0 },
+      { label: t('reverb.eq.band_lo_mid'),  bandIndex: 1 },
+      { label: t('reverb.eq.band_hi_mid'),  bandIndex: 2 },
+      { label: t('reverb.eq.band_high'),    bandIndex: 3 },
     ]
     eqLabels.forEach(({ label, bandIndex }) => {
       const band = chain.eq.bands[bandIndex]
@@ -194,7 +194,7 @@ export class ReverbDockView {
 
     const comp = chain.compressor
     controls.push(createFxKnobControl({
-      label: 'Threshold (压缩阈值)',
+      label: t('reverb.eq.threshold'),
       min: -60, max: 0, step: 0.1, tone: 'orange',
       value: comp.threshold,
       format: (v) => `${v.toFixed(1)} dB`,
@@ -202,7 +202,7 @@ export class ReverbDockView {
       onCommit: (v) => this.handlers.onMasterCompressorChanged?.({ threshold: v }, { commit: true }),
     }))
     controls.push(createFxKnobControl({
-      label: 'Ratio (压缩比)',
+      label: t('reverb.eq.ratio'),
       min: 1, max: 20, step: 0.1, tone: 'orange',
       value: comp.ratio,
       format: (v) => `${v.toFixed(1)}:1`,
@@ -210,7 +210,7 @@ export class ReverbDockView {
       onCommit: (v) => this.handlers.onMasterCompressorChanged?.({ ratio: v }, { commit: true }),
     }))
     controls.push(createFxKnobControl({
-      label: 'Attack (起音时间)',
+      label: t('reverb.eq.attack'),
       min: 0, max: 0.3, step: 0.001, tone: 'orange',
       value: comp.attack,
       format: (v) => `${Math.round(v * 1000)} ms`,
@@ -218,7 +218,7 @@ export class ReverbDockView {
       onCommit: (v) => this.handlers.onMasterCompressorChanged?.({ attack: v }, { commit: true }),
     }))
     controls.push(createFxKnobControl({
-      label: 'Release (释放时间)',
+      label: t('reverb.eq.release'),
       min: 0.01, max: 1, step: 0.001, tone: 'orange',
       value: comp.release,
       format: (v) => `${Math.round(v * 1000)} ms`,
@@ -226,7 +226,7 @@ export class ReverbDockView {
       onCommit: (v) => this.handlers.onMasterCompressorChanged?.({ release: v }, { commit: true }),
     }))
     controls.push(createFxKnobControl({
-      label: 'Makeup (补偿增益)',
+      label: t('reverb.eq.makeup'),
       min: -12, max: 24, step: 0.1, tone: 'orange',
       value: comp.makeupGain,
       format: (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)} dB`,
@@ -235,7 +235,7 @@ export class ReverbDockView {
     }))
 
     controls.push(createFxKnobControl({
-      label: 'Ceiling (限幅天花板)',
+      label: t('reverb.eq.ceiling'),
       min: -12, max: 0, step: 0.1, tone: 'red',
       value: chain.limiter.threshold,
       format: (v) => `${v.toFixed(1)} dB`,
@@ -247,13 +247,13 @@ export class ReverbDockView {
     const footer = this._buildMasterChainPresetFooter(presets, chain.presetId)
 
     const module = createReverbDockModule({
-      title: 'Master Chain (主控母带链)',
+      title: t('reverb.master.title'),
       powered: chain.enabled,
       onTogglePower: () => this.handlers.onMasterChainEnabledToggled?.(),
       controls,
       footer,
-      note: MASTER_CHAIN_NOTE,
-      scopeBadge: { text: '应用于所有轨道', tone: 'global' },
+      note: t('reverb.master.note'),
+      scopeBadge: { text: t('reverb.scope.global'), tone: 'global' },
     })
     // 给外部钩子（首次提示 / D 方案聚焦）一个识别标识
     module.classList.add('fx-module--master-chain')
@@ -263,7 +263,7 @@ export class ReverbDockView {
     const scopeBanner = document.createElement('div')
     scopeBanner.className = 'fx-module-scope-banner'
     scopeBanner.innerHTML = '<span class="fx-module-scope-banner-icon" aria-hidden="true">⌬</span>'
-      + '<span class="fx-module-scope-banner-text">全局总线 · 作用于所有轨道汇总后的最终输出</span>'
+      + `<span class="fx-module-scope-banner-text">${t('reverb.master.banner')}</span>`
     module.insertBefore(scopeBanner, module.children[1] || null)
 
     // LUFS 仪表面板：放在 footer 之后、note 之前。
@@ -296,15 +296,15 @@ export class ReverbDockView {
     head.className = 'fx-lufs-head'
     const heading = document.createElement('span')
     heading.className = 'fx-lufs-heading'
-    heading.textContent = '响度 LUFS'
+    heading.textContent = t('reverb.lufs.heading')
 
     // 帮助 (?) 按钮：点开浮窗讲解 LUFS 是什么 + 各平台目标
     const helpBtn = document.createElement('button')
     helpBtn.type = 'button'
     helpBtn.className = 'fx-lufs-help'
-    helpBtn.textContent = '?'
-    helpBtn.title = '什么是 LUFS？'
-    helpBtn.setAttribute('aria-label', '关于响度 LUFS 的说明')
+    helpBtn.textContent = t('reverb.lufs.help_short')
+    helpBtn.title = t('reverb.lufs.help_title')
+    helpBtn.setAttribute('aria-label', t('reverb.lufs.help_aria'))
     helpBtn.addEventListener('click', (event) => {
       event.preventDefault()
       event.stopPropagation()
@@ -321,14 +321,14 @@ export class ReverbDockView {
     targetWrap.className = 'fx-lufs-target'
     const targetLabel = document.createElement('span')
     targetLabel.className = 'fx-lufs-target-label'
-    targetLabel.textContent = '目标'
+    targetLabel.textContent = t('reverb.lufs.target')
     const targetSelect = document.createElement('select')
     targetSelect.className = 'fx-lufs-target-select'
-    targetSelect.title = '选择成品响度目标——仪表按此着色，自动达标按此调整'
+    targetSelect.title = t('reverb.lufs.target_title')
     const targetOptions = [
-      { value: -14, text: '-14 LUFS（Spotify / B站 / YouTube / 网易 / QQ 音乐）' },
-      { value: -16, text: '-16 LUFS（Apple Music）' },
-      { value: -23, text: '-23 LUFS（EBU R128 广播 / 电视）' },
+      { value: -14, text: t('reverb.lufs.target_spotify') },
+      { value: -16, text: t('reverb.lufs.target_apple') },
+      { value: -23, text: t('reverb.lufs.target_ebu') },
     ]
     targetOptions.forEach(({ value, text }) => {
       const option = document.createElement('option')
@@ -356,7 +356,7 @@ export class ReverbDockView {
       cell.className = `fx-lufs-cell fx-lufs-cell--${kind}`
       const label = document.createElement('span')
       label.className = 'fx-lufs-cell-label'
-      label.textContent = ['M (瞬时)', 'S (短时)', 'I (积分)'][index]
+      label.textContent = [t('reverb.lufs.momentary'), t('reverb.lufs.short_term'), t('reverb.lufs.integrated')][index]
       const value = document.createElement('span')
       value.className = 'fx-lufs-cell-value'
       value.textContent = '—'
@@ -371,7 +371,7 @@ export class ReverbDockView {
     delta.className = 'fx-lufs-delta'
     const deltaLabel = document.createElement('span')
     deltaLabel.className = 'fx-lufs-delta-label'
-    deltaLabel.textContent = '偏差'
+    deltaLabel.textContent = t('reverb.lufs.delta')
     const deltaTrack = document.createElement('div')
     deltaTrack.className = 'fx-lufs-delta-track'
     const deltaFill = document.createElement('div')
@@ -388,7 +388,7 @@ export class ReverbDockView {
     const statusRow = document.createElement('div')
     statusRow.className = 'fx-lufs-status'
     statusRow.dataset.tone = 'idle'
-    statusRow.textContent = '请按播放，让仪表读取实际响度'
+    statusRow.textContent = t('reverb.lufs.status_idle')
     root.appendChild(statusRow)
 
     // 行动按钮组：左侧"成功横幅"（autofit 完成后的醒目提示）+ 右侧两个按钮
@@ -405,8 +405,8 @@ export class ReverbDockView {
     const autoFitBtn = document.createElement('button')
     autoFitBtn.type = 'button'
     autoFitBtn.className = 'fx-lufs-autofit'
-    autoFitBtn.textContent = '📐 自动达标'
-    autoFitBtn.title = '一键调整 makeup gain，让 integrated 落到目标响度附近'
+    autoFitBtn.textContent = t('reverb.lufs.auto_fit')
+    autoFitBtn.title = t('reverb.lufs.auto_fit_title')
     autoFitBtn.disabled = true // 起始无数据 → 不可点
     autoFitBtn.addEventListener('click', (event) => {
       event.preventDefault()
@@ -419,8 +419,8 @@ export class ReverbDockView {
     const resetBtn = document.createElement('button')
     resetBtn.type = 'button'
     resetBtn.className = 'fx-lufs-reset'
-    resetBtn.textContent = '↻ 重置积分'
-    resetBtn.title = '清空 Integrated（积分响度）累计——重新从头播放前点'
+    resetBtn.textContent = t('reverb.lufs.reset')
+    resetBtn.title = t('reverb.lufs.reset_title')
     resetBtn.addEventListener('click', (event) => {
       event.preventDefault()
       event.stopPropagation()
@@ -454,7 +454,7 @@ export class ReverbDockView {
     const popup = document.createElement('div')
     popup.className = 'fx-lufs-help-popup'
     popup.setAttribute('role', 'dialog')
-    popup.setAttribute('aria-label', '关于 LUFS')
+    popup.setAttribute('aria-label', t('reverb.lufs.help_aria'))
 
     popup.innerHTML = `
       <div class="fx-lufs-help-title">📚 什么是 LUFS？</div>
@@ -496,7 +496,7 @@ export class ReverbDockView {
           <li>看到绿色"✓ 已达 XX 标准"就可以保存上传了</li>
         </ol>
       </div>
-      <button type="button" class="fx-lufs-help-close" aria-label="关闭">关闭</button>
+      <button type="button" class="fx-lufs-help-close" aria-label="${t('reverb.lufs.help_close')}">${t('reverb.lufs.help_close')}</button>
     `
 
     document.body.appendChild(popup)
@@ -604,7 +604,7 @@ export class ReverbDockView {
         const after = lastAutoFit.predictedIntegrated
         const beforeStr = Number.isFinite(before) ? `${before.toFixed(1)}` : '—'
         const afterStr = Number.isFinite(after) ? `${after.toFixed(1)}` : '—'
-        refs.statusRow.textContent = `调整前 I = ${beforeStr} LUFS  →  调整后预计 I = ${afterStr} LUFS（基于线性预测，重新播放可精确验证）`
+        refs.statusRow.textContent = t('onboardingUI.autofit_status', { before: beforeStr, after: afterStr })
         refs.statusRow.dataset.tone = 'idle'
       } else {
         const status = this._buildLufsStatusText(snapshot, target, { measuring, lastAutoFit: null })
@@ -614,17 +614,14 @@ export class ReverbDockView {
     }
     if (refs.autoFitBtn) {
       if (measuring) {
-        // 测量中：按钮变成"取消"，让用户能从 UI 自己撤销（除暂停外的备用退出）
         refs.autoFitBtn.disabled = false
-        refs.autoFitBtn.textContent = '✕ 取消测量'
-        refs.autoFitBtn.title = '正在完整播放测量响度——点击放弃这次测量'
+        refs.autoFitBtn.textContent = t('reverb.lufs.cancel_measure')
+        refs.autoFitBtn.title = t('reverb.lufs.cancel_measure_title')
         refs.autoFitBtn.dataset.mode = 'cancel'
       } else {
-        // idle：按钮回归"自动达标"，但任何时候都允许点（而非要求先 3 秒采样），
-        // 因为现在的流程是"点了之后从头播放整首歌"
         refs.autoFitBtn.disabled = false
-        refs.autoFitBtn.textContent = '📐 自动达标'
-        refs.autoFitBtn.title = '点击后会从头完整播放整首歌，结束后自动调整 makeup gain'
+        refs.autoFitBtn.textContent = t('reverb.lufs.auto_fit')
+        refs.autoFitBtn.title = t('reverb.lufs.auto_fit_idle_title')
         refs.autoFitBtn.dataset.mode = 'autofit'
       }
     }
@@ -639,8 +636,8 @@ export class ReverbDockView {
       const sign = lastAutoFit.deltaLu >= 0 ? '+' : ''
       return {
         html: `<span class="fx-lufs-success-banner-icon">✓</span>`
-          + `<span class="fx-lufs-success-banner-main"><strong>已达 ${platformLabel} 标准</strong>`
-          + `<span class="fx-lufs-success-banner-sub">差 ${sign}${lastAutoFit.deltaLu.toFixed(1)} LU——可发布</span>`
+          + `<span class="fx-lufs-success-banner-main"><strong>${t('reverb.lufs.banner_already', { platform: platformLabel })}</strong>`
+          + `<span class="fx-lufs-success-banner-sub">${t('reverb.lufs.banner_already_sub', { sign, value: lastAutoFit.deltaLu.toFixed(1) })}</span>`
           + `</span>`,
         tone: 'good',
       }
@@ -657,18 +654,18 @@ export class ReverbDockView {
     else tone = predictedDelta > 0 ? 'too-loud' : 'too-quiet'
 
     const predictedStr = Number.isFinite(predicted) ? `${predicted.toFixed(1)} LUFS` : '—'
-    let footer = `预计响度 ${predictedStr}（${platformLabel} 标准）`
+    let footer = t('reverb.lufs.banner_predicted', { value: predictedStr, platform: platformLabel })
     if (lastAutoFit.hitLimit) {
-      footer += '·已撞上限，可再点一次或手调 EQ / 压缩'
+      footer += t('reverb.lufs.banner_hit_limit')
     } else if (lastAutoFit.largeAdjustment) {
-      footer += '·调整量较大，建议听一下音质'
+      footer += t('reverb.lufs.banner_large')
     } else {
-      footer += '·可保存上传或重播验证'
+      footer += t('reverb.lufs.banner_save_hint')
     }
 
     return {
       html: `<span class="fx-lufs-success-banner-icon">✓</span>`
-        + `<span class="fx-lufs-success-banner-main"><strong>自动达标完成 ${sign}${lastAutoFit.appliedDb.toFixed(1)} dB</strong>`
+        + `<span class="fx-lufs-success-banner-main"><strong>${t('reverb.lufs.banner_done', { sign, value: lastAutoFit.appliedDb.toFixed(1) })}</strong>`
         + `<span class="fx-lufs-success-banner-sub">${footer}</span>`
         + `</span>`,
       tone,
@@ -680,53 +677,63 @@ export class ReverbDockView {
     if (measuring) {
       const seconds = ((snapshot?.gatedBlockCount || 0) / 10).toFixed(1)
       return {
-        text: `🔴 自动达标测量中——已采集 ${seconds} 秒。请勿暂停 / 拖动，等播完会自动调整`,
+        text: t('reverb.lufs.status_measuring', { seconds }),
         tone: 'measuring',
       }
     }
     const integrated = snapshot?.integrated
     const blockCount = snapshot?.gatedBlockCount || 0
     if (!Number.isFinite(integrated)) {
-      return { text: '请按播放，让仪表读取实际响度；或直接点"自动达标"完整测一遍', tone: 'idle' }
+      return { text: t('reverb.lufs.status_press_play'), tone: 'idle' }
     }
     if (blockCount < 30) {
       const remainBlocks = Math.max(0, 30 - blockCount)
       const seconds = (remainBlocks / 10).toFixed(1)
-      return { text: `正在采样——再播放约 ${seconds} 秒后读数将稳定`, tone: 'idle' }
+      return { text: t('reverb.lufs.status_sampling', { seconds }), tone: 'idle' }
     }
     const delta = integrated - target
     const abs = Math.abs(delta)
     const platformLabel = this._platformLabelForTarget(target)
     if (abs <= 1) {
       return {
-        text: `✓ 已达 ${platformLabel} 标准（差 ${delta >= 0 ? '+' : ''}${delta.toFixed(1)} LU），可发布`,
+        text: t('reverb.lufs.status_on_target', {
+          platform: platformLabel,
+          sign: delta >= 0 ? '+' : '',
+          value: delta.toFixed(1),
+        }),
         tone: 'good',
       }
     }
     if (abs <= 3) {
-      const verb = delta > 0 ? '调小（不会爆音，但牺牲一些响）' : '调响（仍然 OK）'
+      const verb = delta > 0 ? t('reverb.lufs.verb_quiet_down') : t('reverb.lufs.verb_loud_up')
+      const tone = delta > 0 ? t('reverb.lufs.tone_loud') : t('reverb.lufs.tone_quiet')
       return {
-        text: `⚠ 比 ${platformLabel} 标准${delta > 0 ? '响' : '轻'} ${abs.toFixed(1)} dB——上传后平台会自动${verb}`,
+        text: t('reverb.lufs.status_warn', {
+          platform: platformLabel,
+          tone,
+          value: abs.toFixed(1),
+          verb,
+        }),
         tone: delta > 0 ? 'too-loud' : 'warn',
       }
     }
     if (delta > 0) {
       return {
-        text: `✗ 比 ${platformLabel} 响 ${abs.toFixed(1)} dB——平台会大幅压低，建议点"自动达标"`,
+        text: t('reverb.lufs.status_too_loud', { platform: platformLabel, value: abs.toFixed(1) }),
         tone: 'too-loud',
       }
     }
     return {
-      text: `✗ 比 ${platformLabel} 轻 ${abs.toFixed(1)} dB——听感闷，建议点"自动达标"`,
+      text: t('reverb.lufs.status_too_quiet', { platform: platformLabel, value: abs.toFixed(1) }),
       tone: 'too-quiet',
     }
   }
 
   _platformLabelForTarget(target) {
-    if (target === -14) return 'Spotify / B 站'
-    if (target === -16) return 'Apple Music'
-    if (target === -23) return 'EBU R128 广播'
-    return `${target} LUFS`
+    if (target === -14) return t('reverb.lufs.platform_spotify')
+    if (target === -16) return t('reverb.lufs.platform_apple')
+    if (target === -23) return t('reverb.lufs.platform_ebu')
+    return t('reverb.lufs.platform_default', { value: target })
   }
 
   // 状态式 preset 下拉：显示当前激活的预设名；用户调旋钮后预设失效自动回到 "Custom (自定义)"
@@ -736,7 +743,7 @@ export class ReverbDockView {
 
     const label = document.createElement('label')
     label.className = 'fx-screen-label'
-    label.textContent = 'Preset (预设)'
+    label.textContent = t('reverb.master.preset_label')
 
     const select = document.createElement('select')
     select.className = 'fx-screen-select'
@@ -745,7 +752,7 @@ export class ReverbDockView {
     // 自定义占位选项——presetId 为 null 时（手动调过参的状态）显示
     const customOption = document.createElement('option')
     customOption.value = ''
-    customOption.textContent = 'Custom (自定义)'
+    customOption.textContent = t('reverb.master.preset_custom')
     select.appendChild(customOption)
     ;(presets || []).forEach((preset) => {
       const option = document.createElement('option')
@@ -783,7 +790,7 @@ export class ReverbDockView {
 
     const text = document.createElement('div')
     text.className = 'master-chain-onboarding-text'
-    text.textContent = '主控母带链默认开启，能自动防止爆音并把响度提升到商业级。如果追求原始声音不被处理，请点这里关闭。'
+    text.textContent = t('reverb.master.onboarding')
 
     const arrow = document.createElement('span')
     arrow.className = 'master-chain-onboarding-arrow'
@@ -792,7 +799,7 @@ export class ReverbDockView {
     const dismiss = document.createElement('button')
     dismiss.type = 'button'
     dismiss.className = 'master-chain-onboarding-dismiss'
-    dismiss.textContent = '知道了'
+    dismiss.textContent = t('reverb.master.onboarding_dismiss')
 
     tooltip.append(text, dismiss, arrow)
     document.body.appendChild(tooltip)
@@ -861,7 +868,7 @@ export class ReverbDockView {
       controls,
       footer,
       note: PROJECT_TEMPLATE_NOTE,
-      scopeBadge: { text: '工程模板', tone: 'project' },
+      scopeBadge: { text: t('reverb.scope.project'), tone: 'project' },
     })
   }
 
@@ -931,7 +938,7 @@ export class ReverbDockView {
       controls,
       footer,
       note: activePreset?.description || TRACK_TEMPLATE_NOTE,
-      scopeBadge: { text: '单轨', tone: 'track' },
+      scopeBadge: { text: t('reverb.scope.track'), tone: 'track' },
     })
   }
 

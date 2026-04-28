@@ -1,4 +1,6 @@
-﻿function ensureReverbDockToggleButton() {
+﻿import { t } from '../../i18n/index.js'
+
+function ensureReverbDockToggleButton() {
   let button = document.getElementById('btn-toggle-reverb-dock')
   if (button) return button
 
@@ -10,7 +12,8 @@
   button.type = 'button'
   button.className = anchor.className
   button.id = 'btn-toggle-reverb-dock'
-  button.textContent = '混响 Reverb'
+  button.setAttribute('data-i18n', 'reverb.panel_button')
+  button.textContent = t('reverb.panel_button')
   toolsCenter.appendChild(button)
   return button
 }
@@ -26,7 +29,8 @@ function ensureReverbDockPanel() {
   panel = document.createElement('section')
   panel.id = 'reverb-dock'
   panel.className = 'bottom-fx-panel hidden'
-  panel.setAttribute('aria-label', '混响面板 Reverb panel')
+  panel.setAttribute('data-i18n-attr', 'aria-label:reverb.panel_aria')
+  panel.setAttribute('aria-label', t('reverb.panel_aria'))
   editorPanel.insertAdjacentElement('afterend', panel)
   return panel
 }

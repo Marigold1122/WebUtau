@@ -2,6 +2,7 @@
 // + 12 段对数 FFT 频谱条 + 锁存式 CLIP 指示。
 // 旁路接入 ProjectAudioGraph.masterGain（不打断主路输出），
 // 用户首次点击播放后 audio context 才创建——这里通过轮询等到 master 节点出现再 tap。
+import { onLocaleChange, t } from '../../i18n/index.js'
 
 const FFT_SIZE = 2048
 const SPECTRUM_BANDS = 12
@@ -192,7 +193,7 @@ export function installMenubarMeter({
   bezel.className = 'menubar-meter-bezel'
   if (typeof onBezelClick === 'function') {
     bezel.style.cursor = 'pointer'
-    bezel.title = '点击打开主控母带链'
+    bezel.title = t('menubar.meter.bezel_open_master')
     // 父级 .menubar-meter 有 pointer-events: none（让 transport 控件穿透），
     // bezel 自己必须显式 auto 才能接到点击。inline style 覆盖样式表的 none
     bezel.style.pointerEvents = 'auto'
@@ -216,7 +217,7 @@ export function installMenubarMeter({
   // LUFS 集成响度小读数：标签 "I" + 数值，按目标 ±1/±3 LU 着色
   const lufsCell = document.createElement('div')
   lufsCell.className = 'menubar-meter-lufs'
-  lufsCell.title = 'Integrated LUFS（积分响度）—— 点击进入主控母带链查看 M/S/I 全部读数'
+  lufsCell.title = t('menubar.meter.lufs_title')
   const lufsLabel = document.createElement('span')
   lufsLabel.className = 'menubar-meter-lufs-label'
   lufsLabel.textContent = 'I'
@@ -229,8 +230,14 @@ export function installMenubarMeter({
   clip.type = 'button'
   clip.className = 'menubar-meter-clip'
   clip.textContent = 'CLIP'
-  clip.title = '主输出过载指示（点击复位）'
+  clip.title = t('menubar.meter.clip_reset')
   clip.addEventListener('click', () => clip.classList.remove('is-clipped'))
+
+  const stopLocaleWatch = onLocaleChange(() => {
+    if (typeof onBezelClick === 'function') bezel.title = t('menubar.meter.bezel_open_master')
+    lufsCell.title = t('menubar.meter.lufs_title')
+    clip.title = t('menubar.meter.clip_reset')
+  })
 
   bezel.append(channels, spectrum.container, lufsCell, clip)
   container.appendChild(bezel)
@@ -316,6 +323,7 @@ export function installMenubarMeter({
       try { lufsUnsubscribe() } catch (_e) {}
       lufsUnsubscribe = null
     }
+    try { stopLocaleWatch?.() } catch (_e) {}
     bezel.remove()
     delete container.dataset.meterInstalled
   }

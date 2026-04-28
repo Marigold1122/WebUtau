@@ -1,3 +1,5 @@
+import { t } from '../../../i18n/index.js'
+
 const SAMPLE_RATE_OPTIONS = [
   { value: 22050, label: '22050 Hz' },
   { value: 44100, label: '44100 Hz' },
@@ -9,10 +11,12 @@ const BIT_DEPTH_OPTIONS = [
   { value: 24, label: '24 bit' },
 ]
 
-const CHANNEL_OPTIONS = [
-  { value: 1, label: '单声道' },
-  { value: 2, label: '立体声' },
-]
+function getChannelOptions() {
+  return [
+    { value: 1, label: t('modal.export.ch_mono') },
+    { value: 2, label: t('modal.export.ch_stereo') },
+  ]
+}
 
 export class ExportAudioModal {
   constructor() {
@@ -47,7 +51,7 @@ export class ExportAudioModal {
 
     this._populateSelect(this.sampleRateSelect, SAMPLE_RATE_OPTIONS, 44100)
     this._populateSelect(this.bitDepthSelect, BIT_DEPTH_OPTIONS, 16)
-    this._populateSelect(this.channelSelect, CHANNEL_OPTIONS, 2)
+    this._populateSelect(this.channelSelect, getChannelOptions(), 2)
 
     this.btnExportSelected?.addEventListener('click', () => this._handleExport('selected'))
     this.btnExportAll?.addEventListener('click', () => this._handleExport('all'))
@@ -55,15 +59,15 @@ export class ExportAudioModal {
   }
 
   open({ blocked = false, blockedReason = '', selectedTrackName = '' } = {}) {
-    if (!this.overlay) return Promise.reject(new Error('导出弹窗未初始化'))
+    if (!this.overlay) return Promise.reject(new Error(t('modal.export.not_inited')))
     this._resetProgress()
     this._setExporting(false)
     this._setBlocked(blocked, blockedReason)
     this._hasSelectedTrack = Boolean(selectedTrackName)
     if (this.btnExportSelected) {
       this.btnExportSelected.textContent = selectedTrackName
-        ? `导出所选轨道 (${selectedTrackName})`
-        : '导出所选轨道'
+        ? t('modal.export.export_selected_named', { name: selectedTrackName })
+        : t('modal.export.export_selected')
       this.btnExportSelected.disabled = !this._hasSelectedTrack || blocked
     }
     this.overlay.classList.add('visible')
@@ -106,7 +110,7 @@ export class ExportAudioModal {
       this.btnExportSelected.disabled = blocked || !this._hasSelectedTrack
     }
     if (this.warningText) {
-      this.warningText.textContent = blocked ? (reason || '人声轨渲染尚未完成，无法导出') : ''
+      this.warningText.textContent = blocked ? (reason || t('modal.export.blocked_reason')) : ''
       this.warningText.classList.toggle('visible', blocked)
     }
   }
@@ -114,13 +118,13 @@ export class ExportAudioModal {
   _setExporting(active) {
     if (this.btnExportAll) {
       this.btnExportAll.disabled = active || this._blocked
-      this.btnExportAll.textContent = active ? '正在导出...' : '整体导出'
+      this.btnExportAll.textContent = active ? t('modal.export.exporting') : t('modal.export.export_all')
     }
     if (this.btnExportSelected) {
       this.btnExportSelected.disabled = active || this._blocked || !this._hasSelectedTrack
     }
     if (this.btnCancel) {
-      this.btnCancel.textContent = active ? '关闭' : '取消'
+      this.btnCancel.textContent = active ? t('modal.export.close') : t('modal.export.cancel')
     }
     if (this.sampleRateSelect) this.sampleRateSelect.disabled = active
     if (this.bitDepthSelect) this.bitDepthSelect.disabled = active

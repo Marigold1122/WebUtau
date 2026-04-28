@@ -4,6 +4,7 @@ import playheadController from '../../modules/PlayheadController.js'
 import { EVENTS } from '../../config/constants.js'
 import phraseRenderStateStore from './phraseRenderStateStore.js'
 import { buildRuntimeSnapshot } from './runtimeSnapshot.js'
+import { t } from '../../i18n/index.js'
 
 export function createRuntimeEventBindings({
   callbacks,
@@ -66,7 +67,7 @@ export function createRuntimeEventBindings({
   }
 
   function handlePhraseRebuilt({ phrases }) {
-    setStatus(`后端分句完成：${phrases.length} 个语句，渲染中...`)
+    setStatus(t('voiceRuntime.phrase_done', { count: phrases.length }))
   }
 
   function handleTransportTick({ time }) {
@@ -95,7 +96,7 @@ export function createRuntimeEventBindings({
   }
 
   function handlePitchLoaded() {
-    setStatus(`音高预测完成：${state.trackName}`)
+    setStatus(t('voiceRuntime.pitch_predicted', { name: state.trackName }))
     callbacks.onPredictionReady?.(buildRuntimeSnapshot(state, phraseStore))
   }
 
@@ -118,11 +119,11 @@ export function createRuntimeEventBindings({
       })
     }
     if (status === 'completed') {
-      setStatus('渲染完成')
+      setStatus(t('voiceRuntime.render_done'))
       callbacks.onRenderComplete?.(buildRuntimeSnapshot(state, phraseStore))
       return
     }
-    setStatus(progress || ('渲染中 ' + completed + '/' + total))
+    setStatus(progress || t('voiceRuntime.rendering', { done: completed, total }))
     callbacks.onRenderProgress?.({
       trackId: state.trackId,
       jobId,
@@ -134,7 +135,7 @@ export function createRuntimeEventBindings({
   }
 
   function handleJobFailed({ error }) {
-    setStatus('渲染失败: ' + (error || '未知错误'))
+    setStatus(t('voiceRuntime.render_failed', { error: error || t('hostStatus.unknown_error') }))
     emitPlaybackState()
     callbacks.onRenderFailed?.({
       trackId: state.trackId,

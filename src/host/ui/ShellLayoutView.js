@@ -36,6 +36,7 @@ import {
 } from './trackStatusText.js'
 import { WorkspaceSplitController } from './WorkspaceSplitController.js'
 import sharePanel from '../../ui/SharePanel.js'
+import { onLocaleChange, t } from '../../i18n/index.js'
 
 const TRACK_HEADER_FALLBACK_WIDTH = 240
 
@@ -145,8 +146,10 @@ export class ShellLayoutView {
     if (this.refs.voiceRuntimeFrame) {
       // theme 通过 URL 参数带过去——这样 iframe 装载首屏就能用对的主题画 canvas，
       // 不用等 postMessage 握手回来才切。后续切换仍走 postMessage
+      // locale 同理：iframe 内 i18n 通过 ?lang= 拿到首屏值，避免闪一下英文再切到中文
       const initialTheme = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'
-      this.refs.voiceRuntimeFrame.src = `/voice-runtime.html?embedded=1&theme=${initialTheme}`
+      const initialLocale = document.documentElement.dataset.locale || 'zh'
+      this.refs.voiceRuntimeFrame.src = `/voice-runtime.html?embedded=1&theme=${initialTheme}&lang=${encodeURIComponent(initialLocale)}`
     }
     this._mountMenubarFollowControls()
     this._mountEditorModeControls()
@@ -213,11 +216,13 @@ export class ShellLayoutView {
     const plate = this.refs.menubarProjectPlate
     const nameEl = this.refs.menubarProjectPlateName
     if (!plate || !nameEl) return
-    const displayName = (typeof name === 'string' && name.trim()) ? name.trim() : '未命名工程'
+    const displayName = (typeof name === 'string' && name.trim()) ? name.trim() : t('menubar.project_default_name')
     nameEl.textContent = displayName
     plate.classList.toggle('is-untitled', !(typeof name === 'string' && name.trim()))
     plate.classList.toggle('is-dirty', Boolean(dirty))
-    plate.title = dirty ? `${displayName} · 有未保存的改动（点击保存）` : `${displayName}（点击保存）`
+    plate.title = dirty
+      ? t('inspectorAudit.project_save_dirty', { name: displayName })
+      : t('inspectorAudit.project_save_clean', { name: displayName })
     // tab 标题：dirty 时前缀加 ● 让用户在多标签场景下也能一眼看到状态
     const titleParts = []
     if (dirty) titleParts.push('●')
@@ -235,12 +240,12 @@ export class ShellLayoutView {
 
     if (summary) {
       const lines = []
-      lines.push(`工程名：${projectName || '未命名工程'}`)
-      lines.push(`轨道数：${trackCount}`)
+      lines.push(t('inspectorAudit.backup_summary_name', { name: projectName || t('menubar.project_default_name') }))
+      lines.push(t('inspectorAudit.backup_summary_tracks', { count: trackCount }))
       if (savedAt) {
         const date = typeof savedAt === 'number' ? new Date(savedAt) : new Date(savedAt)
         if (!Number.isNaN(date.getTime())) {
-          lines.push(`备份时间：${date.toLocaleString()}`)
+          lines.push(t('inspectorAudit.backup_summary_time', { time: date.toLocaleString() }))
         }
       }
       summary.textContent = lines.join('\n')
@@ -312,7 +317,7 @@ export class ShellLayoutView {
     select.innerHTML = ''
     const noneOption = document.createElement('option')
     noneOption.value = ''
-    noneOption.textContent = enabled ? 'MIDI: 无' : 'MIDI: 不可用'
+    noneOption.textContent = enabled ? t('inspectorAudit.midi_none') : t('inspectorAudit.midi_unavailable')
     select.appendChild(noneOption)
     safeInputs.forEach((input) => {
       const option = document.createElement('option')
@@ -424,7 +429,8 @@ export class ShellLayoutView {
     if (this._editorPlaceholderEl) return this._editorPlaceholderEl
     const el = document.createElement('div')
     el.className = 'editor-placeholder'
-    el.textContent = '请双击音轨开始编辑'
+    el.textContent = t('editor.placeholder_dblclick')
+    el.dataset.i18nRef = 'editor.placeholder_dblclick'
     el.hidden = true
     const editorBody = this.refs.editorPanel?.querySelector('.editor-body')
     if (editorBody) editorBody.appendChild(el)
@@ -481,7 +487,8 @@ export class ShellLayoutView {
 
     const label = document.createElement('span')
     label.className = 'menubar-follow-label'
-    label.textContent = '滚动'
+    label.textContent = t('follow.label')
+    label.dataset.i18nRef = 'follow.label'
     controls.appendChild(label)
 
     for (const mode of [
@@ -492,8 +499,9 @@ export class ShellLayoutView {
       const button = document.createElement('button')
       button.type = 'button'
       button.className = 'menubar-follow-btn'
+      button.dataset.followMode = mode
       button.textContent = PLAYHEAD_FOLLOW_MODE_LABELS[mode]
-      button.title = `播放时使用${PLAYHEAD_FOLLOW_MODE_LABELS[mode]}滚动`
+      button.title = t('follow.title_tip', { label: PLAYHEAD_FOLLOW_MODE_LABELS[mode] })
       button.addEventListener('click', () => this.handlers.onPlayheadFollowModeSelected?.(mode))
       this.followModeButtons.set(mode, button)
       controls.appendChild(button)
@@ -502,6 +510,18 @@ export class ShellLayoutView {
     this.followModeControls = controls
     host.appendChild(controls)
     this._renderMenubarFollowControls()
+    onLocaleChange(() => this._refreshMenubarFollowLabels())
+  }
+
+  _refreshMenubarFollowLabels() {
+    if (!this.followModeControls) return
+    const labelEl = this.followModeControls.querySelector('.menubar-follow-label')
+    if (labelEl) labelEl.textContent = t('follow.label')
+    for (const [mode, button] of this.followModeButtons.entries()) {
+      const label = PLAYHEAD_FOLLOW_MODE_LABELS[mode]
+      button.textContent = label
+      button.title = t('follow.title_tip', { label })
+    }
   }
 
   _renderMenubarFollowControls() {
@@ -526,9 +546,12 @@ export class ShellLayoutView {
       return button
     }
 
-    this.btnEditorNoteMode = createModeButton('音符', 'note')
-    this.btnEditorLyricMode = createModeButton('歌词', 'lyric')
-    this.btnEditorPitchMode = createModeButton('音高', 'pitch')
+    this.btnEditorNoteMode = createModeButton(t('editor.mode_note'), 'note')
+    this.btnEditorNoteMode.dataset.i18nRef = 'editor.mode_note'
+    this.btnEditorLyricMode = createModeButton(t('editor.mode_lyric'), 'lyric')
+    this.btnEditorLyricMode.dataset.i18nRef = 'editor.mode_lyric'
+    this.btnEditorPitchMode = createModeButton(t('editor.mode_pitch'), 'pitch')
+    this.btnEditorPitchMode.dataset.i18nRef = 'editor.mode_pitch'
     modeGroup.append(this.btnEditorNoteMode, this.btnEditorLyricMode, this.btnEditorPitchMode)
 
     const actions = document.createElement('div')
@@ -538,7 +561,8 @@ export class ShellLayoutView {
     this.btnQuickLyric.type = 'button'
     this.btnQuickLyric.className = 'piano-roll-editor-btn piano-roll-editor-btn--secondary'
     this.btnQuickLyric.dataset.tour = 'quick-lyric-open'
-    this.btnQuickLyric.textContent = '快速填词'
+    this.btnQuickLyric.textContent = t('editor.quick_lyric_open')
+    this.btnQuickLyric.dataset.i18nRef = 'editor.quick_lyric_open'
     this.btnQuickLyric.addEventListener('click', () => this.handlers.onQuickLyricOpen?.())
     actions.appendChild(this.btnQuickLyric)
 
@@ -546,7 +570,8 @@ export class ShellLayoutView {
     this.btnRenderTrackAsVoice.type = 'button'
     this.btnRenderTrackAsVoice.className = 'piano-roll-editor-btn piano-roll-editor-btn--secondary'
     this.btnRenderTrackAsVoice.dataset.tour = 'render-as-voice'
-    this.btnRenderTrackAsVoice.textContent = '将该轨道渲染为人声'
+    this.btnRenderTrackAsVoice.textContent = t('editor.render_as_voice')
+    this.btnRenderTrackAsVoice.dataset.i18nRef = 'editor.render_as_voice'
     this.btnRenderTrackAsVoice.addEventListener('click', () => {
       const trackId = this.refs.editorPanel?.dataset?.trackId || null
       this.handlers.onRenderTrackAsVoice?.(trackId)
@@ -557,6 +582,16 @@ export class ShellLayoutView {
     this.editorModeControls.className = 'editor-mode-controls'
     this.editorModeControls.append(modeGroup, actions)
     host.appendChild(this.editorModeControls)
+    onLocaleChange(() => this._refreshEditorModeLabels())
+  }
+
+  _refreshEditorModeLabels() {
+    if (!this.editorModeControls) return
+    if (this.btnEditorNoteMode) this.btnEditorNoteMode.textContent = t('editor.mode_note')
+    if (this.btnEditorLyricMode) this.btnEditorLyricMode.textContent = t('editor.mode_lyric')
+    if (this.btnEditorPitchMode) this.btnEditorPitchMode.textContent = t('editor.mode_pitch')
+    if (this.btnQuickLyric) this.btnQuickLyric.textContent = t('editor.quick_lyric_open')
+    if (this.btnRenderTrackAsVoice) this.btnRenderTrackAsVoice.textContent = t('editor.render_as_voice')
   }
 
   _renderEditorModeControls(editorTrack, viewState = {}) {
@@ -608,7 +643,7 @@ export class ShellLayoutView {
         select.appendChild(option)
       })
     } catch {
-      select.innerHTML = '<option value="">无法加载声库</option>'
+      select.innerHTML = `<option value="">${t('modal.language.voicebank_load_failed')}</option>`
     }
   }
 
@@ -628,11 +663,11 @@ export class ShellLayoutView {
     }
     this.refs.selectedTrackName.textContent = selectedTrack?.name || '—'
     this.refs.selectedTrackKind.textContent = selectedTrack
-      ? (isAudioTrack(selectedTrack) ? '音频轨' : getTrackSourceInspectorText(selectedTrack.playbackState?.assignedSourceId))
-      : '-'
+      ? (isAudioTrack(selectedTrack) ? t('trackKind.audio') : getTrackSourceInspectorText(selectedTrack.playbackState?.assignedSourceId))
+      : t('trackKind.placeholder')
     this.refs.selectedTrackLanguage.textContent = selectedTrack
       ? (isAudioTrack(selectedTrack) ? '—' : getLanguageLabel(selectedTrack.languageCode))
-      : '未设置'
+      : t('inspector.track.lang_unset')
     const isVoiceTrack = selectedTrack && !isAudioTrack(selectedTrack) && isVoiceRuntimeSource(selectedTrack.playbackState?.assignedSourceId)
     if (this.refs.selectedTrackVoicebank) {
       const voicebankSelect = this.refs.selectedTrackVoicebank
@@ -679,15 +714,15 @@ export class ShellLayoutView {
       this.refs.emptyHint.innerHTML = ''
       const line1 = document.createElement('div')
       line1.dataset.tour = 'empty-hint-primary'
-      line1.textContent = '点击左侧加号新建轨道，通过钢琴卷帘或MIDI设备进行编辑'
+      line1.textContent = t('emptyHint.primary')
       const line2 = document.createElement('div')
       line2.className = 'track-empty-hint-import'
       const label = document.createElement('span')
-      label.textContent = '或导入MIDI文件'
+      label.textContent = t('emptyHint.or_import_midi')
       const btn = document.createElement('button')
       btn.type = 'button'
       btn.className = 'track-empty-hint-import-button'
-      btn.textContent = '导入'
+      btn.textContent = t('emptyHint.btn_import')
       btn.addEventListener('click', () => this.refs.fileInput?.click())
       line2.append(label, btn)
       const demoFiles = DEMO_MIDI_FILES
@@ -696,23 +731,21 @@ export class ShellLayoutView {
         line3.className = 'track-empty-hint-import'
         line3.dataset.tour = 'demo-row'
         const demoLabel = document.createElement('span')
-        demoLabel.textContent = '也可加载示例midi快速体验'
+        demoLabel.textContent = t('emptyHint.or_demo')
         const loadDemo = (button, url, fileName) => {
           const originalLabel = button.textContent
           button.disabled = true
-          button.textContent = '加载中…'
+          button.textContent = t('emptyHint.loading')
           fetch(url)
             .then((res) => res.blob())
             .then((blob) => {
               const file = new File([blob], fileName, { type: 'audio/midi' })
               this.handlers.onMidiFileSelected?.(file)
-              // 文件已交给 handler 处理：若加载真正成功，空态区域会被重绘而使此按钮消失；
-              // 若用户随后取消下游弹窗（如时序导入），按钮仍保留在 DOM 中且需可再次点击
               button.textContent = originalLabel
               button.disabled = false
             })
             .catch(() => {
-              button.textContent = '失败'
+              button.textContent = t('emptyHint.failed')
               button.disabled = false
             })
         }
@@ -765,8 +798,8 @@ export class ShellLayoutView {
     const button = document.createElement('button')
     button.type = 'button'
     button.className = 'track-add-button'
-    button.setAttribute('aria-label', '新建轨道')
-    button.innerHTML = '<span class="track-add-button-plus">+</span><span class="track-add-button-label">新建轨道</span>'
+    button.setAttribute('aria-label', t('trackList.new_track_aria'))
+    button.innerHTML = `<span class="track-add-button-plus">+</span><span class="track-add-button-label">${t('trackList.new_track')}</span>`
     button.addEventListener('click', (event) => {
       event.preventDefault()
       event.stopPropagation()
@@ -900,7 +933,7 @@ export class ShellLayoutView {
     button.classList.toggle('active', !collapsed)
     button.dataset.collapsed = String(Boolean(collapsed))
     button.setAttribute('aria-pressed', String(!collapsed))
-    button.title = collapsed ? '展开右侧面板' : '收起右侧面板'
+    button.title = collapsed ? t('inspectorAudit.expand_panel') : t('inspectorAudit.collapse_panel')
     button.setAttribute('aria-label', button.title)
   }
 
@@ -925,43 +958,43 @@ export class ShellLayoutView {
     menu.className = 'track-context-menu file-menu'
 
     const newProjectButton = this._buildFileMenuItem({
-      label: '新建工程',
+      label: t('fileMenu.new_project'),
       shortcut: this._formatShortcut('N'),
       onClick: () => this.handlers.onProjectNew?.(),
     })
     const openProjectButton = this._buildFileMenuItem({
-      label: '打开工程',
+      label: t('fileMenu.open_project'),
       shortcut: this._formatShortcut('O'),
       onClick: () => this.handlers.onProjectOpen?.(),
     })
 
     const saveProjectButton = this._buildFileMenuItem({
-      label: '保存工程',
+      label: t('fileMenu.save_project'),
       shortcut: this._formatShortcut('S'),
       onClick: () => this.handlers.onProjectSave?.(),
     })
     const saveProjectAsButton = this._buildFileMenuItem({
-      label: '工程另存为',
+      label: t('fileMenu.save_project_as'),
       shortcut: this._formatShortcut('S', { shift: true }),
       onClick: () => this.handlers.onProjectSaveAs?.(),
     })
 
     const importMidiButton = this._buildFileMenuItem({
-      label: '导入 MIDI',
+      label: t('fileMenu.import_midi'),
       onClick: () => this.refs.fileInput?.click(),
     })
     const importAudioButton = this._buildFileMenuItem({
-      label: '导入音频轨',
+      label: t('fileMenu.import_audio'),
       onClick: () => this.refs.audioFileInput?.click(),
     })
 
     const exportMidiButton = this._buildFileMenuItem({
-      label: '导出 MIDI',
+      label: t('fileMenu.export_midi'),
       onClick: () => this.handlers.onExportMidi?.(),
     })
     exportMidiButton.disabled = true
     const exportAudioButton = this._buildFileMenuItem({
-      label: '导出音频',
+      label: t('fileMenu.export_audio'),
       onClick: () => this.handlers.onExportAudio?.(),
     })
     exportAudioButton.disabled = true
@@ -1033,7 +1066,7 @@ export class ShellLayoutView {
     const createButton = document.createElement('button')
     createButton.type = 'button'
     createButton.className = 'track-context-menu-item'
-    createButton.textContent = '新建轨道'
+    createButton.textContent = t('trackList.new_track')
     createButton.addEventListener('click', () => {
       const targetTrackId = this.trackContextTrackId
       this._hideTrackContextMenu()
@@ -1043,7 +1076,7 @@ export class ShellLayoutView {
     const deleteButton = document.createElement('button')
     deleteButton.type = 'button'
     deleteButton.className = 'track-context-menu-item'
-    deleteButton.textContent = '删除轨道'
+    deleteButton.textContent = t('trackList.delete_track')
     deleteButton.addEventListener('click', () => {
       if (deleteButton.disabled) return
       const targetTrackId = this.trackContextTrackId

@@ -4,11 +4,12 @@ import trackSelector from '../../ui/TrackSelector.js'
 import { DEFAULT_LANGUAGE_CODE } from '../../config/languageOptions.js'
 import { fetchVoicebanks, getDefaultSingerId } from '../../api/VoicebankApi.js'
 import { cloneSnapshot } from './runtimeSnapshot.js'
+import { t } from '../../i18n/index.js'
 
 export async function resolveSingerId() {
   const voicebanks = await fetchVoicebanks()
   const singerId = getDefaultSingerId(voicebanks)
-  if (!singerId) throw new Error('声库缺少 id')
+  if (!singerId) throw new Error(t('voiceRuntime.voicebank_missing_id'))
   return singerId
 }
 
@@ -31,7 +32,7 @@ export async function selectRuntimeSnapshotFromImport(file) {
   return {
     trackId: `standalone-${result.trackIndex}`,
     trackIndex: result.trackIndex,
-    trackName: tracks.find((track) => track.index === result.trackIndex)?.name || `轨道 ${result.trackIndex + 1}`,
+    trackName: tracks.find((track) => track.index === result.trackIndex)?.name || t('voiceRuntime.track_index_default', { index: result.trackIndex + 1 }),
     languageCode: result.languageCode || DEFAULT_LANGUAGE_CODE,
     tempoData,
     bpm,

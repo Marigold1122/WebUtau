@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
@@ -14,30 +14,30 @@
     <div id="app">
       <header class="menubar">
         <div class="menu-items">
-          <button type="button" class="menu-item" id="btn-import" title="文件">文件</button>
+          <button type="button" class="menu-item" id="btn-import" data-i18n="menubar.file" data-i18n-attr="title:menubar.file">文件</button>
           <input type="file" id="midi-file-input" accept=".mid,.midi" hidden />
           <input type="file" id="audio-file-input" accept="audio/*,.wav,.mp3,.flac,.m4a,.ogg" hidden />
         </div>
-        <button type="button" class="menubar-project-plate" id="menubar-project-plate" aria-label="当前工程">
-          <span class="menubar-project-plate-name" id="menubar-project-plate-name">未命名工程</span>
+        <button type="button" class="menubar-project-plate" id="menubar-project-plate" data-i18n-attr="aria-label:menubar.project_aria">
+          <span class="menubar-project-plate-name" id="menubar-project-plate-name" data-i18n="menubar.project_default_name">未命名工程</span>
           <span class="menubar-project-plate-dot" id="menubar-project-plate-dot" aria-hidden="true"></span>
         </button>
-        <div class="menubar-meter" id="menubar-meter" aria-label="主输出电平表"></div>
+        <div class="menubar-meter" id="menubar-meter" data-i18n-attr="aria-label:menubar.meter_aria"></div>
         <div class="menubar-center">
-          <div class="menubar-transport" aria-label="顶部播放控制">
-            <button type="button" class="menubar-transport-btn" id="btn-top-prev" title="后退一小节" aria-label="后退一小节">
+          <div class="menubar-transport" data-i18n-attr="aria-label:menubar.transport_aria">
+            <button type="button" class="menubar-transport-btn" id="btn-top-prev" data-i18n-attr="title:menubar.transport.prev_bar,aria-label:menubar.transport.prev_bar">
               <span class="menubar-transport-glyph menubar-transport-glyph--prev"></span>
             </button>
-            <button type="button" class="menubar-transport-btn menubar-transport-btn--play" id="btn-top-play" title="播放" aria-label="播放">
+            <button type="button" class="menubar-transport-btn menubar-transport-btn--play" id="btn-top-play" data-i18n-attr="title:menubar.transport.play,aria-label:menubar.transport.play">
               <span class="menubar-transport-glyph menubar-transport-glyph--play"></span>
             </button>
-            <button type="button" class="menubar-transport-btn" id="btn-top-stop" title="停止" aria-label="停止">
+            <button type="button" class="menubar-transport-btn" id="btn-top-stop" data-i18n-attr="title:menubar.transport.stop,aria-label:menubar.transport.stop">
               <span class="menubar-transport-glyph menubar-transport-glyph--stop"></span>
             </button>
-            <button type="button" class="menubar-transport-btn menubar-transport-btn--record" id="btn-top-record" title="开始 MIDI 录制" aria-label="开始 MIDI 录制">
+            <button type="button" class="menubar-transport-btn menubar-transport-btn--record" id="btn-top-record" data-i18n-attr="title:menubar.transport.record,aria-label:menubar.transport.record">
               <span class="menubar-transport-glyph menubar-transport-glyph--record"></span>
             </button>
-            <button type="button" class="menubar-transport-btn" id="btn-top-next" title="前进一小节" aria-label="前进一小节">
+            <button type="button" class="menubar-transport-btn" id="btn-top-next" data-i18n-attr="title:menubar.transport.next,aria-label:menubar.transport.next">
               <span class="menubar-transport-glyph menubar-transport-glyph--next"></span>
             </button>
           </div>
@@ -56,8 +56,8 @@
           </div>
         </div>
         <div class="menubar-tail">
-          <div class="menubar-follow-tools" id="menubar-follow-tools" aria-label="播放头跟随模式"></div>
-          <button type="button" class="theme-toggle" id="btn-theme-toggle" aria-label="切换明暗模式" title="切换明暗模式">
+          <div class="menubar-follow-tools" id="menubar-follow-tools" data-i18n-attr="aria-label:menubar.follow_aria"></div>
+          <button type="button" class="theme-toggle" id="btn-theme-toggle" data-i18n-attr="aria-label:menubar.theme_toggle,title:menubar.theme_toggle">
             <span class="theme-toggle-stage" aria-hidden="true">
               <svg class="theme-toggle-icon theme-toggle-icon--sun" viewBox="-12 -12 24 24">
                 <circle cx="0" cy="0" r="4.5" />
@@ -104,7 +104,7 @@
               <div class="track-empty-hint" id="track-empty-hint">
                 <div class="loading-placeholder" id="initial-loading-placeholder">
                   <div class="loading-spinner"></div>
-                  <div class="loading-text">正在加载工作区…</div>
+                  <div class="loading-text" data-i18n="status.loading_workspace">正在加载工作区…</div>
                 </div>
               </div>
             </div>
@@ -116,13 +116,14 @@
             <div class="editor-header">
               <span class="editor-track-name" id="active-track-name">—</span>
               <div class="editor-runtime-tools" id="editor-runtime-tools"></div>
-              <button type="button" class="editor-close" id="btn-close-editor">关闭</button>
+              <button type="button" class="editor-close" id="btn-close-editor" data-i18n="editor.close">关闭</button>
             </div>
 
             <div class="editor-body">
               <iframe
                 id="voice-runtime-frame"
                 class="voice-runtime-frame"
+                data-i18n-attr="title:editor.runtime_title"
                 title="人声合成运行时"
                 loading="eager"
                 allow="autoplay"
@@ -141,8 +142,7 @@
             type="button"
             class="inspector-collapse-btn"
             id="btn-inspector-toggle"
-            title="收起右侧面板"
-            aria-label="收起右侧面板"
+            data-i18n-attr="title:inspector.collapse,aria-label:inspector.collapse"
             aria-pressed="true"
           ></button>
 
@@ -156,19 +156,19 @@
                   <circle cx="5.4" cy="5" r="1.6" fill="currentColor"/>
                   <circle cx="10.6" cy="11" r="1.6" fill="currentColor"/>
                 </svg>
-                <span>当前轨道</span>
+                <span data-i18n="inspector.track.heading">当前轨道</span>
               </summary>
               <div class="inspector-section-body">
                 <div class="track-card">
                   <span class="track-card-stripe" aria-hidden="true"></span>
                   <div class="track-card-main">
-                    <div class="track-card-name" id="selected-track-name" title="双击重命名">—</div>
+                    <div class="track-card-name" id="selected-track-name" data-i18n-attr="title:inspector.track.rename_hint">—</div>
                     <div class="track-card-rows">
-                      <span class="track-card-row-label">类型</span>
+                      <span class="track-card-row-label" data-i18n="inspector.track.kind_label">类型</span>
                       <span class="track-card-row-value" id="selected-track-kind">-</span>
-                      <span class="track-card-row-label">语言</span>
-                      <span class="track-card-row-value" id="selected-track-language">未设置</span>
-                      <span class="track-card-row-label">状态</span>
+                      <span class="track-card-row-label" data-i18n="inspector.track.lang_label">语言</span>
+                      <span class="track-card-row-value" id="selected-track-language" data-i18n="inspector.track.lang_unset">未设置</span>
+                      <span class="track-card-row-label" data-i18n="inspector.track.status_label">状态</span>
                       <span class="track-card-row-value" id="selected-track-status">-</span>
                     </div>
                   </div>
@@ -184,7 +184,7 @@
                   <path d="M 4 8 v 0.5 a 4 4 0 0 0 8 0 v -0.5" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/>
                   <line x1="8" y1="12.5" x2="8" y2="14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
                 </svg>
-                <span>声库</span>
+                <span data-i18n="inspector.voicebank.heading">声库</span>
               </summary>
               <div class="inspector-section-body">
                 <select class="prop-select" id="selected-track-voicebank"></select>
@@ -201,7 +201,7 @@
                   <rect x="9.8" y="4" width="1.6" height="8" rx="0.5" fill="currentColor"/>
                   <rect x="12.5" y="6" width="1.6" height="4" rx="0.5" fill="currentColor"/>
                 </svg>
-                <span>乐器音色</span>
+                <span data-i18n="inspector.tone.heading">乐器音色</span>
               </summary>
               <div class="inspector-section-body" id="inspector-tone-slot"></div>
             </details>
@@ -215,7 +215,7 @@
                   <path d="M 13 9 a 5 5 0 0 1 -9 1.6" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/>
                   <path d="M 4 10.6 L 4 13 L 6.4 13" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
-                <span>音色转换</span>
+                <span data-i18n="inspector.vc.heading">音色转换</span>
               </summary>
               <div class="inspector-section-body voice-conversion-section" id="voice-conversion-section" hidden>
                 <div class="voice-conversion-note" data-vc-ref="message" hidden></div>
@@ -225,15 +225,15 @@
 
                   <div class="voice-conversion-file">
                     <div class="voice-conversion-file-row">
-                      <button type="button" class="panel-action-btn panel-action-btn--primary" data-vc-ref="reference-button">选择参考</button>
+                      <button type="button" class="panel-action-btn panel-action-btn--primary" data-vc-ref="reference-button" data-i18n="inspector.vc.choose_reference">选择参考</button>
                       <input type="file" accept="audio/*,.wav,.mp3,.flac,.m4a,.ogg" hidden data-vc-ref="reference-input" />
                     </div>
-                    <div class="prop-value voice-conversion-reference-name" data-vc-ref="reference-name">未选择参考音频</div>
+                    <div class="prop-value voice-conversion-reference-name" data-vc-ref="reference-name" data-i18n="inspector.vc.no_reference">未选择参考音频</div>
                   </div>
 
                   <div class="voice-conversion-param">
                     <div class="voice-conversion-param-head">
-                      <label for="vc-param-steps">扩散步数</label>
+                      <label for="vc-param-steps" data-i18n="inspector.vc.diffusion_steps">扩散步数</label>
                       <span data-vc-value="diffusionSteps">20</span>
                     </div>
                     <input id="vc-param-steps" type="range" min="1" max="40" step="1" data-vc-param="diffusionSteps" />
@@ -241,7 +241,7 @@
 
                   <div class="voice-conversion-param">
                     <div class="voice-conversion-param-head">
-                      <label for="vc-param-length">长度调整</label>
+                      <label for="vc-param-length" data-i18n="inspector.vc.length_adjust">长度调整</label>
                       <span data-vc-value="lengthAdjust">1.00</span>
                     </div>
                     <input id="vc-param-length" type="range" min="0.5" max="2" step="0.01" data-vc-param="lengthAdjust" />
@@ -249,7 +249,7 @@
 
                   <div class="voice-conversion-param">
                     <div class="voice-conversion-param-head">
-                      <label for="vc-param-cfg">CFG</label>
+                      <label for="vc-param-cfg" data-i18n="inspector.vc.cfg">CFG</label>
                       <span data-vc-value="cfgRate">0.70</span>
                     </div>
                     <input id="vc-param-cfg" type="range" min="0" max="1" step="0.01" value="0.7" data-vc-param="cfgRate" />
@@ -257,7 +257,7 @@
 
                   <div class="voice-conversion-param">
                     <div class="voice-conversion-param-head">
-                      <label for="vc-param-pitch">音高偏移</label>
+                      <label for="vc-param-pitch" data-i18n="inspector.vc.pitch_shift">音高偏移</label>
                       <span data-vc-value="pitchShift">0</span>
                     </div>
                     <input id="vc-param-pitch" type="number" min="-24" max="24" step="1" data-vc-param="pitchShift" />
@@ -265,20 +265,20 @@
 
                   <label class="voice-conversion-check">
                     <input type="checkbox" checked data-vc-param="f0Condition" />
-                    <span>启用 F0 条件</span>
+                    <span data-i18n="inspector.vc.f0_condition">启用 F0 条件</span>
                   </label>
 
                   <label class="voice-conversion-check">
                     <input type="checkbox" data-vc-param="autoF0Adjust" />
-                    <span>自动 F0 对齐</span>
+                    <span data-i18n="inspector.vc.auto_f0">自动 F0 对齐</span>
                   </label>
 
                   <div class="voice-conversion-actions">
-                    <button type="button" class="panel-action-btn panel-action-btn--primary" data-vc-ref="start-button">开始转换</button>
-                    <button type="button" class="panel-action-btn panel-action-btn--danger" data-vc-ref="cancel-button">取消当前合成</button>
-                    <button type="button" class="panel-action-btn" data-vc-ref="apply-button">应用转换后</button>
-                    <button type="button" class="panel-action-btn" data-vc-ref="restore-button">恢复原始</button>
-                    <button type="button" class="panel-action-btn" data-vc-ref="clear-button">清除结果</button>
+                    <button type="button" class="panel-action-btn panel-action-btn--primary" data-vc-ref="start-button" data-i18n="inspector.vc.start">开始转换</button>
+                    <button type="button" class="panel-action-btn panel-action-btn--danger" data-vc-ref="cancel-button" data-i18n="inspector.vc.cancel">取消当前合成</button>
+                    <button type="button" class="panel-action-btn" data-vc-ref="apply-button" data-i18n="inspector.vc.apply">应用转换后</button>
+                    <button type="button" class="panel-action-btn" data-vc-ref="restore-button" data-i18n="inspector.vc.restore">恢复原始</button>
+                    <button type="button" class="panel-action-btn" data-vc-ref="clear-button" data-i18n="inspector.vc.clear">清除结果</button>
                   </div>
                 </div>
               </div>
@@ -294,23 +294,27 @@
                   <circle cx="4" cy="8" r="2" fill="currentColor"/>
                   <circle cx="12" cy="12.4" r="2" fill="currentColor"/>
                 </svg>
-                <span>分享链接</span>
+                <span data-i18n="inspector.share.heading">分享链接</span>
               </summary>
               <div class="inspector-section-body" id="share-tunnel-section"></div>
             </details>
           </div>
 
           <footer class="inspector-footer">
-            <button type="button" class="inspector-footer-link" id="btn-onboarding-replay">新手引导</button>
+            <button type="button" class="inspector-footer-link" id="btn-onboarding-replay" data-i18n="inspector.footer.onboarding">新手引导</button>
             <span class="inspector-footer-sep">·</span>
-            <button type="button" class="inspector-footer-link" id="btn-about-toggle" aria-expanded="false" aria-controls="inspector-tab-about" title="关于 WEB UTAU">关于</button>
+            <button type="button" class="inspector-footer-link" id="btn-about-toggle" aria-expanded="false" aria-controls="inspector-tab-about" data-i18n="inspector.footer.about" data-i18n-attr="title:inspector.footer.about_tooltip">关于</button>
+            <span class="inspector-footer-sep">·</span>
+            <button type="button" class="inspector-footer-link inspector-footer-link--lang" id="btn-lang-toggle" data-i18n-attr="aria-label:langSwitcher.aria,title:langSwitcher.aria" aria-haspopup="menu" aria-expanded="false">
+              <span class="inspector-footer-lang-text" id="btn-lang-toggle-text">中文</span>
+            </button>
           </footer>
 
           <!-- 关于浮卡；AboutPanelView 仍以 id=inspector-tab-about 为挂载点 -->
           <div class="about-popover" id="inspector-tab-about" hidden>
             <div class="about-info">
-              <div class="about-app-name">WEB UTAU</div>
-              <div class="about-description">AI 歌声合成工作站</div>
+              <div class="about-app-name" data-i18n="inspector.about.app_name">WEB UTAU</div>
+              <div class="about-description" data-i18n="inspector.about.subtitle">AI 歌声合成工作站</div>
             </div>
           </div>
         </aside>
@@ -323,27 +327,27 @@
 
     <div class="modal-overlay" id="track-language-modal" role="dialog" aria-modal="true" aria-labelledby="track-language-title">
       <div class="modal-dialog">
-        <div class="modal-title" id="track-language-title">选择语言</div>
+        <div class="modal-title" id="track-language-title" data-i18n="modal.language.title">选择语言</div>
         <div class="modal-hint" id="track-language-hint"></div>
         <div class="modal-field">
-          <label class="modal-label" for="track-language-select">歌曲语言</label>
+          <label class="modal-label" for="track-language-select" data-i18n="modal.language.song_lang">歌曲语言</label>
           <select class="modal-select" id="track-language-select"></select>
         </div>
         <div class="modal-field">
-          <label class="modal-label" for="track-voicebank-select">声库</label>
+          <label class="modal-label" for="track-voicebank-select" data-i18n="modal.language.voicebank">声库</label>
           <select class="modal-select" id="track-voicebank-select"></select>
         </div>
         <div class="modal-actions">
-          <button type="button" class="modal-btn secondary" id="btn-track-language-cancel">取消</button>
-          <button type="button" class="modal-btn primary" id="btn-track-language-confirm">继续</button>
+          <button type="button" class="modal-btn secondary" id="btn-track-language-cancel" data-i18n="modal.language.cancel">取消</button>
+          <button type="button" class="modal-btn primary" id="btn-track-language-confirm" data-i18n="modal.language.continue">继续</button>
         </div>
       </div>
     </div>
 
     <div class="modal-overlay" id="track-synthesis-overlay" aria-hidden="true">
       <div class="modal-dialog modal-dialog--compact">
-        <div class="modal-title" id="track-synthesis-title">正在预测音高</div>
-        <div class="modal-hint" id="track-synthesis-text">正在预测音高 0%</div>
+        <div class="modal-title" id="track-synthesis-title" data-i18n="modal.synth.predicting">正在预测音高</div>
+        <div class="modal-hint" id="track-synthesis-text" data-i18n="modal.synth.predicting">正在预测音高 0%</div>
         <div class="modal-progress">
           <div class="modal-progress-bar">
             <div class="modal-progress-fill" id="track-synthesis-fill"></div>
@@ -354,38 +358,38 @@
 
     <div class="modal-overlay" id="project-timing-import-modal" role="dialog" aria-modal="true" aria-labelledby="project-timing-import-title">
       <div class="modal-dialog">
-        <div class="modal-title" id="project-timing-import-title">导入时序信息</div>
+        <div class="modal-title" id="project-timing-import-title" data-i18n="modal.timing.title">导入时序信息</div>
         <div class="modal-hint" id="project-timing-import-hint"></div>
         <div class="modal-field">
-          <label class="modal-label">导入工程</label>
+          <label class="modal-label" data-i18n="modal.timing.import_label">导入工程</label>
           <div class="modal-summary" id="project-timing-import-summary"></div>
         </div>
         <div class="modal-field" id="project-timing-current-section">
-          <label class="modal-label">当前工程</label>
+          <label class="modal-label" data-i18n="modal.timing.current_label">当前工程</label>
           <div class="modal-summary" id="project-timing-current-summary"></div>
         </div>
         <div class="modal-actions">
-          <button type="button" class="modal-btn secondary" id="btn-project-timing-cancel">取消</button>
-          <button type="button" class="modal-btn secondary" id="btn-project-timing-keep">保持当前工程</button>
-          <button type="button" class="modal-btn primary" id="btn-project-timing-sync">同步应用</button>
+          <button type="button" class="modal-btn secondary" id="btn-project-timing-cancel" data-i18n="modal.timing.cancel">取消</button>
+          <button type="button" class="modal-btn secondary" id="btn-project-timing-keep" data-i18n="modal.timing.keep_current">保持当前工程</button>
+          <button type="button" class="modal-btn primary" id="btn-project-timing-sync" data-i18n="modal.timing.sync">同步应用</button>
         </div>
       </div>
     </div>
 
     <div class="modal-overlay" id="export-audio-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="export-audio-title">
       <div class="modal-dialog">
-        <div class="modal-title" id="export-audio-title">导出音频</div>
-        <div class="modal-hint">将当前项目按播放效果混合导出为 WAV 文件</div>
+        <div class="modal-title" id="export-audio-title" data-i18n="modal.export.title">导出音频</div>
+        <div class="modal-hint" data-i18n="modal.export.hint">将当前项目按播放效果混合导出为 WAV 文件</div>
         <div class="modal-field">
-          <label class="modal-label" for="export-sample-rate">采样率</label>
+          <label class="modal-label" for="export-sample-rate" data-i18n="modal.export.sample_rate">采样率</label>
           <select class="modal-select" id="export-sample-rate"></select>
         </div>
         <div class="modal-field">
-          <label class="modal-label" for="export-bit-depth">位深度</label>
+          <label class="modal-label" for="export-bit-depth" data-i18n="modal.export.bit_depth">位深度</label>
           <select class="modal-select" id="export-bit-depth"></select>
         </div>
         <div class="modal-field">
-          <label class="modal-label" for="export-channels">声道</label>
+          <label class="modal-label" for="export-channels" data-i18n="modal.export.channels">声道</label>
           <select class="modal-select" id="export-channels"></select>
         </div>
         <div class="modal-field export-progress-section" id="export-progress-section">
@@ -398,24 +402,24 @@
         </div>
         <div class="export-warning-text" id="export-warning-text"></div>
         <div class="modal-actions export-actions">
-          <button type="button" class="modal-btn secondary" id="btn-export-audio-cancel">取消</button>
-          <button type="button" class="modal-btn secondary" id="btn-export-audio-selected" disabled>导出所选轨道</button>
-          <button type="button" class="modal-btn primary" id="btn-export-audio-confirm">整体导出</button>
+          <button type="button" class="modal-btn secondary" id="btn-export-audio-cancel" data-i18n="modal.export.cancel">取消</button>
+          <button type="button" class="modal-btn secondary" id="btn-export-audio-selected" disabled data-i18n="modal.export.export_selected">导出所选轨道</button>
+          <button type="button" class="modal-btn primary" id="btn-export-audio-confirm" data-i18n="modal.export.export_all">整体导出</button>
         </div>
       </div>
     </div>
 
     <div class="modal-overlay" id="project-recovery-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="project-recovery-title">
       <div class="modal-dialog">
-        <div class="modal-title" id="project-recovery-title">检测到未保存的工作</div>
-        <div class="modal-hint" id="project-recovery-hint">上次会话中你的工程没有保存到磁盘文件，浏览器为你做了自动备份。</div>
+        <div class="modal-title" id="project-recovery-title" data-i18n="modal.recovery.title">检测到未保存的工作</div>
+        <div class="modal-hint" id="project-recovery-hint" data-i18n="modal.recovery.hint">上次会话中你的工程没有保存到磁盘文件，浏览器为你做了自动备份。</div>
         <div class="modal-field">
-          <label class="modal-label">备份内容</label>
+          <label class="modal-label" data-i18n="modal.recovery.backup_label">备份内容</label>
           <div class="modal-summary" id="project-recovery-summary"></div>
         </div>
         <div class="modal-actions">
-          <button type="button" class="modal-btn secondary" id="btn-project-recovery-discard">丢弃</button>
-          <button type="button" class="modal-btn primary" id="btn-project-recovery-restore">恢复</button>
+          <button type="button" class="modal-btn secondary" id="btn-project-recovery-discard" data-i18n="modal.recovery.discard">丢弃</button>
+          <button type="button" class="modal-btn primary" id="btn-project-recovery-restore" data-i18n="modal.recovery.restore">恢复</button>
         </div>
       </div>
     </div>
@@ -423,4 +427,3 @@
     <script type="module" src="/src/host/main.js"></script>
   </body>
 </html>
-

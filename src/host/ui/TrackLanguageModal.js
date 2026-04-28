@@ -1,12 +1,13 @@
 import { LANGUAGE_OPTIONS, normalizeOptionalLanguageCode } from '../../config/languageOptions.js'
 import { fetchVoicebanks, getDefaultSingerId } from '../../api/VoicebankApi.js'
+import { onLocaleChange, t as i18nT } from '../../i18n/index.js'
 
 // 把后端 VoicebankInfo.singerType (DiffSinger / Classic / ...) 映射成下拉框里的简短标注
 function formatSingerTypeTag(singerType) {
   if (!singerType) return ''
-  const t = String(singerType).toLowerCase()
-  if (t === 'diffsinger') return '[DiffSinger · 自动音高]'
-  if (t === 'classic') return '[UTAU · 手动音高]'
+  const lower = String(singerType).toLowerCase()
+  if (lower === 'diffsinger') return i18nT('voicebank.diffsinger_tag')
+  if (lower === 'classic') return i18nT('voicebank.classic_tag')
   return `[${singerType}]`
 }
 
@@ -32,6 +33,11 @@ export class TrackLanguageModal {
   init() {
     this._renderOptions()
     this._bindEvents()
+    onLocaleChange(() => {
+      // 重渲选项文案 + 兜底标签
+      this._renderOptions()
+      if (this.refs.btnCancel) this.refs.btnCancel.textContent = i18nT('modal.language.cancel')
+    })
   }
 
   async prompt(trackName, languageCode, options = {}) {
@@ -39,10 +45,11 @@ export class TrackLanguageModal {
     if (this.pendingResolve) this.pendingResolve(null)
 
     const normalizedCode = normalizeOptionalLanguageCode(languageCode) || ''
-    this.refs.title.textContent = options.title || `为 ${trackName} 选择语言`
-    this.refs.hint.textContent = options.hint || '继续前，必须先确认歌曲语言。'
+    this.refs.title.textContent = options.title || i18nT('modal.language.title_for', { name: trackName })
+    this.refs.hint.textContent = options.hint || i18nT('modal.language.hint')
     this.refs.select.value = normalizedCode
-    this.refs.btnConfirm.textContent = options.actionLabel || '继续'
+    this.refs.btnConfirm.textContent = options.actionLabel || i18nT('modal.language.continue')
+    if (this.refs.btnCancel) this.refs.btnCancel.textContent = i18nT('modal.language.cancel')
     this._updateConfirmState()
 
     await this._loadVoicebanks(options.singerId)
@@ -80,14 +87,15 @@ export class TrackLanguageModal {
       }
       this._voicebanksLoaded = true
     } catch {
-      select.innerHTML = '<option value="">无法加载声库</option>'
+      select.innerHTML = `<option value="">${i18nT('modal.language.voicebank_load_failed')}</option>`
       this._voicebanksLoaded = false
     }
     this._updateConfirmState()
   }
 
   _renderOptions() {
-    this.refs.select.innerHTML = '<option value="">请选择语言</option>'
+    if (!this.refs.select) return
+    this.refs.select.innerHTML = `<option value="">${i18nT('modal.language.please_choose')}</option>`
     LANGUAGE_OPTIONS.forEach((option) => {
       const element = document.createElement('option')
       element.value = option.code

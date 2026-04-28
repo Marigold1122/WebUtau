@@ -1,3 +1,5 @@
+import { t } from '../../i18n/index.js'
+
 export class EditorSessionController {
   constructor(taskCoordinator) {
     this.taskCoordinator = taskCoordinator
@@ -10,7 +12,7 @@ export class EditorSessionController {
 
   getCloseStatusText(trackId) {
     return this.shouldResetRuntimeOnClose(trackId)
-      ? '编辑器已关闭，可在上方继续选择轨道'
-      : '编辑器已关闭，后台任务继续'
+      ? t('editorSession.closed_with_track')
+      : t('editorSession.closed_idle')
   }
 }

@@ -5,6 +5,7 @@ import {
   getEffectiveSourceLabel,
   isVoiceRuntimeSource,
 } from '../project/trackSourceAssignment.js'
+import { t } from '../../i18n/index.js'
 
 function isVocalTrack(track) {
   return isVoiceRuntimeSource(track?.playbackState?.assignedSourceId)
@@ -16,83 +17,87 @@ function hasPendingVoiceNoteEdits(track) {
 
 function getMonitorStatusSuffix(track) {
   const labels = []
-  if (track?.playbackState?.solo) labels.push('独奏')
-  if (track?.playbackState?.mute) labels.push('静音')
+  if (track?.playbackState?.solo) labels.push(t('status.solo'))
+  if (track?.playbackState?.mute) labels.push(t('status.mute'))
   return labels.length > 0 ? ` · ${labels.join(' / ')}` : ''
 }
 
 export function normalizeShellStatusText(text) {
   if (!text) return ''
+  if (text === t('status.ready') || text === t('status.runtime_connected')) return ''
+  // 兼容：旧记录里的中文也清掉，避免切到英/日时残留
   if (text === '系统就绪' || text === '运行时已连接') return ''
   return text
 }
 
 export function getTrackStatusText(track) {
   if (isAudioTrack(track)) {
-    return `导入音频${getMonitorStatusSuffix(track)}`
+    return `${t('status.audio_track')}${getMonitorStatusSuffix(track)}`
   }
   if (!isVocalTrack(track)) {
     const baseText = track?.playbackState?.assignedSourceId
-      ? `声源：${getEffectiveSourceLabel(track.playbackState.assignedSourceId)}`
-      : '默认钢琴'
+      ? t('status.source_prefix', { label: getEffectiveSourceLabel(track.playbackState.assignedSourceId) })
+      : t('status.default_piano')
     return `${baseText}${getMonitorStatusSuffix(track)}`
   }
 
   if (hasPendingVoiceNoteEdits(track)) {
-    return `音符已改动 · 待切到歌词/音高重渲${getMonitorStatusSuffix(track)}`
+    return `${t('status.pending_voice_edits')}${getMonitorStatusSuffix(track)}`
   }
 
   if (isVocalTrack(track) && !normalizeOptionalLanguageCode(track?.languageCode)) {
-    return '待选语言'
+    return t('status.pending_lang')
   }
 
   if (isVocalTrack(track)) {
-    if (track?.prepState?.status === 'failed') return '音高预测失败'
-    if (isTrackPrepPending(track)) return `音高预测 ${track?.prepState?.progress || 0}%`
-    if (!isTrackPrepReady(track)) return '待预测音高'
+    if (track?.prepState?.status === 'failed') return t('status.pitch_predict_failed')
+    if (isTrackPrepPending(track)) return t('status.pitch_predicting', { progress: track?.prepState?.progress || 0 })
+    if (!isTrackPrepReady(track)) return t('status.pitch_pending')
   }
 
   const state = track?.renderState || { status: 'idle' }
-  if (state.status === 'completed') return '当前轨已完成'
-  if (state.status === 'failed') return isVocalTrack(track) ? '音频渲染失败' : '当前轨渲染失败'
+  if (state.status === 'completed') return t('status.track_done')
+  if (state.status === 'failed') return isVocalTrack(track) ? t('status.audio_render_failed') : t('status.track_render_failed')
   if (state.status === 'rendering' || state.status === 'queued' || state.status === 'preparing') {
-    return state.total > 0 ? `音频渲染 ${state.completed}/${state.total}` : '音频渲染中...'
+    return state.total > 0
+      ? t('status.audio_render_progress', { completed: state.completed, total: state.total })
+      : t('status.audio_rendering')
   }
-  if (isVocalTrack(track) && isTrackPrepReady(track)) return '音高已就绪'
-  return '等待渲染'
+  if (isVocalTrack(track) && isTrackPrepReady(track)) return t('status.pitch_ready')
+  return t('status.awaiting_render')
 }
 
 export function getTrackInspectorStatusText(track) {
   if (isAudioTrack(track)) {
-    return `音频片段${getMonitorStatusSuffix(track)}`
+    return `${t('status.audio_clip')}${getMonitorStatusSuffix(track)}`
   }
   if (!isVocalTrack(track)) {
     const baseText = track?.playbackState?.assignedSourceId
-      ? `${getEffectiveSourceLabel(track.playbackState.assignedSourceId)} 预览`
-      : '默认钢琴预览'
+      ? t('status.preview_suffix', { label: getEffectiveSourceLabel(track.playbackState.assignedSourceId) })
+      : t('status.default_piano_preview')
     return `${baseText}${getMonitorStatusSuffix(track)}`
   }
 
   if (hasPendingVoiceNoteEdits(track)) {
-    return `待重新渲染人声 · 当前改动段落先按钢琴预览${getMonitorStatusSuffix(track)}`
+    return `${t('status.pending_voice_rerender')}${getMonitorStatusSuffix(track)}`
   }
 
   if (isVocalTrack(track) && !normalizeOptionalLanguageCode(track?.languageCode)) {
-    return '待选语言'
+    return t('status.pending_lang')
   }
 
   if (isVocalTrack(track)) {
-    if (track?.prepState?.status === 'failed') return '音高预测失败'
-    if (isTrackPrepPending(track)) return `音高预测 ${track?.prepState?.progress || 0}%`
-    if (!isTrackPrepReady(track)) return '待预测音高'
+    if (track?.prepState?.status === 'failed') return t('status.pitch_predict_failed')
+    if (isTrackPrepPending(track)) return t('status.pitch_predicting', { progress: track?.prepState?.progress || 0 })
+    if (!isTrackPrepReady(track)) return t('status.pitch_pending')
   }
 
   const status = track?.renderState?.status || 'idle'
-  if (status === 'failed') return isVocalTrack(track) ? '音频渲染失败' : '当前轨渲染失败'
-  if (status === 'rendering' || status === 'queued' || status === 'preparing') return '后台渲染中'
-  if (status === 'completed') return '当前轨已完成'
-  if (isVocalTrack(track) && isTrackPrepReady(track)) return '音高已就绪'
-  return '等待渲染'
+  if (status === 'failed') return isVocalTrack(track) ? t('status.audio_render_failed') : t('status.track_render_failed')
+  if (status === 'rendering' || status === 'queued' || status === 'preparing') return t('status.background_rendering')
+  if (status === 'completed') return t('status.track_done')
+  if (isVocalTrack(track) && isTrackPrepReady(track)) return t('status.pitch_ready')
+  return t('status.awaiting_render')
 }
 
 export function getTrackRenderClass(track) {

@@ -1,4 +1,5 @@
 import { normalizeTrackReverbConfig } from '../project/trackPlaybackState.js'
+import { t } from '../../i18n/index.js'
 
 export function createHostReverbController({
   store,
@@ -39,7 +40,7 @@ export function createHostReverbController({
       .find((preset) => preset.id === mixState.reverbPresetId)
       ?.name || mixState.reverbPresetId
     render('project-reverb-preset-changed')
-    view.setStatus(`已切换默认混响模板到 ${presetName} / Default reverb template switched to ${presetName}`)
+    view.setStatus(t('hostStatus.reverb_template_switched', { name: presetName }))
     return mixState
   }
 
@@ -47,7 +48,7 @@ export function createHostReverbController({
     const mixState = projectMixController.setProjectReverbConfig(config, { commit })
     if (commit) {
       render('project-reverb-config-changed')
-      view.setStatus('默认混响模板已更新 / Default reverb template updated')
+      view.setStatus(t('hostStatus.reverb_template_updated'))
     }
     return mixState
   }
@@ -64,7 +65,7 @@ export function createHostReverbController({
     if (!store.getProject()) {
       sessionStore.setReverbDockOpen(false)
       render('reverb-dock-unavailable')
-      view.setStatus('请先导入项目 / Import a project first')
+      view.setStatus(t('hostStatus.import_project_first'))
       return false
     }
 

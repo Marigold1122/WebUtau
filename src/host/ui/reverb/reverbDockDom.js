@@ -1,4 +1,5 @@
 import { markReverbProbe } from '../../audio/reverb/ReverbDebugProbe.js'
+import { t } from '../../../i18n/index.js'
 import {
   formatReverbPresetOption,
   formatReverbSelectLabel,
@@ -245,7 +246,7 @@ export function createFxKnobControl({
 
   const valueNode = document.createElement('div')
   valueNode.className = 'param-value'
-  valueNode.title = '点击输入精确数值'
+  valueNode.title = t('onboardingUI.knob_input_tip')
 
   let currentValue = clampRange(value, min, max, min)
 

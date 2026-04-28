@@ -1,3 +1,5 @@
+import { t } from '../i18n/index.js'
+
 class LyricDialog {
   constructor() {
     this._el = null
@@ -20,7 +22,7 @@ class LyricDialog {
 
     const title = document.createElement('div')
     title.className = 'lyric-dialog-title'
-    title.textContent = '编辑歌词（空格分隔）'
+    title.textContent = t('lyricDialog.title')
 
     const input = document.createElement('input')
     input.type = 'text'
@@ -29,7 +31,7 @@ class LyricDialog {
 
     const hint = document.createElement('div')
     hint.className = 'lyric-dialog-hint'
-    hint.textContent = '每个音符一个字/词，用空格分隔'
+    hint.textContent = t('lyricDialog.hint')
 
     input.addEventListener('keydown', (e) => {
       e.stopPropagation()

@@ -1,9 +1,16 @@
+import { t } from '../i18n/index.js'
+
 export const DEFAULT_LANGUAGE_CODE = 'ZH'
 
-export const LANGUAGE_OPTIONS = [
-  { code: 'ZH', label: '中文' },
-  { code: 'JA', label: '日语' },
-]
+// 内部存储语言代码，显示名称在使用时由 i18n 解析
+const LANGUAGE_CODES = ['ZH', 'JA']
+
+export const LANGUAGE_OPTIONS = LANGUAGE_CODES.map((code) => ({
+  code,
+  get label() {
+    return t(`language.${code.toLowerCase()}`)
+  },
+}))
 
 function getLanguageCode(value) {
   return String(value || '').toUpperCase()
@@ -11,7 +18,7 @@ function getLanguageCode(value) {
 
 export function isLanguageCodeSupported(value) {
   const code = getLanguageCode(value)
-  return LANGUAGE_OPTIONS.some((option) => option.code === code)
+  return LANGUAGE_CODES.includes(code)
 }
 
 export function normalizeLanguageCode(value) {
@@ -24,7 +31,10 @@ export function normalizeOptionalLanguageCode(value) {
   return isLanguageCodeSupported(code) ? code : null
 }
 
-export function getLanguageLabel(value, fallback = '未设置') {
+export function getLanguageLabel(value, fallback) {
   const code = getLanguageCode(value)
-  return LANGUAGE_OPTIONS.find((option) => option.code === code)?.label || fallback
+  if (!isLanguageCodeSupported(code)) {
+    return fallback ?? t('inspector.track.lang_unset')
+  }
+  return t(`language.${code.toLowerCase()}`)
 }

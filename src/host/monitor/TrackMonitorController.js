@@ -4,6 +4,7 @@
   supportsTrackGuitarToneSource,
 } from '../audio/insert/trackInsertCatalog.js'
 import { getReverbPreset } from '../project/reverbConfigState.js'
+import { t } from '../../i18n/index.js'
 import { ReverbUpdateCoalescer } from '../audio/reverb/ReverbUpdateCoalescer.js'
 import { isSameReverbConfig } from '../audio/reverb/ReverbConfigDiff.js'
 import { markReverbProbe } from '../audio/reverb/ReverbDebugProbe.js'
@@ -356,38 +357,38 @@ export class TrackMonitorController {
   _buildStatusText(trackName, flagKey, enabled) {
     if (flagKey === 'solo') {
       return enabled
-        ? `${trackName} 已开启独奏 / Solo enabled`
-        : `${trackName} 已关闭独奏 / Solo disabled`
+        ? t('trackMonitor.solo_on', { name: trackName })
+        : t('trackMonitor.solo_off', { name: trackName })
     }
     return enabled
-      ? `${trackName} 已静音 / Mute enabled`
-      : `${trackName} 已取消静音 / Mute disabled`
+      ? t('trackMonitor.mute_on', { name: trackName })
+      : t('trackMonitor.mute_off', { name: trackName })
   }
 
   _buildVolumeStatusText(trackName, volume) {
-    return `${trackName} 音量 / Volume ${Math.round(normalizeTrackVolume(volume) * 100)}%`
+    return t('trackMonitor.volume', { name: trackName, value: Math.round(normalizeTrackVolume(volume) * 100) })
   }
 
   _buildPanStatusText(trackName, pan) {
     const value = normalizeTrackPan(pan)
-    if (Math.abs(value) < 0.005) return `${trackName} 声像 / Pan 居中 Center`
-    const direction = value < 0 ? 'L' : 'R'
-    return `${trackName} 声像 / Pan ${direction} ${Math.round(Math.abs(value) * 100)}%`
+    if (Math.abs(value) < 0.005) return t('trackMonitor.pan_center', { name: trackName })
+    const direction = value < 0 ? t('trackMonitor.pan_left') : t('trackMonitor.pan_right')
+    return t('trackMonitor.pan_dir', { name: trackName, dir: direction, value: Math.round(Math.abs(value) * 100) })
   }
 
   _buildReverbSendStatusText(trackName, sendAmount) {
-    return `${trackName} 混响发送 / Reverb send ${Math.round(normalizeTrackReverbSend(sendAmount) * 100)}%`
+    return t('trackMonitor.reverb_send', { name: trackName, value: Math.round(normalizeTrackReverbSend(sendAmount) * 100) })
   }
 
   _buildReverbConfigStatusText(trackName) {
-    return `${trackName} 混响参数已更新 / Reverb settings updated`
+    return t('trackMonitor.reverb_updated', { name: trackName })
   }
 
   _buildReverbPresetStatusText(trackName, presetName) {
-    return `${trackName} 混响预设 / Reverb preset ${presetName}`
+    return t('trackMonitor.reverb_preset', { name: trackName, preset: presetName })
   }
 
   _buildGuitarToneStatusText(trackName) {
-    return `${trackName} 音色参数已更新 / Guitar tone updated`
+    return t('trackMonitor.tone_updated', { name: trackName })
   }
 }

@@ -1,3 +1,5 @@
+import { t } from '../../../i18n/index.js'
+
 function createBadgeButton(label, title, { active = false, enabled = false } = {}, onClick) {
   const button = document.createElement('button')
   button.type = 'button'
@@ -23,11 +25,11 @@ export function createTrackMonitorBadge(track, handlers = {}) {
   const playbackState = track.playbackState || {}
   const root = document.createElement('div')
   root.className = 'th-controls track-monitor-badge'
-  root.appendChild(createBadgeButton('M', '静音 Mute', { active: playbackState.mute }, () => handlers.onToggleMute?.(track.id)))
-  root.appendChild(createBadgeButton('S', '独奏 Solo', { active: playbackState.solo }, () => handlers.onToggleSolo?.(track.id)))
+  root.appendChild(createBadgeButton('M', t('trackBadge.mute_tip'), { active: playbackState.mute }, () => handlers.onToggleMute?.(track.id)))
+  root.appendChild(createBadgeButton('S', t('trackBadge.solo_tip'), { active: playbackState.solo }, () => handlers.onToggleSolo?.(track.id)))
   root.appendChild(createBadgeButton(
     'FX',
-    '打开或关闭混响模块 / Open or close the reverb module',
+    t('trackBadge.fx_tip'),
     {
       active: Boolean(handlers.fxOpen),
       enabled: Boolean(handlers.fxEnabled),

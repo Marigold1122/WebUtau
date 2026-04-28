@@ -10,6 +10,7 @@ import {
   restoreOriginalTrackVoice,
 } from '../vocal/TrackVoiceConversionState.js'
 import { isVoiceRuntimeSource } from '../project/trackSourceAssignment.js'
+import { t } from '../../i18n/index.js'
 function buildFileSignature(file) {
   if (!(file instanceof File)) return null
   return [file.name || 'reference', file.size || 0, file.lastModified || 0].join(':')
@@ -53,33 +54,33 @@ function hasCompletedResult(state) {
 }
 
 function buildStatusText(track, state, draftReferenceChanged, draftParamsChanged, hasDraftReference) {
-  if (!track) return '请选择轨道'
+  if (!track) return t('voiceConversion.pick_track')
   if (!isVoiceRuntimeSource(track.playbackState?.assignedSourceId)) return ''
-  if (!canConvertTrack(track)) return '请先完成当前轨的人声合成，再进行音色转换'
-  if (state.status === 'converting') return '正在进行本地音色转换...'
-  if (state.stale) return state.error || '当前结果已失效，需要重新转换'
-  if (state.status === 'failed') return state.error || '音色转换失败'
+  if (!canConvertTrack(track)) return t('voiceConversion.must_finish_render')
+  if (state.status === 'converting') return t('voiceConversion.converting')
+  if (state.stale) return state.error || t('voiceConversion.stale')
+  if (state.status === 'failed') return state.error || t('voiceConversion.failed')
   if (state.error && hasReusableResult(state)) {
     return state.appliedVariant === 'converted'
-      ? '新的转换失败，当前仍在使用上一版转换结果'
-      : '新的转换失败，已保留上一版转换结果'
+      ? t('voiceConversion.fail_apply_change')
+      : t('voiceConversion.fail_keep_old')
   }
   if (hasReusableResult(state) && state.appliedVariant === 'converted') {
     return draftReferenceChanged || draftParamsChanged
-      ? '当前正在使用转换后人声，右侧配置已变更，重新转换后才会更新结果'
-      : '当前正在使用转换后人声'
+      ? t('voiceConversion.using_converted_changed')
+      : t('voiceConversion.using_converted')
   }
   if (hasReusableResult(state)) {
     return draftReferenceChanged || draftParamsChanged
-      ? '已存在转换结果，右侧配置已变更，重新转换后才会更新结果'
-      : '已存在转换结果，尚未应用到播放'
+      ? t('voiceConversion.have_result_changed')
+      : t('voiceConversion.have_result')
   }
   if (hasDraftReference) {
     return draftParamsChanged
-      ? '参考音频与参数已就绪，可以开始转换'
-      : '参考音频已就绪，可以开始转换'
+      ? t('voiceConversion.ready_changed')
+      : t('voiceConversion.ready')
   }
-  return '请选择参考音频并开始转换'
+  return t('voiceConversion.pick_reference_first')
 }
 
 function buildDraftText(track, state, draftReferenceChanged, draftParamsChanged) {
@@ -88,20 +89,20 @@ function buildDraftText(track, state, draftReferenceChanged, draftParamsChanged)
   const hasPreviousResult = hasCompletedResult(state)
   if (draftReferenceChanged && draftParamsChanged) {
     return hasPreviousResult
-      ? '已选择新的参考音频并修改参数，重新转换后生效'
-      : '参考音频与参数已就绪，开始转换后生效'
+      ? t('voiceConversion.draft_ref_changed')
+      : t('voiceConversion.draft_ref_param_changed')
   }
   if (draftReferenceChanged) {
     return hasPreviousResult
-      ? '已选择新的参考音频，重新转换后生效'
-      : '已选择参考音频，开始转换后生效'
+      ? t('voiceConversion.draft_ref_set')
+      : t('voiceConversion.draft_ref_initial')
   }
   if (draftParamsChanged) {
     return hasPreviousResult
-      ? '参数已修改，重新转换后生效'
-      : '参数已设置，开始转换后生效'
+      ? t('voiceConversion.draft_param_changed')
+      : t('voiceConversion.draft_param_set')
   }
-  if (!state.referenceAudioName) return '当前还没有已完成的转换结果'
+  if (!state.referenceAudioName) return t('voiceConversion.no_result')
   return ''
 }
 
@@ -145,8 +146,8 @@ function isAbortError(error) {
 }
 
 export class VoiceConversionCancelledError extends Error {
-  constructor(message = '已取消当前音色转换') {
-    super(message)
+  constructor(message) {
+    super(message || t('voiceConversion.canceled'))
     this.name = 'VoiceConversionCancelledError'
   }
 }
@@ -221,14 +222,14 @@ export class TrackVoiceConversionController {
     return {
       visible: true,
       uiState: canConvertTrack(track) ? state.status : 'disabled-wait-render',
-      disabledText: canConvertTrack(track) ? '' : '请先完成当前轨的人声合成，再进行音色转换',
+      disabledText: canConvertTrack(track) ? '' : t('voiceConversion.must_finish_render_disabled'),
       messageTone: canConvertTrack(track) ? 'idle' : 'blocked',
       statusText: buildStatusText(track, state, draftReferenceChanged, draftParamsChanged, hasDraftReference),
       draftText: buildDraftText(track, state, draftReferenceChanged, draftParamsChanged),
       statusTone: buildStatusTone(track, state, draftReferenceChanged, draftParamsChanged, hasDraftReference),
       draftTone: buildDraftTone(track, state, draftReferenceChanged, draftParamsChanged),
       params,
-      referenceLabel: draftReference?.file?.name || state.referenceAudioName || '未选择参考音频',
+      referenceLabel: draftReference?.file?.name || state.referenceAudioName || t('inspector.vc.no_reference'),
       canStart: canConvertTrack(track) && state.status !== 'converting' && hasDraftReference,
       canApply: reusableResult && state.status !== 'converting' && state.appliedVariant !== 'converted',
       canRestore: reusableResult && state.status !== 'converting' && state.appliedVariant === 'converted',
@@ -240,11 +241,11 @@ export class TrackVoiceConversionController {
 
   async startConversion(trackId) {
     const track = this.store.getTrack(trackId)
-    if (!canConvertTrack(track)) throw new Error('当前轨还不能进行音色转换')
-    if (this.activeConversions.has(trackId)) throw new Error('当前轨道正在进行音色转换')
+    if (!canConvertTrack(track)) throw new Error(t('voiceConversion.not_yet'))
+    if (this.activeConversions.has(trackId)) throw new Error(t('voiceConversion.in_progress'))
 
     const draftReference = this.referenceFiles.get(trackId)
-    if (!(draftReference?.file instanceof File)) throw new Error('请先选择参考音频')
+    if (!(draftReference?.file instanceof File)) throw new Error(t('voiceConversion.pick_reference'))
 
     const jobId = buildSourceJobId(track)
     const params = this.paramDrafts.get(trackId) || buildParams(track.voiceConversionState)
@@ -287,7 +288,7 @@ export class TrackVoiceConversionController {
       })
       const freshTrack = this.store.getTrack(trackId)
       if (!freshTrack || freshTrack.revision !== (track.revision || 0) || buildSourceJobId(freshTrack) !== jobId) {
-        throw new Error('轨道在转换过程中已变化，请重新转换')
+        throw new Error(t('voiceConversion.track_changed'))
       }
 
       const completedState = completeTrackVoiceConversion(this.store.getTrack(trackId)?.voiceConversionState, {
@@ -321,7 +322,7 @@ export class TrackVoiceConversionController {
         this.logger?.info?.('VoiceConversion cancelled', { trackId, jobId })
         throw error instanceof VoiceConversionCancelledError ? error : new VoiceConversionCancelledError()
       }
-      const failedState = failTrackVoiceConversion(this.store.getTrack(trackId)?.voiceConversionState, error?.message || '音色转换失败')
+      const failedState = failTrackVoiceConversion(this.store.getTrack(trackId)?.voiceConversionState, error?.message || t('voiceConversion.failed'))
       this.store.replaceTrackVoiceConversionState(trackId, failedState)
       this.logger?.info?.('VoiceConversion failed', { trackId, error: error?.message || String(error) })
       this.render('voice-conversion-failed')

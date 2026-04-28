@@ -19,6 +19,7 @@ import {
   readJsonFromFile,
   UserCancelledError,
 } from '../project/projectStorage.js'
+import { t } from '../../i18n/index.js'
 
 export function createProjectFileHandlers({
   view,
@@ -128,7 +129,7 @@ export function createProjectFileHandlers({
       }
     }
     if (failed > 0) {
-      view.setStatus(`工程加载完成，但有 ${failed} 个音频资产解码失败`)
+      view.setStatus(t('hostStatus.project_open_partial', { failed }))
     }
   }
 
@@ -152,10 +153,10 @@ export function createProjectFileHandlers({
       currentProjectName = null
       view.showEditorPlaceholder()
       await autoSave?.clearSnapshot?.()
-      view.setStatus('已新建空白工程')
+      view.setStatus(t('hostStatus.blank_project_created'))
     } catch (error) {
       logger?.error?.('Project new failed', { error: error?.message || String(error) })
-      view.setStatus('新建工程失败')
+      view.setStatus(t('hostStatus.blank_project_failed'))
     }
   }
 
@@ -179,7 +180,7 @@ export function createProjectFileHandlers({
     } catch (error) {
       if (error instanceof UserCancelledError) return
       logger?.error?.('Project open: pick failed', { error: error?.message || String(error) })
-      view.setStatus(`打开工程失败：${error?.message || '未知错误'}`)
+      view.setStatus(t('hostStatus.open_project_failed', { message: error?.message || t('hostStatus.unknown_error') }))
       return
     }
 
@@ -188,7 +189,7 @@ export function createProjectFileHandlers({
       parsed = deserializeProject(jsonString)
     } catch (error) {
       logger?.error?.('Project open: parse failed', { error: error?.message || String(error) })
-      view.setStatus(`打开工程失败：${error?.message || '工程文件无法解析'}`)
+      view.setStatus(t('hostStatus.open_project_failed', { message: error?.message || t('hostStatus.open_project_parse_failed') }))
       return
     }
 
@@ -206,7 +207,7 @@ export function createProjectFileHandlers({
         project: parsed.project,
       }) || nextDisplayName || null
       const trackCount = parsed.project?.tracks?.length || 0
-      view.setStatus(`已打开工程 ${currentProjectName || ''}（${trackCount} 条轨道）`)
+      view.setStatus(t('hostStatus.project_opened', { name: currentProjectName || '', count: trackCount }))
       // 刚加载的工程跟磁盘文件一致——重置 dirty 让红点不显示
       markPristine()
       view.setProjectFileState?.({ name: currentProjectName, dirty: false })
@@ -214,14 +215,14 @@ export function createProjectFileHandlers({
       await autoSave?.clearSnapshot?.()
     } catch (error) {
       logger?.error?.('Project open: load failed', { error: error?.message || String(error) })
-      view.setStatus('加载工程失败')
+      view.setStatus(t('hostStatus.open_failed_generic'))
     }
   }
 
   // ===== 保存 =====
   async function handleProjectSave() {
     const project = store.getProject()
-    if (!project) { view.setStatus('当前无工程可保存'); return }
+    if (!project) { view.setStatus(t('hostStatus.no_project_to_save')); return }
 
     // 没有缓存的句柄 → 行为退化为"另存为"（首次保存时弹位置选择器）
     if (!currentFileHandle && supportsFileSystemAccessApi()) {
@@ -237,7 +238,7 @@ export function createProjectFileHandlers({
     if (currentFileHandle) {
       try {
         await writeJsonToHandle(currentFileHandle, jsonString)
-        view.setStatus(`已保存到 ${getHandleName(currentFileHandle) || '工程文件'}`)
+        view.setStatus(t('hostStatus.saved_to', { name: getHandleName(currentFileHandle) || t('hostStatus.save_default_name') }))
         markPristine()
         view.setProjectFileState?.({ name: currentProjectName, dirty: false })
         // 已经保存到磁盘 → 自动快照不再需要
@@ -245,14 +246,14 @@ export function createProjectFileHandlers({
       } catch (error) {
         if (error instanceof UserCancelledError) return
         logger?.error?.('Project save failed', { error: error?.message || String(error) })
-        view.setStatus(`保存失败：${error?.message || '未知错误'}`)
+        view.setStatus(t('hostStatus.save_failed', { message: error?.message || t('hostStatus.unknown_error') }))
       }
       return
     }
 
     // 浏览器不支持 FSA → 走下载兜底
     downloadBlobFile({ jsonString, suggestedName: suggestedFileName() })
-    view.setStatus(`已下载工程文件 ${suggestedFileName()}（浏览器不支持原地保存）`)
+    view.setStatus(t('hostStatus.download_saved', { name: suggestedFileName() }))
     markPristine()
     view.setProjectFileState?.({ name: currentProjectName, dirty: false })
     await autoSave?.clearSnapshot?.()
@@ -261,7 +262,7 @@ export function createProjectFileHandlers({
   // ===== 另存为 =====
   async function handleProjectSaveAs() {
     const project = store.getProject()
-    if (!project) { view.setStatus('当前无工程可另存为'); return }
+    if (!project) { view.setStatus(t('hostStatus.no_project_to_saveas')); return }
     const jsonString = serializeProject({
       project,
       projectName: currentProjectName,
@@ -274,21 +275,21 @@ export function createProjectFileHandlers({
         await writeJsonToHandle(handle, jsonString)
         currentFileHandle = handle
         currentProjectName = stripExtension(getHandleName(handle))
-        view.setStatus(`已另存为 ${getHandleName(handle)}`)
+        view.setStatus(t('hostStatus.saveas_done', { name: getHandleName(handle) }))
         markPristine()
         view.setProjectFileState?.({ name: currentProjectName, dirty: false })
         await autoSave?.clearSnapshot?.()
       } catch (error) {
         if (error instanceof UserCancelledError) return
         logger?.error?.('Project saveAs failed', { error: error?.message || String(error) })
-        view.setStatus(`另存为失败：${error?.message || '未知错误'}`)
+        view.setStatus(t('hostStatus.saveas_failed', { message: error?.message || t('hostStatus.unknown_error') }))
       }
       return
     }
 
     // 兜底：直接下载
     downloadBlobFile({ jsonString, suggestedName: suggestedFileName() })
-    view.setStatus(`已下载 ${suggestedFileName()}`)
+    view.setStatus(t('hostStatus.download_done', { name: suggestedFileName() }))
     markPristine()
     view.setProjectFileState?.({ name: currentProjectName, dirty: false })
     await autoSave?.clearSnapshot?.()
@@ -310,11 +311,11 @@ export function createProjectFileHandlers({
       // 提示用户记得保存到真实文件
       view.setProjectFileState?.({ name: currentProjectName, dirty: true })
       const trackCount = parsed.project?.tracks?.length || 0
-      view.setStatus(`已恢复未保存的工作（${trackCount} 条轨道），请记得保存`)
+      view.setStatus(t('hostStatus.restored_snapshot', { count: trackCount }))
       return true
     } catch (error) {
       logger?.error?.('Project restore from snapshot failed', { error: error?.message || String(error) })
-      view.setStatus('恢复失败：自动快照已损坏')
+      view.setStatus(t('hostStatus.restore_failed'))
       return false
     }
   }

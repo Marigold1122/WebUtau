@@ -1,0 +1,410 @@
+/*
+ * 多语言抗溢出加固 (i18n hardening)
+ *
+ * 目标：英语/日语下字符宽度不同（英文整体偏宽、日文方块字稍窄但词内不可断），
+ *       原本固定宽度/min-width 的容器容易溢出或意外换行。
+ *       此文件在 style.css 之后加载，对关键文本容器做"不破坏视觉但更宽容"的修正。
+ *
+ * 写法保持最小侵入：能用 min-width: 0 / fit-content 解决的，绝不调整布局参数。
+ */
+
+/* ============================================================
+ * 1. 顶栏 menubar
+ * ============================================================ */
+
+/* 项目名铭牌：英文/日文里默认 max-width 220 容易在长项目名时被截断；
+   留 ellipsis 兜底，但放宽到 vw 的相对值，宽屏不浪费 */
+.menubar-project-plate {
+  max-width: clamp(180px, 22vw, 320px);
+  min-width: 0;
+}
+.menubar-project-plate-name {
+  max-width: 100%;
+  min-width: 0;
+}
+
+/* 跟随模式按钮：原来 min-width: 44px，英文 "PAGE" / "FOLLOW" 比中文宽，
+   允许 fit-content 自适应；同时不允许换行 */
+.menubar-follow-btn {
+  min-width: 0;
+  padding-inline: 9px;
+  white-space: nowrap;
+}
+.menubar-follow-label {
+  white-space: nowrap;
+}
+
+/* 菜单铭牌按钮：英文 "FILE" / 日文 "ファイル" 与中文 "文件" 宽度差异较大；
+   保持高度，宽度交给内容 */
+.menu-item {
+  min-width: 0;
+  white-space: nowrap;
+}
+
+/* 顶栏 transport 按钮没有文字，免；
+   但 menubar-tail 是 flex，必须收缩 */
+.menubar-tail {
+  min-width: 0;
+}
+
+/* 语言切换链接：放在 inspector-footer 里，与"新手引导 · 关于"一排
+   样式继承 .inspector-footer-link，但加一对 caret 指示可展开 */
+.inspector-footer-link--lang {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.inspector-footer-link--lang::after {
+  content: '';
+  width: 0;
+  height: 0;
+  border-left: 3.5px solid transparent;
+  border-right: 3.5px solid transparent;
+  border-bottom: 4px solid currentColor;
+  opacity: 0.7;
+  transform: translateY(-1px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.inspector-footer-link--lang[aria-expanded='true']::after {
+  opacity: 1;
+}
+.inspector-footer-lang-text {
+  pointer-events: none;
+  font-feature-settings: "tnum" off;
+}
+
+/* 语言切换浮窗 */
+.lang-toggle-popup {
+  position: fixed;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  padding: 4px;
+  background: var(--bg-1);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  box-shadow: 0 10px 32px rgba(0,0,0,0.18), 0 1px 0 #FFF inset;
+  animation: lang-toggle-popup-in 0.12s ease-out;
+}
+.lang-toggle-popup[data-placement='above'] { transform-origin: bottom right; }
+.lang-toggle-popup[data-placement='below'] { transform-origin: top right; }
+@keyframes lang-toggle-popup-in {
+  from { opacity: 0; transform: translateY(2px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.lang-toggle-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-main);
+  font-family: 'Inter', 'Noto Sans CJK JP', 'Noto Sans CJK SC', sans-serif;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s ease;
+  white-space: nowrap;
+}
+.lang-toggle-item:hover { background: var(--bg-3); }
+.lang-toggle-item[data-current='1'] {
+  background: rgba(59, 139, 136, 0.12);
+  color: var(--accent-color);
+  font-weight: 600;
+}
+.lang-toggle-item[data-current='1']::after {
+  content: '✓';
+  margin-left: 12px;
+}
+
+[data-theme='dark'] .lang-toggle-popup {
+  background: var(--bg-2);
+  border-color: var(--border-light);
+}
+[data-theme='dark'] .lang-toggle-item:hover { background: var(--bg-3); }
+
+
+/* ============================================================
+ * 2. 检查器 inspector
+ * ============================================================ */
+
+/* section 标题：英文 "VOICE CONVERSION" / 日文 "音色変換" 比中文宽，
+   原 uppercase + 12px 容易在窄面板下溢出。允许 fit + 截断 */
+.inspector-section-header {
+  min-width: 0;
+}
+.inspector-section-header > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 轨道卡片名：原已有 word-break: break-word，但英文长名容易撑高；
+   行高保留，加 max-height 兜底 */
+.track-card-name {
+  min-width: 0;
+}
+
+/* 行标签：grid max-content 自适应；本身 nowrap，OK
+   值字段：保留 break-word；增加 line-clamp 可选 */
+.track-card-row-value {
+  overflow-wrap: anywhere;
+}
+
+/* 检查器收纳按钮：纯图标，无文本影响，免 */
+
+
+/* ============================================================
+ * 3. 模态框 modal
+ * ============================================================ */
+
+/* 模态按钮：保留原 min-width，但允许收缩并 ellipsis；
+   "Sync & apply" / "同期して適用" / "整体导出" 长度差大 */
+.modal-btn {
+  min-width: 0;
+  padding-inline: clamp(10px, 1.6vw, 18px);
+  white-space: nowrap;
+}
+.modal-actions {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+/* 模态标题：原 uppercase + small font，CJK 没影响；只确保不溢出 */
+.modal-title {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.modal-label {
+  word-break: keep-all;
+}
+
+.modal-summary-row {
+  min-width: 0;
+}
+.modal-summary-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+
+/* ============================================================
+ * 4. 分享面板 share
+ * ============================================================ */
+
+/* 状态文本：从"未启动"到 "Downloading cloudflared" 宽度差 5x；
+   父级是 flex，字段必须能 ellipsis */
+.share-state-row {
+  min-width: 0;
+}
+.share-state-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 长 URL 行 */
+.share-url-row {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+.share-url {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  word-break: break-all;
+}
+.share-actions {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+.share-hint {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+
+
+/* ============================================================
+ * 5. 钢琴卷帘工具栏 piano-roll-editor
+ * ============================================================ */
+
+.editor-runtime-tools .piano-roll-editor-btn {
+  min-width: 0;
+  padding-inline: clamp(8px, 1vw, 14px);
+  white-space: nowrap;
+}
+.piano-roll-editor-toolbar--header {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+.piano-roll-editor-hint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+
+/* ============================================================
+ * 6. 快速填词面板 quick-lyric
+ * ============================================================ */
+
+.quick-lyric-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.quick-lyric-ai-label {
+  word-break: keep-all;
+}
+.quick-lyric-ai-footer {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+.quick-lyric-ai-quota {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  flex: 1 1 100%;
+}
+.quick-lyric-ai-generate,
+.quick-lyric-ai-config-btn {
+  min-width: 0;
+  padding-inline: clamp(8px, 1vw, 14px);
+  white-space: nowrap;
+}
+.quick-lyric-status {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
+
+/* ============================================================
+ * 7. 关于面板 about
+ * ============================================================ */
+
+.about-update-actions {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+.about-update-btn {
+  min-width: 0;
+  padding-inline: clamp(10px, 1.4vw, 18px);
+  white-space: nowrap;
+}
+.about-version-row {
+  min-width: 0;
+}
+.about-version-value {
+  overflow-wrap: anywhere;
+}
+.about-update-status {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.about-update-notes {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+
+/* ============================================================
+ * 8. 混响 dock / 主控母带链
+ * ============================================================ */
+
+.fx-module-scope-banner-text {
+  min-width: 0;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.fx-screen-label {
+  white-space: nowrap;
+}
+.fx-screen-row {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+.fx-lufs-target {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.fx-lufs-target-select {
+  min-width: 0;
+  max-width: 100%;
+}
+.fx-lufs-status {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.fx-module-note {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+
+/* ============================================================
+ * 9. 引导浮窗 onboarding
+ * ============================================================ */
+
+.wu-onboarding,
+.wu-onboarding__body {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+}
+
+
+/* ============================================================
+ * 10. 通用 CJK 兜底：所有文本类容器避免在词中间硬断；
+ *     英文长 URL/标识允许 anywhere 断行
+ * ============================================================ */
+
+button,
+.modal-summary,
+.modal-hint,
+.track-card-rows,
+.share-message,
+.share-error {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+/* 顶栏渲染状态徽章：状态字符串可能比中文长 2-3 倍 */
+.render-status {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+
+/* iframe 编辑器顶部轨道名：英文/日文长轨名要 ellipsis */
+.editor-track-name {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.editor-header {
+  min-width: 0;
+}
+
+/* 状态栏：单行宿主级提示 */
+#status-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  display: inline-block;
+}

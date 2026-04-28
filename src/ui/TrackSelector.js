@@ -1,5 +1,6 @@
 import { PIANO_ROLL } from '../config/constants.js'
 import { DEFAULT_LANGUAGE_CODE, LANGUAGE_OPTIONS, normalizeLanguageCode } from '../config/languageOptions.js'
+import { t } from '../i18n/index.js'
 
 class TrackSelector {
   constructor() {
@@ -31,13 +32,13 @@ class TrackSelector {
     const tempo = this.overlay.querySelector('.track-selector-tempo')
     const language = this.overlay.querySelector('.track-selector-language')
     const list = this.overlay.querySelector('.track-selector-list')
-    title.textContent = `导入 MIDI — ${fileName}`
+    title.textContent = t('trackSelector.title', { name: fileName })
     const { tempoText, timeSignatureText } = this._formatTempoText(tempoData)
     tempo.innerHTML = `
-      <span class="tempo-info">曲速: ${tempoText} | 拍号: ${timeSignatureText}</span>
+      <span class="tempo-info">${t('trackSelector.tempo_info', { tempo: tempoText, sig: timeSignatureText })}</span>
       <label class="tempo-sync-label">
         <input type="checkbox" class="tempo-sync-checkbox" checked />
-        同步曲速和拍号
+        ${t('trackSelector.sync_tempo')}
       </label>
     `
     this._renderLanguageSelector(language)
@@ -47,7 +48,9 @@ class TrackSelector {
       const button = document.createElement('button')
       button.type = 'button'
       button.className = 'track-option'
-      button.textContent = `${track.name} | ${track.noteCount} 个音符 | ${track.hasLyrics ? '有歌词' : '无歌词'}`
+      const noteText = t('trackSelector.note_count', { count: track.noteCount })
+      const lyricText = track.hasLyrics ? t('trackSelector.has_lyrics') : t('trackSelector.no_lyrics')
+      button.textContent = `${track.name} | ${noteText} | ${lyricText}`
       button.addEventListener('click', () => this._onSelect(track.index))
       list.appendChild(button)
     })
@@ -72,7 +75,7 @@ class TrackSelector {
   _renderLanguageSelector(container) {
     if (!container) return
     container.innerHTML = `
-      <label class="track-selector-language-label" for="track-language-select">歌曲语言</label>
+      <label class="track-selector-language-label" for="track-language-select">${t('trackSelector.song_lang')}</label>
       <select id="track-language-select" class="track-selector-language-select"></select>
     `
     const select = container.querySelector('.track-selector-language-select')
@@ -101,16 +104,16 @@ class TrackSelector {
     const signatureValues = [...new Set(timeSignatures.map(({ timeSignature }) => timeSignature.join('/')))]
 
     const tempoText = !hasTempoInfo
-      ? `${PIANO_ROLL.DEFAULT_BPM} BPM（默认）`
+      ? t('trackSelector.bpm_default', { bpm: PIANO_ROLL.DEFAULT_BPM })
       : bpmValues.length <= 1
         ? `${bpmValues[0] || PIANO_ROLL.DEFAULT_BPM} BPM`
-        : `${Math.min(...bpmValues)}~${Math.max(...bpmValues)} BPM（变速）`
+        : t('trackSelector.bpm_variable', { lo: Math.min(...bpmValues), hi: Math.max(...bpmValues) })
 
     const timeSignatureText = !hasTimeSignatureInfo
-      ? `${defaultSignature}（默认）`
+      ? t('trackSelector.sig_default', { value: defaultSignature })
       : signatureValues.length <= 1
         ? signatureValues[0] || defaultSignature
-        : `${signatureValues[0]} → ${signatureValues[signatureValues.length - 1]}（变拍号）`
+        : t('trackSelector.sig_variable', { from: signatureValues[0], to: signatureValues[signatureValues.length - 1] })
 
     return { tempoText, timeSignatureText }
   }

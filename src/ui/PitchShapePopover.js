@@ -11,6 +11,7 @@ import eventBus from '../core/EventBus.js'
 import { EVENTS, PIANO_ROLL } from '../config/constants.js'
 import pitchEditor, { PITCH_POINT_SHAPES, PITCH_EDITOR_MODE } from '../modules/PitchEditor.js'
 import viewport from './PianoRollViewport.js'
+import { t } from '../i18n/index.js'
 
 const POPOVER_ID = 'pitch-shape'
 
@@ -30,10 +31,10 @@ const SHAPE_ICONS = {
 }
 
 const SHAPE_META = [
-  { shape: PITCH_POINT_SHAPES.IN_OUT, label: '平滑' },
-  { shape: PITCH_POINT_SHAPES.LINEAR, label: '直线' },
-  { shape: PITCH_POINT_SHAPES.IN, label: '缓入' },
-  { shape: PITCH_POINT_SHAPES.OUT, label: '缓出' },
+  { shape: PITCH_POINT_SHAPES.IN_OUT, get label() { return t('pitchShape.smooth') } },
+  { shape: PITCH_POINT_SHAPES.LINEAR, get label() { return t('pitchShape.line') } },
+  { shape: PITCH_POINT_SHAPES.IN, get label() { return t('pitchShape.ease_in') } },
+  { shape: PITCH_POINT_SHAPES.OUT, get label() { return t('pitchShape.ease_out') } },
 ]
 
 class PitchShapePopover {

@@ -1,3 +1,5 @@
+import { t } from '../i18n/index.js'
+
 const DEFAULT_PADDING = 48
 
 export const PLAYHEAD_FOLLOW_MODES = {
@@ -6,11 +8,16 @@ export const PLAYHEAD_FOLLOW_MODES = {
   PUSH: 'push',
 }
 
-export const PLAYHEAD_FOLLOW_MODE_LABELS = {
-  [PLAYHEAD_FOLLOW_MODES.FOLLOW]: '跟踪',
-  [PLAYHEAD_FOLLOW_MODES.PAGE]: '翻页',
-  [PLAYHEAD_FOLLOW_MODES.PUSH]: '推移',
-}
+// 用 Proxy 让 LABELS[mode] 始终返回当前 locale 下的翻译；
+// 既兼容老的"对象访问"写法，也能在 i18n 切换时立刻生效
+export const PLAYHEAD_FOLLOW_MODE_LABELS = new Proxy({}, {
+  get(_target, mode) {
+    if (mode === PLAYHEAD_FOLLOW_MODES.FOLLOW) return t('follow.follow')
+    if (mode === PLAYHEAD_FOLLOW_MODES.PAGE) return t('follow.page')
+    if (mode === PLAYHEAD_FOLLOW_MODES.PUSH) return t('follow.push')
+    return ''
+  },
+})
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value))

@@ -1,13 +1,15 @@
-export const TRACK_SOURCE_OPTIONS = [
-  { id: 'piano', label: '钢琴' },
-  { id: 'violin', label: '小提琴' },
-  { id: 'guitar', label: '吉他' },
-  { id: 'bass', label: '贝斯' },
-  { id: 'drums', label: '鼓' },
-  { id: 'vocal', label: '人声' },
-]
+import { t } from '../../i18n/index.js'
 
-const VALID_SOURCE_IDS = new Set(TRACK_SOURCE_OPTIONS.map((option) => option.id))
+// 轨道 source ID 列表常量；显示标签由 i18n 在使用点解析
+const TRACK_SOURCE_IDS = ['piano', 'violin', 'guitar', 'bass', 'drums', 'vocal']
+
+// 通过 getter 提供随 locale 实时变化的 label
+export const TRACK_SOURCE_OPTIONS = TRACK_SOURCE_IDS.map((id) => ({
+  id,
+  get label() { return t(`trackSource.name.${id}`) },
+}))
+
+const VALID_SOURCE_IDS = new Set(TRACK_SOURCE_IDS)
 
 export function normalizeAssignedSourceId(sourceId) {
   if (sourceId == null || sourceId === '') return null
@@ -20,18 +22,18 @@ export function getEffectiveSourceId(sourceId) {
 
 export function getAssignedSourceLabel(sourceId) {
   const normalized = normalizeAssignedSourceId(sourceId)
-  if (!normalized) return '未指定'
-  return TRACK_SOURCE_OPTIONS.find((option) => option.id === normalized)?.label || '未指定'
+  if (!normalized) return t('trackSource.unassigned')
+  return t(`trackSource.name.${normalized}`)
 }
 
 export function getEffectiveSourceLabel(sourceId) {
   const effectiveId = getEffectiveSourceId(sourceId)
-  return TRACK_SOURCE_OPTIONS.find((option) => option.id === effectiveId)?.label || '钢琴'
+  return t(`trackSource.name.${effectiveId}`)
 }
 
 export function getTrackSourceInspectorText(sourceId) {
   const normalized = normalizeAssignedSourceId(sourceId)
-  if (!normalized) return '未指定（播放按钢琴）'
+  if (!normalized) return t('trackSource.unassigned_piano')
   return getAssignedSourceLabel(normalized)
 }
 

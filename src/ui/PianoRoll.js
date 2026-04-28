@@ -1,6 +1,7 @@
 import eventBus from '../core/EventBus.js'
 import { EVENTS, PIANO_ROLL } from '../config/constants.js'
 import playheadController from '../modules/PlayheadController.js'
+import { onLocaleChange, t } from '../i18n/index.js'
 import inputController from './PianoRollInputController.js'
 import noteSelection from './NoteSelection.js'
 import viewport from './PianoRollViewport.js'
@@ -87,7 +88,7 @@ class PianoRoll {
     this.btnLyricMode = document.createElement('button')
     this.btnLyricMode.type = 'button'
     this.btnLyricMode.className = 'piano-roll-editor-btn'
-    this.btnLyricMode.textContent = '歌词'
+    this.btnLyricMode.textContent = t('pianoRoll.lyric')
     this._wireToolbarButton(this.btnLyricMode)
     this.btnLyricMode.addEventListener('click', () => {
       pitchEditor.setMode(PITCH_EDITOR_MODE.LYRIC)
@@ -99,7 +100,7 @@ class PianoRoll {
     this.btnPitchMode = document.createElement('button')
     this.btnPitchMode.type = 'button'
     this.btnPitchMode.className = 'piano-roll-editor-btn'
-    this.btnPitchMode.textContent = '音高'
+    this.btnPitchMode.textContent = t('pianoRoll.pitch')
     this._wireToolbarButton(this.btnPitchMode)
     this.btnPitchMode.addEventListener('click', () => {
       if (!pitchEditor.setMode(PITCH_EDITOR_MODE.PITCH)) return
@@ -113,7 +114,7 @@ class PianoRoll {
     this.btnResetPitchSelection = document.createElement('button')
     this.btnResetPitchSelection.type = 'button'
     this.btnResetPitchSelection.className = 'piano-roll-editor-btn piano-roll-editor-btn--secondary'
-    this.btnResetPitchSelection.textContent = '恢复所选'
+    this.btnResetPitchSelection.textContent = t('pianoRoll.restore_selected')
     this._wireToolbarButton(this.btnResetPitchSelection)
     this.btnResetPitchSelection.addEventListener('click', async () => {
       const range = pitchEditor.getTickRangeForNoteEntries(noteSelection.getSelected())
@@ -130,7 +131,7 @@ class PianoRoll {
     this.btnResetPitchAll = document.createElement('button')
     this.btnResetPitchAll.type = 'button'
     this.btnResetPitchAll.className = 'piano-roll-editor-btn piano-roll-editor-btn--secondary'
-    this.btnResetPitchAll.textContent = '恢复全部'
+    this.btnResetPitchAll.textContent = t('pianoRoll.restore_all')
     this._wireToolbarButton(this.btnResetPitchAll)
     this.btnResetPitchAll.addEventListener('click', async () => {
       try {
@@ -151,6 +152,13 @@ class PianoRoll {
       this.btnResetPitchAll,
       this.editorHint,
     )
+    // 切语言时自动同步按钮文字
+    onLocaleChange(() => {
+      if (this.btnLyricMode) this.btnLyricMode.textContent = t('pianoRoll.lyric')
+      if (this.btnPitchMode) this.btnPitchMode.textContent = t('pianoRoll.pitch')
+      if (this.btnResetPitchSelection) this.btnResetPitchSelection.textContent = t('pianoRoll.restore_selected')
+      if (this.btnResetPitchAll) this.btnResetPitchAll.textContent = t('pianoRoll.restore_all')
+    })
   }
 
   _getEditorToolbarHost() {
@@ -191,12 +199,12 @@ class PianoRoll {
 
     if (!hasSelection) {
       this.editorHint.textContent = pitchMode
-        ? '点线段 / 节点可编辑曲线形状'
-        : '双击音符可编辑歌词'
+        ? t('pianoRoll.hint_idle_pitch')
+        : t('pianoRoll.hint_idle_lyric')
     } else if (pitchMode) {
-      this.editorHint.textContent = '点节点改曲线；所选音符浮窗可调滑音、颤音、起始连接'
+      this.editorHint.textContent = t('pianoRoll.hint_pitch_selected')
     } else {
-      this.editorHint.textContent = '双击音符编辑歌词；音符浮窗可调滑音、颤音、音准'
+      this.editorHint.textContent = t('pianoRoll.hint_lyric_selected')
     }
   }
 

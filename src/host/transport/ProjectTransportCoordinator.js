@@ -1,4 +1,5 @@
 ﻿import { resolveAudibleTrackIds } from '../monitor/TrackAudibilityResolver.js'
+import { t } from '../../i18n/index.js'
 import { normalizeTrackVolume } from '../project/trackPlaybackState.js'
 import { getProjectDuration } from '../services/PreviewProjector.js'
 import { TrackFxDispatchRouter } from './TrackFxDispatchRouter.js'
@@ -114,11 +115,11 @@ export class ProjectTransportCoordinator {
     const project = this.projectStore.getProject()
     if (!project) {
       this._logTrace('toggleProjectPlayback:no-project')
-      this.view.setStatus('请先导入 MIDI')
+      this.view.setStatus(t('hostStatus.import_midi_first'))
       return false
     }
 
-    this.view.setStatus('正在加载项目播放资源...')
+    this.view.setStatus(t('hostStatus.loading_project'))
     this.view.showPlaybackToast?.('正在准备播放资源，请稍候… 受网络环境影响，此过程可能较慢。', {
       tone: 'preparing',
       durationMs: 0,
@@ -269,7 +270,7 @@ export class ProjectTransportCoordinator {
     this.clockStartedSongTime = targetTime
     this._scheduleFrame()
     this._syncViewState(this.transportStore.getSnapshot())
-    this.view.setStatus('MIDI 录制已启动')
+    this.view.setStatus(t('hostStatus.midi_record_started'))
     this.logger?.info?.('宿主录制时钟已启动', {
       currentTime: targetTime,
       duration,
@@ -313,7 +314,7 @@ export class ProjectTransportCoordinator {
           this.vocalScheduler.stop()
           this.convertedVocalScheduler?.stop?.()
           this._syncViewState(this.transportStore.getSnapshot())
-          this.view.setStatus('项目预览播放结束')
+          this.view.setStatus(t('hostStatus.project_preview_done'))
           this._logTrace('scheduleFrame:project-ended', {
             clampedTime,
           })
@@ -506,7 +507,7 @@ export class ProjectTransportCoordinator {
     if (duration <= 0) {
       this.transportStore.patch({ driver: 'idle', playing: false, duration: 0 })
       this._syncViewState(this.transportStore.getSnapshot())
-      this.view.setStatus('当前没有可播放的轨道内容')
+      this.view.setStatus(t('hostStatus.no_playable_track'))
       return {
         ...this._emptyPreparedState(),
         instrumentSourceIds: instrumentPrepared.sourceIds || [],

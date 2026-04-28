@@ -1,4 +1,5 @@
 import { createTempoDocument } from '../../shared/tempoDocument.js'
+import { t, onLocaleChange } from '../../i18n/index.js'
 
 function getRefs() {
   return {
@@ -22,7 +23,7 @@ function formatTempoSummary(tempoData) {
 
   const bpmValues = [...new Set(tempos.map(({ bpm }) => Math.round(bpm)).filter(Number.isFinite))]
   const tempoText = !safeTempoData.hasTempoInfo
-    ? `${Math.round(tempos[0]?.bpm || 120)} BPM（默认）`
+    ? t('modal.timing.tempo_default', { bpm: Math.round(tempos[0]?.bpm || 120) })
     : bpmValues.length <= 1
       ? `${bpmValues[0] || Math.round(tempos[0]?.bpm || 120)} BPM`
       : `${Math.min(...bpmValues)} ~ ${Math.max(...bpmValues)} BPM`
@@ -31,7 +32,7 @@ function formatTempoSummary(tempoData) {
     return Array.isArray(timeSignature) ? timeSignature.join('/') : '4/4'
   }))]
   const signatureText = !safeTempoData.hasTimeSignatureInfo
-    ? `${signatureValues[0] || '4/4'}（默认）`
+    ? t('modal.timing.sig_default', { value: signatureValues[0] || '4/4' })
     : signatureValues.length <= 1
       ? signatureValues[0]
       : `${signatureValues[0]} → ${signatureValues[signatureValues.length - 1]}`
@@ -41,7 +42,7 @@ function formatTempoSummary(tempoData) {
     return `${normalizedKey}${scale === 'minor' ? ' minor' : ' major'}`
   }))]
   const keyText = !safeTempoData.hasKeySignatureInfo
-    ? '未提供'
+    ? t('modal.timing.not_provided')
     : keyValues.length <= 1
       ? keyValues[0]
       : `${keyValues[0]} → ${keyValues[keyValues.length - 1]}`
@@ -58,9 +59,9 @@ function renderSummary(container, tempoData) {
   const summary = formatTempoSummary(tempoData)
   container.innerHTML = ''
   ;[
-    ['曲速', summary.tempoText],
-    ['拍号', summary.signatureText],
-    ['调号', summary.keyText],
+    [t('modal.timing.tempo'), summary.tempoText],
+    [t('modal.timing.time_sig'), summary.signatureText],
+    [t('modal.timing.key_sig'), summary.keyText],
   ].forEach(([label, value]) => {
     const row = document.createElement('div')
     row.className = 'modal-summary-row'
@@ -79,12 +80,33 @@ export class ProjectTimingImportModal {
   constructor() {
     this.refs = getRefs()
     this.pendingResolve = null
+    this._lastPromptArgs = null
   }
 
   init() {
     this.refs.btnCancel?.addEventListener('click', () => this._close(null))
     this.refs.btnKeep?.addEventListener('click', () => this._close('keep'))
     this.refs.btnSync?.addEventListener('click', () => this._close('sync'))
+    // locale 切换时重渲当前展示中的内容
+    onLocaleChange(() => {
+      if (this.pendingResolve && this._lastPromptArgs) this._renderTexts(this._lastPromptArgs)
+    })
+  }
+
+  _renderTexts({ fileName, importedTempoData, currentTempoData, hasCurrentProject }) {
+    if (!this.refs.title) return
+    this.refs.title.textContent = t('modal.timing.title_named', { name: fileName })
+    this.refs.hint.textContent = hasCurrentProject
+      ? t('modal.timing.hint_with_current')
+      : t('modal.timing.hint_new')
+    renderSummary(this.refs.importedSummary, importedTempoData)
+    renderSummary(this.refs.currentSummary, currentTempoData)
+    this.refs.currentSection.hidden = !hasCurrentProject
+    this.refs.btnKeep.textContent = hasCurrentProject
+      ? t('modal.timing.keep_current')
+      : t('modal.timing.use_default')
+    this.refs.btnCancel.textContent = t('modal.timing.cancel')
+    this.refs.btnSync.textContent = t('modal.timing.sync')
   }
 
   prompt({
@@ -96,14 +118,9 @@ export class ProjectTimingImportModal {
     if (!this.refs.overlay) return Promise.resolve('sync')
     if (this.pendingResolve) this.pendingResolve(null)
 
-    this.refs.title.textContent = `导入 ${fileName} 的时序信息`
-    this.refs.hint.textContent = hasCurrentProject
-      ? '导入工程包含新的曲速、拍号或调号信息。要把这些时间信息同步到当前工程吗？'
-      : '导入的 MIDI 带有曲速、拍号或调号信息。要应用到新工程吗？'
-    renderSummary(this.refs.importedSummary, importedTempoData)
-    renderSummary(this.refs.currentSummary, currentTempoData)
-    this.refs.currentSection.hidden = !hasCurrentProject
-    this.refs.btnKeep.textContent = hasCurrentProject ? '保持当前工程' : '使用默认时序'
+    const args = { fileName, importedTempoData, currentTempoData, hasCurrentProject }
+    this._lastPromptArgs = args
+    this._renderTexts(args)
 
     this.refs.overlay.classList.add('is-open')
     document.body.classList.add('modal-open')
@@ -120,6 +137,7 @@ export class ProjectTimingImportModal {
     document.body.classList.remove('modal-open')
     const resolve = this.pendingResolve
     this.pendingResolve = null
+    this._lastPromptArgs = null
     resolve(result)
   }
 }

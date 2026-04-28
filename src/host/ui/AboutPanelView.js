@@ -1,4 +1,5 @@
 import { checkForUpdates, isUpdateCheckSupported } from '../../services/updateService.js'
+import { onLocaleChange, t } from '../../i18n/index.js'
 
 // 「关于」面板：展示当前版本、一键检查更新、显示最新版本的更新日志与下载按钮。
 // 面板被 inspector 首次切换到时完成增量渲染——避免 index.html 里塞大段模板。
@@ -47,11 +48,25 @@ export class AboutPanelView {
       openExternal(this.lastResult?.releaseUrl)
     })
 
-    this.setStatus('idle', '点击按钮检查是否有新版本。')
+    this.setStatus('idle', t('inspector.about.check_hint'))
     if (!isUpdateCheckSupported()) {
       this.elements.btnCheck.disabled = true
-      this.setStatus('info', '网页版无自动更新，请使用桌面版获取最新功能。')
+      this.setStatus('info', t('inspector.about.web_no_update'))
     }
+    onLocaleChange(() => this.#refreshLabels())
+  }
+
+  #refreshLabels() {
+    if (!this.elements) return
+    const e = this.elements
+    if (e.btnCheck) e.btnCheck.textContent = t('inspector.about.btn_check')
+    if (e.btnDownload) e.btnDownload.textContent = t('inspector.about.btn_download')
+    if (e.btnReleaseNotes) e.btnReleaseNotes.textContent = t('inspector.about.btn_release_notes')
+    if (e.versionLabelEl) e.versionLabelEl.textContent = t('inspector.about.version_label')
+    if (e.homeLink) e.homeLink.textContent = t('inspector.about.home_link')
+    if (e.releasesLink) e.releasesLink.textContent = t('inspector.about.releases_link')
+    if (!isUpdateCheckSupported()) this.setStatus('info', t('inspector.about.web_no_update'))
+    else if (e.statusEl?.getAttribute(STATUS_ATTR) === 'idle') this.setStatus('idle', t('inspector.about.check_hint'))
   }
 
   #injectMarkup() {
@@ -62,19 +77,19 @@ export class AboutPanelView {
     block.className = 'about-update'
     block.innerHTML = `
       <div class="about-version-row">
-        <span class="about-version-label">当前版本</span>
+        <span class="about-version-label" data-role="version-label">${t('inspector.about.version_label')}</span>
         <span class="about-version-value" data-field="currentVersion">${currentVersion || '—'}</span>
       </div>
       <div class="about-update-actions">
-        <button type="button" class="about-update-btn primary" data-role="check">检查更新</button>
-        <button type="button" class="about-update-btn" data-role="download" hidden>下载新版本</button>
-        <button type="button" class="about-update-btn ghost" data-role="release-notes" hidden>查看发布页</button>
+        <button type="button" class="about-update-btn primary" data-role="check">${t('inspector.about.btn_check')}</button>
+        <button type="button" class="about-update-btn" data-role="download" hidden>${t('inspector.about.btn_download')}</button>
+        <button type="button" class="about-update-btn ghost" data-role="release-notes" hidden>${t('inspector.about.btn_release_notes')}</button>
       </div>
       <div class="about-update-status" data-role="status" ${STATUS_ATTR}="idle"></div>
       <div class="about-update-notes" data-role="notes" hidden></div>
       <div class="about-links">
-        <a href="https://github.com/Marigold1122/melody-singer" target="_blank" rel="noopener noreferrer">项目主页</a>
-        <a href="https://github.com/Marigold1122/melody-singer/releases" target="_blank" rel="noopener noreferrer">发布记录</a>
+        <a href="https://github.com/Marigold1122/melody-singer" target="_blank" rel="noopener noreferrer" data-role="home-link">${t('inspector.about.home_link')}</a>
+        <a href="https://github.com/Marigold1122/melody-singer/releases" target="_blank" rel="noopener noreferrer" data-role="releases-link">${t('inspector.about.releases_link')}</a>
       </div>
     `
 
@@ -91,6 +106,9 @@ export class AboutPanelView {
       statusEl: block.querySelector('[data-role="status"]'),
       notesEl: block.querySelector('[data-role="notes"]'),
       currentVersionEl: block.querySelector('[data-field="currentVersion"]'),
+      versionLabelEl: block.querySelector('[data-role="version-label"]'),
+      homeLink: block.querySelector('[data-role="home-link"]'),
+      releasesLink: block.querySelector('[data-role="releases-link"]'),
     }
   }
 
@@ -115,12 +133,12 @@ export class AboutPanelView {
   async runCheck({ userInitiated = false } = {}) {
     if (this.isChecking) return
     if (!isUpdateCheckSupported()) {
-      this.setStatus('info', '网页版无自动更新，请使用桌面版获取最新功能。')
+      this.setStatus('info', t('inspector.about.web_no_update'))
       return
     }
     this.isChecking = true
     this.elements.btnCheck.disabled = true
-    this.setStatus('loading', '正在检查更新…')
+    this.setStatus('loading', t('inspector.about.checking'))
     if (this.elements.btnDownload) this.elements.btnDownload.hidden = true
     if (this.elements.btnReleaseNotes) this.elements.btnReleaseNotes.hidden = true
     if (this.elements.notesEl) {
@@ -138,7 +156,7 @@ export class AboutPanelView {
       }
 
       if (result.error) {
-        this.setStatus('error', `检查失败：${result.error}`)
+        this.setStatus('error', t('inspector.about.check_failed', { reason: result.error }))
         return
       }
 
@@ -146,7 +164,9 @@ export class AboutPanelView {
         const published = formatPublishedAt(result.publishedAt)
         this.setStatus(
           'update',
-          `发现新版本 v${result.latestVersion}${published ? `（发布于 ${published}）` : ''}`,
+          published
+            ? t('inspector.about.found_new_pub', { version: result.latestVersion, date: published })
+            : t('inspector.about.found_new', { version: result.latestVersion }),
         )
         if (result.downloadUrl && this.elements.btnDownload) {
           this.elements.btnDownload.hidden = false
@@ -159,13 +179,13 @@ export class AboutPanelView {
           this.elements.notesEl.hidden = false
         }
       } else if (result.latestVersion) {
-        this.setStatus('ok', `已是最新版本（v${result.latestVersion}）。`)
+        this.setStatus('ok', t('inspector.about.latest_v', { version: result.latestVersion }))
       } else {
-        this.setStatus('ok', '已是最新版本。')
+        this.setStatus('ok', t('inspector.about.latest'))
       }
     } catch (err) {
       this.logger?.error?.('检查更新异常', err)
-      this.setStatus('error', `检查异常：${err?.message || err}`)
+      this.setStatus('error', t('inspector.about.check_error', { reason: err?.message || err }))
     } finally {
       this.isChecking = false
       this.elements.btnCheck.disabled = false

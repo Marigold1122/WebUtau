@@ -9,10 +9,9 @@ import {
   hasTracksRequiringVoiceLanguageSelection,
   requiresVoiceLanguageSelection,
 } from '../project/voiceTrackLanguageGate.js'
+import { t } from '../../i18n/index.js'
 
 const VOICE_LANGUAGE_TOAST_ID = 'voice-language-reminder'
-const VOICE_LANGUAGE_TOAST =
-  '还没有双击人声轨道选择语言触发合成咕！'
 
 export function createTrackSourceAssignmentHandler({
   store,
@@ -46,7 +45,7 @@ export function createTrackSourceAssignmentHandler({
     })
     trackShellSessionController.closeSourcePicker(trackId, 'source-assigned')
     if (isVoiceRuntimeSource(previousSourceId) && !isVoiceRuntimeSource(assignedSourceId)) {
-      await onVoiceConversionInvalidated?.(trackId, '当前轨已切换为非人声声源，转换结果已回退')
+      await onVoiceConversionInvalidated?.(trackId, t('hostStatus.voicebank_changed'))
     }
 
     render('source-assigned')
@@ -64,7 +63,7 @@ export function createTrackSourceAssignmentHandler({
     logger.sourceAssigned(updatedTrack, assignedSourceId, getEffectiveSourceLabel(assignedSourceId))
     const projectTracks = store.getProject()?.tracks || []
     if (!suppressVoiceLanguageReminder && requiresVoiceLanguageSelection(updatedTrack)) {
-      view.showPlaybackToast(VOICE_LANGUAGE_TOAST, {
+      view.showPlaybackToast(t('hostStatus.voice_language_reminder'), {
         toastId: VOICE_LANGUAGE_TOAST_ID,
         tone: 'danger',
         size: 'large',
@@ -75,10 +74,10 @@ export function createTrackSourceAssignmentHandler({
     }
 
     if (!assignedSourceId) {
-      view.setStatus(`已清除 ${updatedTrack.name} 的声源 | 播放回退到${getEffectiveSourceLabel(null)}`)
+      view.setStatus(t('hostStatus.track_source_cleared', { name: updatedTrack.name, fallback: getEffectiveSourceLabel(null) }))
       return
     }
 
-    view.setStatus(`已将 ${updatedTrack.name} 设为${getAssignedSourceLabel(assignedSourceId)}`)
+    view.setStatus(t('hostStatus.track_source_assigned', { name: updatedTrack.name, source: getAssignedSourceLabel(assignedSourceId) }))
   }
 }

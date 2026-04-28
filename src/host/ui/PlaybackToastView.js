@@ -1,3 +1,5 @@
+import { t } from '../../i18n/index.js'
+
 const DEFAULT_DURATION_MS = 4800
 
 function normalizeMessage(message) {
@@ -65,7 +67,7 @@ export class PlaybackToastView {
     const closeButton = document.createElement('button')
     closeButton.type = 'button'
     closeButton.className = 'playback-toast-close'
-    closeButton.setAttribute('aria-label', '关闭提示')
+    closeButton.setAttribute('aria-label', t('toast.close'))
     closeButton.textContent = '×'
     closeButton.addEventListener('click', this._handleClose)
 

@@ -9,6 +9,7 @@ import {
   GUITAR_TONE_PANEL_MODULES,
   GUITAR_TONE_PRESETS,
 } from './tone/tonePanelDefinitions.js'
+import { t } from '../../i18n/index.js'
 
 function createEmptyState(title, text) {
   const root = document.createElement('section')
@@ -53,15 +54,15 @@ function createHeroSection(track) {
   root.className = 'panel-section tone-panel-hero'
 
   const heading = document.createElement('h2')
-  heading.textContent = '吉他音色'
+  heading.textContent = t('toneLabels.section_heading')
 
   const title = document.createElement('div')
   title.className = 'tone-panel-track-name'
-  title.textContent = track?.name || '当前轨道'
+  title.textContent = track?.name || t('toneLabels.track_default')
 
   const subtitle = document.createElement('div')
   subtitle.className = 'tone-panel-track-note'
-  subtitle.textContent = 'Amp Sim 3 · 可在下面直接套用经典 clean / chime / crunch / J-rock 预设，然后继续微调旋钮。'
+  subtitle.textContent = t('toneLabels.subtitle')
 
   root.append(heading, title, subtitle)
   return root
@@ -75,21 +76,21 @@ function createPresetSection({
   root.className = 'panel-section tone-preset-section'
 
   const heading = document.createElement('h2')
-  heading.textContent = '预设'
+  heading.textContent = t('toneLabels.presets_heading')
 
   const row = document.createElement('div')
   row.className = 'fx-screen-row tone-preset-row'
 
   const label = document.createElement('span')
   label.className = 'fx-screen-label'
-  label.textContent = '风格'
+  label.textContent = t('toneLabels.style')
 
   const select = document.createElement('select')
   select.className = 'fx-screen-select'
 
   const customOption = document.createElement('option')
   customOption.value = ''
-  customOption.textContent = '自定义 / Manual'
+  customOption.textContent = t('toneLabels.custom')
   select.appendChild(customOption)
 
   GUITAR_TONE_PRESETS.forEach((preset) => {
@@ -111,11 +112,11 @@ function createPresetSection({
 
   const desc = document.createElement('div')
   desc.className = 'tone-preset-description'
-  desc.textContent = activePreset?.description || '这里的预设提供 Blackface / VOX / Plexi / Tele / God knows... 等多个吉他起点，应用后仍然可以继续手动微调。'
+  desc.textContent = activePreset?.description || t('toneLabels.preset_desc_default')
 
   const source = document.createElement('div')
   source.className = 'tone-preset-source'
-  source.textContent = activePreset?.sourceSummary || '思路来自公开可考的演奏者 / 器材信息与常见风格音色区间，再映射到当前 Amp Sim 3 控件。'
+  source.textContent = activePreset?.sourceSummary || t('toneLabels.preset_source_default')
 
   root.append(heading, row, desc, source)
   return root
@@ -142,17 +143,17 @@ export class TrackTonePanelView {
     panel.classList.add('tone-panel')
 
     if (!project) {
-      panel.appendChild(createEmptyState('音色', '导入项目后，这里会显示吉他音色旋钮和可直接套用的预设。'))
+      panel.appendChild(createEmptyState(t('toneLabels.empty_title'), t('toneLabels.empty_no_project')))
       return false
     }
 
     if (!selectedTrack) {
-      panel.appendChild(createEmptyState('音色', '先选中一条轨道，再调整对应的吉他音色。'))
+      panel.appendChild(createEmptyState(t('toneLabels.empty_title'), t('toneLabels.empty_no_track')))
       return false
     }
 
     if (isAudioTrack(selectedTrack) || !supportsTrackGuitarToneSource(selectedTrack.playbackState?.assignedSourceId)) {
-      panel.appendChild(createEmptyState('音色', '当前仅对分配为吉他的 MIDI 轨开放这一组音色参数。'))
+      panel.appendChild(createEmptyState(t('toneLabels.empty_title'), t('toneLabels.empty_unsupported')))
       return false
     }
 

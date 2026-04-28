@@ -1,3 +1,5 @@
+import { t } from '../../i18n/index.js'
+
 const DEFAULT_TIME_SIGNATURE = [4, 4]
 
 function resolveBarStepSeconds(project) {
@@ -22,7 +24,7 @@ export function createTransportStepHandler({
     })
     const project = store.getProject()
     if (!project) {
-      view.setStatus('请先导入 MIDI')
+      view.setStatus(t('hostStatus.import_midi_first'))
       return false
     }
 

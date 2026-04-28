@@ -11,6 +11,7 @@ import {
   toggleIdsInSelection,
   translateSelectedNotes,
 } from './instrumentEditorSelection.js'
+import { t } from '../../i18n/index.js'
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 const DEFAULT_BEAT_WIDTH = 40
@@ -339,7 +340,7 @@ export class InstrumentEditorView {
       : this.state.notes
 
     this.state.trackId = nextTrackId
-    this.state.trackName = track.name || '未命名轨道'
+    this.state.trackName = track.name || t('instrumentEditor.track_default')
     this.state.ppq = ppq
     this.state.tempoData = nextTempoData
     this.state.baseDurationTicks = nextBaseDurationTicks
@@ -499,7 +500,7 @@ export class InstrumentEditorView {
     this.state.loadedSignature = buildNoteSignature(this.state.notes)
     this._syncDirtyState()
     this._renderControls()
-    this._setMetaText('已保存')
+    this._setMetaText(t('instrumentEditor.meta.saved'))
   }
 
   isDirty() {
@@ -562,28 +563,28 @@ export class InstrumentEditorView {
 
     const stepPrevButton = this._createTransportButton(
       'prev',
-      '后退一小节',
+      t('instrumentEditor.transport.prev'),
       () => this.handlers.onInstrumentEditorTransportStep?.(-1),
     )
     const playButton = this._createTransportButton(
       'play',
-      '播放',
+      t('instrumentEditor.transport.play'),
       () => this.handlers.onInstrumentEditorPlay?.(),
     )
     const stepNextButton = this._createTransportButton(
       'next',
-      '前进一小节',
+      t('instrumentEditor.transport.next'),
       () => this.handlers.onInstrumentEditorTransportStep?.(1),
     )
     const recordButton = this._createTransportButton(
       'record',
-      '开始 MIDI 录制',
+      t('instrumentEditor.transport.record_start'),
       () => this.handlers.onInstrumentEditorRecordStart?.(),
       'is-record',
     )
     const stopRecordButton = this._createTransportButton(
       'stop',
-      '停止 MIDI 录制',
+      t('instrumentEditor.transport.record_stop'),
       () => this.handlers.onInstrumentEditorRecordStop?.(),
     )
     transport.append(stepPrevButton, playButton, stepNextButton, recordButton, stopRecordButton)
@@ -595,8 +596,9 @@ export class InstrumentEditorView {
       const button = document.createElement('button')
       button.type = 'button'
       button.className = 'instrument-editor-tool'
-      button.setAttribute('aria-label', `${label} (快捷键: ${shortcutKey.toUpperCase()})`)
-      button.title = `${label}（快捷键: ${shortcutKey.toUpperCase()}）`
+      const upperKey = shortcutKey.toUpperCase()
+      button.setAttribute('aria-label', t('instrumentEditor.tooltip.tool_aria', { label, key: upperKey }))
+      button.title = t('instrumentEditor.tooltip.tool', { label, key: upperKey })
       button.appendChild(createToolIcon(name))
       const badge = document.createElement('span')
       badge.className = 'instrument-editor-tool-key'
@@ -608,9 +610,9 @@ export class InstrumentEditorView {
       })
       return button
     }
-    const selectButton = buildTool('select', '选择', 'v')
-    const brushButton = buildTool('brush', '画笔', 'b')
-    const eraserButton = buildTool('eraser', '橡皮', 'e')
+    const selectButton = buildTool('select', t('instrumentEditor.tools.select'), 'v')
+    const brushButton = buildTool('brush', t('instrumentEditor.tools.brush'), 'b')
+    const eraserButton = buildTool('eraser', t('instrumentEditor.tools.eraser'), 'e')
 
     tools.append(selectButton, brushButton, eraserButton)
 
@@ -620,7 +622,7 @@ export class InstrumentEditorView {
     const saveButton = document.createElement('button')
     saveButton.type = 'button'
     saveButton.className = 'panel-action-btn'
-    saveButton.textContent = '保存'
+    saveButton.textContent = t('instrumentEditor.save')
     saveButton.addEventListener('click', () => this.handlers.onInstrumentEditorSave?.())
 
     actions.append(saveButton)
@@ -634,7 +636,7 @@ export class InstrumentEditorView {
 
     const status = document.createElement('span')
     status.className = 'instrument-editor-meta-chip'
-    status.textContent = '未保存'
+    status.textContent = t('instrumentEditor.meta.unsaved')
 
     meta.append(snap, status)
     toolbar.append(transport, tools, actions, meta)
@@ -806,7 +808,7 @@ export class InstrumentEditorView {
     this.refs.brushButton.classList.toggle('active', this.state.tool === 'brush')
     this.refs.eraserButton.classList.toggle('active', this.state.tool === 'eraser')
     this.refs.playButton.classList.toggle('is-playing', this.state.playbackActive)
-    this.refs.playButton.title = this.state.playbackActive ? '暂停' : '播放'
+    this.refs.playButton.title = this.state.playbackActive ? t('instrumentEditor.transport.pause') : t('instrumentEditor.transport.play')
     this.refs.playButton.setAttribute('aria-label', this.refs.playButton.title)
     if (this.refs.gridViewport) {
       this.refs.gridViewport.dataset.tool = this.state.tool
@@ -815,7 +817,9 @@ export class InstrumentEditorView {
     this.refs.recordButton.classList.toggle('is-recording', this.state.recording)
     this.refs.stopRecordButton.disabled = !this.state.recording
     this.refs.saveButton.disabled = !this.state.dirty && !this.state.recording
-    this._setMetaText(this.state.recording ? '录制中' : (this.state.dirty ? '未保存更改' : '已保存'))
+    this._setMetaText(this.state.recording
+      ? t('instrumentEditor.meta.recording')
+      : (this.state.dirty ? t('instrumentEditor.meta.unsaved_changes') : t('instrumentEditor.meta.saved')))
   }
 
   _renderRuler(force = false) {

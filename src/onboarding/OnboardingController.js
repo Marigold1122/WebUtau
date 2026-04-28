@@ -3,6 +3,7 @@ import { hasCompleted, markCompleted, findTrackRowByBranch, resolveBody } from '
 import { applyPopoverPosition, applySpotlight } from './onboardingLayout.js'
 import { installAdvanceListener } from './onboardingAdvance.js'
 import { replayEntryAnimations } from './onboardingEffects.js'
+import { onLocaleChange, t } from '../i18n/index.js'
 
 const TARGET_RETRY_INTERVAL_MS = 300
 const TARGET_RETRY_MAX = 20
@@ -85,16 +86,16 @@ export class OnboardingController {
       <div class="wu-onboarding__backdrop"></div>
       <div class="wu-onboarding__spotlight"></div>
       <div class="wu-onboarding__popover">
-        <button type="button" class="wu-onboarding__skip" data-action="skip" aria-label="跳过所有">跳过所有</button>
+        <button type="button" class="wu-onboarding__skip" data-action="skip" aria-label="${t('onboardingUI.skip_all')}">${t('onboardingUI.skip_all')}</button>
         <div class="wu-onboarding__body"></div>
         <div class="wu-onboarding__footer">
           <div class="wu-onboarding__dots"></div>
           <div class="wu-onboarding__nav">
-            <button type="button" class="wu-onboarding__btn wu-onboarding__btn--ghost" data-action="prev">上一步</button>
-            <button type="button" class="wu-onboarding__btn wu-onboarding__btn--primary" data-action="next">下一步</button>
+            <button type="button" class="wu-onboarding__btn wu-onboarding__btn--ghost" data-action="prev">${t('onboardingUI.prev')}</button>
+            <button type="button" class="wu-onboarding__btn wu-onboarding__btn--primary" data-action="next">${t('onboardingUI.next')}</button>
           </div>
         </div>
-        <div class="wu-onboarding__signature">— 凉宫春日开发组</div>
+        <div class="wu-onboarding__signature">${t('onboardingUI.signature')}</div>
         <div class="wu-onboarding__bow" aria-hidden="true"></div>
       </div>
     `
@@ -115,6 +116,18 @@ export class OnboardingController {
     this._installDrag()
     window.addEventListener('resize', this._onResize)
     window.addEventListener('scroll', this._onResize, true)
+    // locale 切换时整面重新渲染，确保 body / 按钮文字都跟上
+    this._stopLocaleWatch = onLocaleChange(() => {
+      if (!this._mounted) return
+      const sigEl = this._popover?.querySelector('.wu-onboarding__signature')
+      if (sigEl) sigEl.textContent = t('onboardingUI.signature')
+      if (this._skipBtn) {
+        this._skipBtn.textContent = t('onboardingUI.skip_all')
+        this._skipBtn.setAttribute('aria-label', t('onboardingUI.skip_all'))
+      }
+      if (this._prevBtn) this._prevBtn.textContent = t('onboardingUI.prev')
+      this._render()
+    })
     this._mounted = true
   }
 
@@ -162,6 +175,10 @@ export class OnboardingController {
     this._uninstallDrag()
     window.removeEventListener('resize', this._onResize)
     window.removeEventListener('scroll', this._onResize, true)
+    if (this._stopLocaleWatch) {
+      try { this._stopLocaleWatch() } catch (_e) {}
+      this._stopLocaleWatch = null
+    }
     if (this._rectTimer) {
       cancelAnimationFrame(this._rectTimer)
       this._rectTimer = null
@@ -189,7 +206,7 @@ export class OnboardingController {
     this._renderProgress(screen.stepNum)
 
     this._prevBtn.disabled = this._index === 0
-    this._nextBtn.textContent = screen.isLast ? '完成' : '下一步'
+    this._nextBtn.textContent = screen.isLast ? t('onboardingUI.finish') : t('onboardingUI.next')
     this._popover.classList.toggle('wu-onboarding__popover--glow', screen.highlight === 'self')
 
     this._userDragged = false

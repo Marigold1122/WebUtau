@@ -20,6 +20,7 @@ import {
 } from '../ai/lyricApiKeyStore.js'
 import { DAILY_LIMIT_DEFAULT, getQuotaSnapshot } from '../ai/lyricUsageQuota.js'
 import { openLyricAIKeyDialog } from './LyricAIKeyDialog.js'
+import { t } from '../../i18n/index.js'
 
 export class QuickLyricPanel {
   constructor() {
@@ -110,7 +111,7 @@ export class QuickLyricPanel {
     this._header = header
     const title = document.createElement('span')
     title.className = 'quick-lyric-title'
-    title.textContent = '快速填词'
+    title.textContent = t('quickLyric.title')
     this._btnClose = document.createElement('button')
     this._btnClose.type = 'button'
     this._btnClose.className = 'quick-lyric-close'
@@ -122,7 +123,7 @@ export class QuickLyricPanel {
     this._textarea = document.createElement('textarea')
     this._textarea.className = 'quick-lyric-textarea'
     this._textarea.spellcheck = false
-    this._textarea.placeholder = '在此编辑歌词，一个字对应一个音符…'
+    this._textarea.placeholder = t('quickLyric.placeholder')
     this._textarea.addEventListener('input', () => {
       // 内容变动后，重置解析状态
       this._parsedLyrics = null
@@ -147,13 +148,13 @@ export class QuickLyricPanel {
     this._btnParse = document.createElement('button')
     this._btnParse.type = 'button'
     this._btnParse.className = 'modal-btn secondary'
-    this._btnParse.textContent = '解析'
+    this._btnParse.textContent = t('quickLyric.parse')
     this._btnParse.addEventListener('click', () => this._handleParse())
     this._btnSave = document.createElement('button')
     this._btnSave.type = 'button'
     this._btnSave.className = 'modal-btn primary'
     this._btnSave.dataset.tour = 'quick-lyric-save'
-    this._btnSave.textContent = '保存'
+    this._btnSave.textContent = t('quickLyric.save')
     this._btnSave.disabled = true
     this._btnSave.addEventListener('click', () => this._handleSave())
     actions.append(this._btnFix, this._btnParse, this._btnSave)
@@ -181,7 +182,7 @@ export class QuickLyricPanel {
     toggleInput.className = 'quick-lyric-ai-toggle-input'
     const toggleText = document.createElement('span')
     toggleText.className = 'quick-lyric-ai-toggle-text'
-    toggleText.innerHTML = '<span class="quick-lyric-ai-icon" aria-hidden="true">✨</span> 启用 AI 协助填词'
+    toggleText.innerHTML = `<span class="quick-lyric-ai-icon" aria-hidden="true">✨</span> ${t('quickLyric.ai.enable')}`
     toggleRow.append(toggleInput, toggleText)
     this._aiToggle = toggleInput
     toggleInput.addEventListener('change', () => {
@@ -199,21 +200,21 @@ export class QuickLyricPanel {
 
     const themeLabel = document.createElement('div')
     themeLabel.className = 'quick-lyric-ai-label'
-    themeLabel.textContent = '主题 / 情绪'
+    themeLabel.textContent = t('quickLyric.ai.theme_label')
     const themeInput = document.createElement('textarea')
     themeInput.className = 'quick-lyric-ai-theme'
-    themeInput.placeholder = '例如：夏夜河边离别，淡淡感伤'
+    themeInput.placeholder = t('quickLyric.ai.theme_placeholder')
     themeInput.rows = 2
     themeInput.addEventListener('keydown', (e) => e.stopPropagation())
     this._aiThemeInput = themeInput
 
     const styleLabel = document.createElement('div')
     styleLabel.className = 'quick-lyric-ai-label'
-    styleLabel.textContent = '风格（可选）'
+    styleLabel.textContent = t('quickLyric.ai.style_label')
     const styleInput = document.createElement('input')
     styleInput.type = 'text'
     styleInput.className = 'quick-lyric-ai-style'
-    styleInput.placeholder = '例如：古风 / 流行 / 电子 / 民谣'
+    styleInput.placeholder = t('quickLyric.ai.style_placeholder')
     styleInput.addEventListener('keydown', (e) => e.stopPropagation())
     this._aiStyleInput = styleInput
 
@@ -226,7 +227,7 @@ export class QuickLyricPanel {
     const btnConfig = document.createElement('button')
     btnConfig.type = 'button'
     btnConfig.className = 'quick-lyric-ai-config-btn'
-    btnConfig.textContent = '⚙ 用我自己的 API key'
+    btnConfig.textContent = t('quickLyric.ai.btn_config')
     btnConfig.addEventListener('click', (event) => {
       event.preventDefault()
       this._openAPIKeyDialog()
@@ -235,7 +236,7 @@ export class QuickLyricPanel {
     const btnGenerate = document.createElement('button')
     btnGenerate.type = 'button'
     btnGenerate.className = 'quick-lyric-ai-generate modal-btn primary'
-    btnGenerate.textContent = '✨ 生成歌词'
+    btnGenerate.textContent = t('quickLyric.ai.btn_generate')
     btnGenerate.addEventListener('click', () => this._handleAIGenerate())
     this._aiBtnGenerate = btnGenerate
     footer.append(quotaEl, btnConfig, btnGenerate)
@@ -253,18 +254,20 @@ export class QuickLyricPanel {
     // 解密期间面板可能已经关闭——避免写到悬空 ref
     if (!this._aiQuotaEl) return
     if (userKeyPresent) {
-      const where = getStorageKindLabel() === 'desktop-keychain' ? '系统钥匙库' : '浏览器加密存储'
-      this._aiQuotaEl.textContent = `· 已用自己的 API key（存于${where}，直连厂商不经过我们服务器）`
+      const where = getStorageKindLabel() === 'desktop-keychain'
+        ? t('quickLyric.ai.store_keychain')
+        : t('quickLyric.ai.store_browser')
+      this._aiQuotaEl.textContent = t('quickLyric.ai.quota_using_user_key', { store: where })
       this._aiQuotaEl.classList.add('is-unlimited')
       return
     }
     this._aiQuotaEl.classList.remove('is-unlimited')
     const q = getQuotaSnapshot()
     if (q.remaining > 0) {
-      this._aiQuotaEl.textContent = `· 今日剩余 ${q.remaining} / ${q.limit} 次`
+      this._aiQuotaEl.textContent = t('quickLyric.ai.quota_remaining', { remaining: q.remaining, limit: q.limit })
       this._aiQuotaEl.classList.toggle('is-low', q.remaining <= 1)
     } else {
-      this._aiQuotaEl.textContent = `· 今日次数已用完（${q.limit}/${q.limit}），可填自己的 API key 不限`
+      this._aiQuotaEl.textContent = t('quickLyric.ai.quota_exhausted', { limit: q.limit })
       this._aiQuotaEl.classList.add('is-low')
     }
   }
@@ -272,21 +275,21 @@ export class QuickLyricPanel {
   async _handleAIGenerate() {
     if (this._aiBusy) return
     if (!this._snapshot) {
-      this._setStatus('请先选择有 MIDI 的轨道', 'error')
+      this._setStatus(t('quickLyric.ai.pick_track_first'), 'error')
       return
     }
     const theme = this._aiThemeInput?.value?.trim()
     if (!theme) {
       this._aiThemeInput?.focus()
-      this._setStatus('请填写主题 / 情绪', 'error')
+      this._setStatus(t('quickLyric.ai.need_theme'), 'error')
       return
     }
     const style = this._aiStyleInput?.value?.trim() || ''
 
     this._aiBusy = true
     this._aiBtnGenerate.disabled = true
-    this._aiBtnGenerate.textContent = '生成中…'
-    this._setStatus('AI 正在写词，可能需要 5-15 秒…', 'info')
+    this._aiBtnGenerate.textContent = t('quickLyric.ai.btn_generating')
+    this._setStatus(t('quickLyric.ai.generating_status'), 'info')
 
     this._aiAbortController = new AbortController()
     const musicStructure = extractMusicStructure(this._snapshot)
@@ -304,7 +307,7 @@ export class QuickLyricPanel {
     this._aiAbortController = null
     if (this._aiBtnGenerate) {
       this._aiBtnGenerate.disabled = false
-      this._aiBtnGenerate.textContent = '✨ 生成歌词'
+      this._aiBtnGenerate.textContent = t('quickLyric.ai.btn_generate')
     }
     this._refreshAIQuota()
 
@@ -319,40 +322,42 @@ export class QuickLyricPanel {
     this._parsedLyrics = null
     this._btnSave.disabled = true
     this._hideFix()
-    this._setStatus(`✓ AI 生成 ${result.flatChars.length} 字，请点"解析"再"保存"`, 'success')
+    this._setStatus(t('quickLyric.ai.ai_done', { count: result.flatChars.length }), 'success')
   }
 
   _formatAIError(result) {
     const reason = result?.reason
-    // ── 平台路径错误（用户用免费额度时） ──
-    if (reason === 'quota-exceeded') return 'AI 写词：今日次数已用完，可填自己的 API key 不限次数'
-    if (reason === 'invalid-key') return 'AI 写词：平台 API key 无效（管理员问题）'
-    if (reason === 'network-error') return `AI 写词：网络错误（${result.error || '请稍后重试'}）`
-    // ── 直连厂商路径错误（用户用自带 key 时） ──
-    if (reason === 'cors-blocked') {
-      return result.message || 'AI 写词：该厂商不允许浏览器直连，建议换 DeepSeek / 通义 / GLM 或用桌面版'
-    }
-    if (reason === 'invalid-user-key') return 'AI 写词：你的 API key 无效（401），点 ⚙ 重新配置'
-    if (reason === 'user-key-forbidden') return 'AI 写词：你的 API key 被厂商拒绝（403）——可能余额不足或权限受限'
-    if (reason === 'user-key-rate-limited') return 'AI 写词：你的 key 被厂商限流（429），稍后再试'
-    if (reason === 'missing-user-key') return 'AI 写词：用户配置缺 API key，点 ⚙ 重新配置'
-    if (reason === 'missing-user-baseurl') return 'AI 写词：用户配置缺 BaseUrl，点 ⚙ 补全'
-    if (reason === 'missing-user-model') return 'AI 写词：用户配置缺 Model，点 ⚙ 补全'
-    // ── 解析错误（LLM 返回字数对不上等） ──
+    if (reason === 'quota-exceeded') return t('quickLyric.ai.err.quota_exceeded')
+    if (reason === 'invalid-key') return t('quickLyric.ai.err.invalid_key')
+    if (reason === 'network-error') return t('quickLyric.ai.err.network', { detail: result.error || t('quickLyric.ai.err.retry_later') })
+    if (reason === 'cors-blocked') return result.message || t('quickLyric.ai.err.cors')
+    if (reason === 'invalid-user-key') return t('quickLyric.ai.err.invalid_user_key')
+    if (reason === 'user-key-forbidden') return t('quickLyric.ai.err.user_key_forbidden')
+    if (reason === 'user-key-rate-limited') return t('quickLyric.ai.err.user_key_rate_limited')
+    if (reason === 'missing-user-key') return t('quickLyric.ai.err.missing_user_key')
+    if (reason === 'missing-user-baseurl') return t('quickLyric.ai.err.missing_user_baseurl')
+    if (reason === 'missing-user-model') return t('quickLyric.ai.err.missing_user_model')
     if (reason === 'parse-failed') {
       const sub = result.parseReason
       if (sub === 'syllable-mismatch') {
-        return `AI 写词：字数对不上音符数，建议重试或换个主题（${result.details?.phraseIndex} 句应 ${result.details?.expected} 字，AI 给了 ${result.details?.actual} 字）`
+        return t('quickLyric.ai.err.syllable_mismatch', {
+          phrase: result.details?.phraseIndex,
+          expected: result.details?.expected,
+          actual: result.details?.actual,
+        })
       }
       if (sub === 'phrase-count-mismatch') {
-        return `AI 写词：句数对不上（应 ${result.details?.expected}，AI 给 ${result.details?.actual}），重试一次`
+        return t('quickLyric.ai.err.phrase_count_mismatch', {
+          expected: result.details?.expected,
+          actual: result.details?.actual,
+        })
       }
-      return `AI 写词：解析失败（${sub}），重试一次`
+      return t('quickLyric.ai.err.parse_failed', { sub })
     }
     if (typeof reason === 'string' && reason.startsWith('http-')) {
-      return `AI 写词：服务器错误 ${reason}，${result.message || '请稍后重试'}`
+      return t('quickLyric.ai.err.http', { code: reason, message: result.message || t('quickLyric.ai.err.retry_later') })
     }
-    return `AI 写词：${result?.message || '生成失败，请重试'}`
+    return t('quickLyric.ai.err.generic', { message: result?.message || t('quickLyric.ai.err.generate_failed') })
   }
 
   // 用自定义模态弹窗替代 window.prompt/confirm——后者在 Tauri webview 里
@@ -364,27 +369,27 @@ export class QuickLyricPanel {
     const result = await openLyricAIKeyDialog({ initial: cur, isDesktop })
 
     if (result.action === 'cancel') {
-      this._setStatus('已取消配置 API key', 'info')
+      this._setStatus(t('quickLyric.ai.cfg_canceled'), 'info')
       return
     }
     if (result.action === 'clear') {
       clearUserApiConfig()
       await this._refreshAIQuota()
-      this._setStatus('已清除自定义 API key，回到平台默认（每日 5 次）', 'info')
+      this._setStatus(t('quickLyric.ai.cfg_cleared', { limit: DAILY_LIMIT_DEFAULT }), 'info')
       return
     }
     if (result.action === 'save' && result.config) {
       try {
         await setUserApiConfig(result.config)
       } catch (error) {
-        this._setStatus(`保存失败：${error?.message || '存储出错'}`, 'error')
+        this._setStatus(t('quickLyric.ai.cfg_save_failed', { message: error?.message || t('quickLyric.ai.cfg_storage_error') }), 'error')
         return
       }
       await this._refreshAIQuota()
       this._setStatus(
         isDesktop
-          ? '已保存到系统钥匙库（OS 级加密，浏览器扩展碰不到）。生成时直连厂商'
-          : '已保存（浏览器加密存储）。生成时浏览器直连厂商，不经过我们服务器',
+          ? t('quickLyric.ai.cfg_saved_keychain')
+          : t('quickLyric.ai.cfg_saved_browser'),
         'success',
       )
     }
@@ -462,7 +467,7 @@ export class QuickLyricPanel {
     )
     this._textarea.value = lines.join('\n')
     const totalNotes = phrases.reduce((sum, p) => sum + (p.notes?.length || 0), 0)
-    this._setStatus(`共 ${totalNotes} 个音符`, 'info')
+    this._setStatus(t('quickLyric.note_count', { count: totalNotes }), 'info')
   }
 
   /** 解析用户输入：去空白 → (日语时汉字→假名) → 按字拆 → 验数量 → 重排分句换行 */
@@ -476,14 +481,14 @@ export class QuickLyricPanel {
 
     // 日语时自动将汉字转换为假名
     if (this._isJapanese() && /[\u4e00-\u9fff]/.test(raw)) {
-      this._setStatus('正在转换汉字为假名…', 'info')
+      this._setStatus(t('quickLyric.converting_kanji'), 'info')
       this._btnParse.disabled = true
       try {
         const { convertKanjiToKana } = await import('../util/kanjiToKana.js')
         raw = await convertKanjiToKana(raw)
         raw = raw.replace(/\s/g, '')
       } catch (error) {
-        this._setStatus(`汉字转换失败: ${error?.message || '未知错误'}`, 'error')
+        this._setStatus(t('quickLyric.convert_failed', { message: error?.message || t('quickLyric.unknown_error') }), 'error')
         this._btnParse.disabled = false
         return
       }
@@ -501,7 +506,7 @@ export class QuickLyricPanel {
       chars = [...raw] // 支持 Unicode 代理对
     }
     if (chars.length === 0) {
-      this._setStatus('歌词为空', 'error')
+      this._setStatus(t('quickLyric.empty'), 'error')
       return
     }
     // 无论是否匹配，都按分句换行重排，方便用户查看对齐效果
@@ -518,20 +523,20 @@ export class QuickLyricPanel {
     this._textarea.value = lines.join('\n')
 
     if (chars.length !== totalNotes) {
-      this._setStatus(`字数不匹配：输入 ${chars.length} 字，需要 ${totalNotes} 字`, 'error')
+      this._setStatus(t('quickLyric.char_count_mismatch', { actual: chars.length, expected: totalNotes }), 'error')
       this._parsedLyrics = null
       this._btnSave.disabled = true
       if (chars.length < totalNotes) {
-        this._showFix('补齐占位', chars, totalNotes, noteCounts)
+        this._showFix(t('quickLyric.fix_pad'), chars, totalNotes, noteCounts)
       } else {
-        this._showFix('截断多余', chars, totalNotes, noteCounts)
+        this._showFix(t('quickLyric.fix_trim'), chars, totalNotes, noteCounts)
       }
       return
     }
     this._hideFix()
 
     this._parsedLyrics = chars
-    this._setStatus(`解析成功：${chars.length} 字 / ${phrases.length} 句`, 'success')
+    this._setStatus(t('quickLyric.parse_ok', { chars: chars.length, phrases: phrases.length }), 'success')
     this._btnSave.disabled = false
   }
 
@@ -558,17 +563,17 @@ export class QuickLyricPanel {
       }
     }
     if (edits.length === 0) {
-      this._setStatus('歌词没有变化', 'info')
+      this._setStatus(t('quickLyric.no_change'), 'info')
       return
     }
 
     this._btnSave.disabled = true
-    this._setStatus(`正在保存 ${edits.length} 处修改…`, 'info')
+    this._setStatus(t('quickLyric.saving', { count: edits.length }), 'info')
 
     try {
       await this._onSave?.(edits)
     } catch (error) {
-      this._setStatus(`保存失败: ${error?.message || '未知错误'}`, 'error')
+      this._setStatus(t('quickLyric.save_failed', { message: error?.message || t('quickLyric.unknown_error') }), 'error')
       this._btnSave.disabled = false
       return
     }
@@ -581,7 +586,7 @@ export class QuickLyricPanel {
         charIndex++
       }
     }
-    this._setStatus(`已保存 ${edits.length} 处修改`, 'success')
+    this._setStatus(t('quickLyric.saved', { count: edits.length }), 'success')
     this._parsedLyrics = null
   }
 

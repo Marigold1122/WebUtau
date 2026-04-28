@@ -1,6 +1,8 @@
 import { createVoiceRuntimeApp } from './app/createVoiceRuntimeApp.js'
 import { createRuntimeBridge } from './bridge/createRuntimeBridge.js'
 import { applyPianoRollTheme } from './pianoRollThemeBridge.js'
+import '../i18n/i18n-overrides.css'
+import { applyI18n, onLocaleChange, setLocale } from '../i18n/index.js'
 
 let bridge = null
 
@@ -99,3 +101,15 @@ window.addEventListener('message', (event) => {
 })
 // 启动时主动给 host 发 ready——保证 host 后续切主题时能找到 iframe 推消息
 try { window.parent?.postMessage({ type: 'webutau:theme:ready' }, '*') } catch (_e) {}
+
+// i18n：先扫一次自身 DOM（iframe 内的 voice-runtime.html）
+applyI18n(document)
+onLocaleChange(() => applyI18n(document))
+window.addEventListener('message', (event) => {
+  if (event?.data?.type !== 'webutau:locale') return
+  if (setLocale(event.data.locale, { persist: false })) {
+    applyI18n(document)
+  }
+})
+// 通知 host：iframe 已准备好接收 locale 消息
+try { window.parent?.postMessage({ type: 'webutau:locale:ready' }, '*') } catch (_e) {}

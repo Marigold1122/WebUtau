@@ -8,10 +8,13 @@
 //      - 不能覆盖原文件，但保证全平台可用
 
 import { WEBUTAU_PROJECT_EXTENSION, WEBUTAU_PROJECT_MIME_TYPE } from './projectFile.js'
+import { t } from '../../i18n/index.js'
 
-const FSA_PICKER_TYPE = {
-  description: 'WebUtau 工程',
-  accept: { [WEBUTAU_PROJECT_MIME_TYPE]: [WEBUTAU_PROJECT_EXTENSION] },
+function getFsaPickerType() {
+  return {
+    description: 'WebUtau project',
+    accept: { [WEBUTAU_PROJECT_MIME_TYPE]: [WEBUTAU_PROJECT_EXTENSION] },
+  }
 }
 
 export function supportsFileSystemAccessApi() {
@@ -24,7 +27,7 @@ export function supportsFileSystemAccessApi() {
 // 调用方据此判断"是用户主动取消、不是真的出错"
 export class UserCancelledError extends Error {
   constructor() {
-    super('用户取消')
+    super(t('hostStatus.user_cancelled'))
     this.name = 'UserCancelledError'
   }
 }
@@ -37,11 +40,11 @@ function wrapAbort(error) {
 // ===== File System Access API 路径 =====
 
 export async function pickSaveFileHandle({ suggestedName = `untitled${WEBUTAU_PROJECT_EXTENSION}` } = {}) {
-  if (!supportsFileSystemAccessApi()) throw new Error('当前浏览器不支持 File System Access API')
+  if (!supportsFileSystemAccessApi()) throw new Error(t('hostStatus.fs_unsupported'))
   try {
     return await window.showSaveFilePicker({
       suggestedName,
-      types: [FSA_PICKER_TYPE],
+      types: [getFsaPickerType()],
     })
   } catch (error) {
     throw wrapAbort(error)
@@ -49,11 +52,11 @@ export async function pickSaveFileHandle({ suggestedName = `untitled${WEBUTAU_PR
 }
 
 export async function pickOpenFileHandle() {
-  if (!supportsFileSystemAccessApi()) throw new Error('当前浏览器不支持 File System Access API')
+  if (!supportsFileSystemAccessApi()) throw new Error(t('hostStatus.fs_unsupported'))
   try {
     const [handle] = await window.showOpenFilePicker({
       multiple: false,
-      types: [FSA_PICKER_TYPE],
+      types: [getFsaPickerType()],
     })
     return handle || null
   } catch (error) {
@@ -62,7 +65,7 @@ export async function pickOpenFileHandle() {
 }
 
 export async function writeJsonToHandle(handle, jsonString) {
-  if (!handle?.createWritable) throw new Error('文件句柄无效或没有写权限')
+  if (!handle?.createWritable) throw new Error(t('hostStatus.fs_no_write'))
   // 写入前再确认一次权限（句柄可能在长时间持有后失效）
   if (typeof handle.queryPermission === 'function') {
     const permission = await handle.queryPermission({ mode: 'readwrite' })
@@ -80,7 +83,7 @@ export async function writeJsonToHandle(handle, jsonString) {
 }
 
 export async function readJsonFromHandle(handle) {
-  if (!handle?.getFile) throw new Error('文件句柄无效或没有读权限')
+  if (!handle?.getFile) throw new Error(t('hostStatus.fs_no_read'))
   const file = await handle.getFile()
   return file.text()
 }
@@ -147,7 +150,7 @@ export function pickFileViaInput() {
 }
 
 export async function readJsonFromFile(file) {
-  if (!file) throw new Error('未提供文件')
+  if (!file) throw new Error(t('hostStatus.fs_no_file'))
   return file.text()
 }
 

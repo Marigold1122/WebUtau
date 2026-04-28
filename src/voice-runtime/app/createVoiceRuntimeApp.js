@@ -22,6 +22,7 @@ import phraseRenderStateStore from './phraseRenderStateStore.js'
 import { EmbeddedPlaybackMirror } from './embeddedPlaybackMirror.js'
 import { buildRuntimeSnapshot, cloneSnapshot } from './runtimeSnapshot.js'
 import { resolveSingerId, selectRuntimeSnapshotFromImport } from './runtimeImportWorkflow.js'
+import { t } from '../../i18n/index.js'
 
 function getRuntimeRefs() {
   return {
@@ -141,7 +142,7 @@ export function createVoiceRuntimeApp(callbacks = {}) {
     embedded,
     trackId: null,
     trackIndex: null,
-    trackName: '未加载轨道',
+    trackName: t('voiceRuntime.no_track'),
     languageCode: DEFAULT_LANGUAGE_CODE,
     tempoData: null,
   }
@@ -207,7 +208,7 @@ export function createVoiceRuntimeApp(callbacks = {}) {
     pitchEditor.resetHistory?.()
     state.trackId = snapshot.trackId
     state.trackIndex = snapshot.trackIndex ?? null
-    state.trackName = snapshot.trackName || '未命名轨道'
+    state.trackName = snapshot.trackName || t('voiceRuntime.untitled_track')
     state.languageCode = snapshot.languageCode || DEFAULT_LANGUAGE_CODE
     state.tempoData = cloneSnapshot(snapshot.tempoData)
     phraseRenderStateStore.hydrateFromManifest(snapshot.renderManifest)
@@ -218,13 +219,13 @@ export function createVoiceRuntimeApp(callbacks = {}) {
       manifestPhraseCount: snapshot.renderManifest?.phraseStates?.length || 0,
     })
     emitPlaybackState(0)
-    setStatus(`已加载 ${state.trackName} | 等待合成`)
+    setStatus(t('voiceRuntime.track_loaded', { name: state.trackName }))
   }
 
   async function startSynthesis(options = {}) {
     const languageCode = options.languageCode || state.languageCode || DEFAULT_LANGUAGE_CODE
     const phrases = cloneSnapshot(phraseStore.getPhrases()) || []
-    if (phrases.length === 0) throw new Error('当前没有可合成的音符数据')
+    if (phrases.length === 0) throw new Error(t('voiceRuntime.no_notes'))
 
     const tempoData = state.tempoData
     const bpm = tempoData?.tempos?.[0]?.bpm || phraseStore.getBpm() || 120
@@ -234,7 +235,7 @@ export function createVoiceRuntimeApp(callbacks = {}) {
 
     phraseStore.setMidiFile(encodedMidi)
     state.languageCode = languageCode
-    setStatus(`已提交 ${state.trackName} 的合成任务`)
+    setStatus(t('voiceRuntime.submitted', { name: state.trackName }))
     const singerId = options.singerId || await resolveSingerId()
     await renderJobManager.submitMidi(encodedMidi, singerId, languageCode, { noteParams })
   }
@@ -246,7 +247,7 @@ export function createVoiceRuntimeApp(callbacks = {}) {
         snapshot: buildRuntimeSnapshot(state, phraseStore),
       }
     }
-    setStatus(`正在提交 ${state.trackName} 的音符改动...`)
+    setStatus(t('voiceRuntime.submitting_edits', { name: state.trackName }))
     suppressDirtyNotifications += 1
     try {
       lyricEditor.resetHistory?.()
@@ -264,7 +265,7 @@ export function createVoiceRuntimeApp(callbacks = {}) {
   async function importMidiFromFile(file) {
     const snapshot = await selectRuntimeSnapshotFromImport(file)
     if (!snapshot) {
-      setStatus('未找到可用轨道')
+      setStatus(t('voiceRuntime.no_available_track'))
       return
     }
     await loadTrack(snapshot)
@@ -294,7 +295,7 @@ export function createVoiceRuntimeApp(callbacks = {}) {
       })
       return
     }
-    transportControl.togglePlayback('宿主')
+    transportControl.togglePlayback(t('voiceRuntime.host_caller'))
     emitPlaybackState()
   }
 
@@ -309,11 +310,11 @@ export function createVoiceRuntimeApp(callbacks = {}) {
   async function undoEditor() {
     if (pitchEditor.isEnabled?.()) {
       const handled = await pitchEditor.undo?.()
-      if (handled) setStatus(`已撤回 ${state.trackName} 的音高编辑`)
+      if (handled) setStatus(t('voiceRuntime.pitch_undo', { name: state.trackName }))
       return handled
     }
     const handled = await lyricEditor.undo?.()
-    if (handled) setStatus(`已撤回 ${state.trackName} 的歌词编辑`)
+    if (handled) setStatus(t('voiceRuntime.lyric_undo', { name: state.trackName }))
     return handled
   }
 
@@ -332,7 +333,7 @@ export function createVoiceRuntimeApp(callbacks = {}) {
       localCacheCleared: true,
     })
     emitPlaybackState(0)
-    setStatus(embedded ? '运行时已就绪，等待宿主加载轨道' : '系统就绪')
+    setStatus(embedded ? t('voiceRuntime.runtime_ready_embedded') : t('status.ready'))
   }
 
   function bindStandaloneImport() {
@@ -345,11 +346,11 @@ export function createVoiceRuntimeApp(callbacks = {}) {
     const file = event.target.files?.[0]
     if (!file) return
     try {
-      setStatus('正在解析 MIDI...')
+      setStatus(t('voiceRuntime.parsing_midi'))
       await importMidiFromFile(file)
     } catch (error) {
       console.error('MIDI 导入失败:', error)
-      setStatus('MIDI 导入失败')
+      setStatus(t('voiceRuntime.midi_failed'))
     } finally {
       refs.fileInput.value = ''
     }

@@ -1,3 +1,5 @@
+import { t } from '../../i18n/index.js'
+
 function getRefs() {
   return {
     overlay: document.getElementById('track-synthesis-overlay'),
@@ -15,8 +17,8 @@ export class TrackSynthesisOverlay {
   show(trackName, text, options = {}) {
     // 默认标题不再硬编码 "预测音高"：Classic UTAU 不做音高预测，但仍要走相同的
     // preparing/rendering 管线，所以标题用 "准备中" 作为音源无关的通用文案。
-    this.refs.title.textContent = options.title || `${trackName} 准备中`
-    this.refs.text.textContent = text || '准备中...'
+    this.refs.title.textContent = options.title || t('synthesis.track_preparing', { name: trackName })
+    this.refs.text.textContent = text || t('synthesis.preparing')
     const initialPercent = Number.isFinite(options.initialPercent) ? options.initialPercent : 8
     this.refs.fill.style.width = `${Math.max(0, Math.min(100, initialPercent))}%`
     this.refs.overlay.classList.add('is-open')

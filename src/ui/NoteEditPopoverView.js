@@ -12,6 +12,7 @@ import {
   VIBRATO_ADVANCED_FIELDS,
   resolveSharedPresetId,
 } from './noteEditPopoverPresets.js'
+import { t } from '../i18n/index.js'
 
 export function createNoteEditPopoverView(handlers = {}) {
   const refs = {
@@ -45,7 +46,7 @@ export function createNoteEditPopoverView(handlers = {}) {
   const count = document.createElement('span')
   count.className = 'inline-popover-count'
   count.dataset.role = 'count'
-  count.textContent = '0 个'
+  count.textContent = '0'
   refs.countBadge = count
   headerRow.appendChild(count)
 
@@ -54,7 +55,7 @@ export function createNoteEditPopoverView(handlers = {}) {
   boundaryGroup.className = 'inline-popover-btn-group'
   const boundaryLabel = document.createElement('span')
   boundaryLabel.className = 'inline-popover-subheader'
-  boundaryLabel.textContent = '起始连接'
+  boundaryLabel.textContent = t('noteEdit.onset')
   headerRow.appendChild(boundaryLabel)
   for (const { mode, label } of BOUNDARY_META) {
     const btn = document.createElement('button')
@@ -70,9 +71,9 @@ export function createNoteEditPopoverView(handlers = {}) {
   root.appendChild(headerRow)
 
   // ---------- 滑音 ----------
-  const portamentoRow = sectionRow('滑音')
+  const portamentoRow = sectionRow(t('noteEdit.pitchbend'))
   refs.portamentoPreset = select(PORTAMENTO_PRESETS, (value) =>
-    commit(() => handlers.onPortamentoPreset?.(value)), '滑音预设')
+    commit(() => handlers.onPortamentoPreset?.(value)), t('noteEdit.pitchbend_preset'))
   portamentoRow.appendChild(refs.portamentoPreset)
   for (const { field: name, min, max, label } of PORTAMENTO_FIELDS) {
     const input = number(min, max, (value) =>
@@ -86,9 +87,9 @@ export function createNoteEditPopoverView(handlers = {}) {
   root.appendChild(portamentoRow)
 
   // ---------- 颤音预设（空选项 = 关闭） ----------
-  const vibratoHeadRow = sectionRow('颤音')
+  const vibratoHeadRow = sectionRow(t('noteEdit.vibrato'))
   refs.vibratoPreset = select(VIBRATO_PRESETS, (value) =>
-    commit(() => handlers.onVibratoPreset?.(value)), '颤音预设（空 = 关闭）')
+    commit(() => handlers.onVibratoPreset?.(value)), t('noteEdit.vibrato_preset'))
   vibratoHeadRow.appendChild(refs.vibratoPreset)
   root.appendChild(vibratoHeadRow)
 
@@ -120,7 +121,7 @@ export function createNoteEditPopoverView(handlers = {}) {
 
   function sync(state) {
     const { count: selectCount, pitchMode, noteScope, portamento, tuning, vibrato, boundaryMode } = state
-    refs.countBadge.textContent = `${selectCount} 个`
+    refs.countBadge.textContent = String(selectCount)
 
     for (const [mode, btn] of refs.boundaryButtons.entries()) {
       btn.disabled = !(pitchMode && noteScope)
@@ -204,7 +205,7 @@ export function createNoteEditPopoverView(handlers = {}) {
     if (title) el.title = title
     const empty = document.createElement('option')
     empty.value = ''
-    empty.textContent = '预设'
+    empty.textContent = t('noteEdit.preset')
     el.appendChild(empty)
     for (const preset of presets) {
       const option = document.createElement('option')

@@ -1,3 +1,5 @@
+import { t } from '../../i18n/index.js'
+
 export class MenubarTransportView {
   constructor(refs, handlers = {}, options = {}) {
     this.refs = refs
@@ -55,7 +57,7 @@ export class MenubarTransportView {
     const button = this.refs.btnTopPlay
     if (!button) return
     button.classList.toggle('is-playing', this.playbackActive)
-    const title = this.playbackActive ? '暂停' : '播放'
+    const title = this.playbackActive ? t('menubar.transport.pause') : t('menubar.transport.play')
     button.title = title
     button.setAttribute('aria-label', title)
   }
@@ -64,7 +66,7 @@ export class MenubarTransportView {
     const button = this.refs.btnTopRecord
     if (!button) return
     button.classList.toggle('is-recording', Boolean(active))
-    button.title = active ? '停止 MIDI 录制' : '开始 MIDI 录制'
+    button.title = active ? t('instrumentEditor.transport.record_stop') : t('menubar.transport.record')
     button.setAttribute('aria-label', button.title)
     button.setAttribute('aria-pressed', String(Boolean(active)))
   }

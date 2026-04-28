@@ -1,4 +1,5 @@
 import { splitLyrics } from '../utils/splitLyrics.js'
+import { t } from '../i18n/index.js'
 import noteSelection from './NoteSelection.js'
 import contextMenu from './ContextMenu.js'
 import lyricDialog from './LyricDialog.js'
@@ -398,7 +399,7 @@ class PianoRollInputController {
 
     this._state = STATE.CONTEXT_MENU
     contextMenu.show(pos.x, this._wrapperY(pos.y), this._container, [
-      { label: '编辑歌词', action: () => this._openBatchEdit() },
+      { label: t('contextMenu.edit_lyric'), action: () => this._openBatchEdit() },
     ], () => {
       if (this._state === STATE.CONTEXT_MENU) this._state = STATE.READY
     })
@@ -420,7 +421,7 @@ class PianoRollInputController {
       pianoRollNotes.requestDraw()
       if (pitchEditor.canDeletePoint(pointHit.id)) {
         items.push({
-          label: '删除控制点',
+          label: t('contextMenu.delete_point'),
           action: () => {
             pitchEditor.deletePoint(pointHit.id)
               .catch((error) => console.error('[InputController] 删除控制点失败:', error))
@@ -430,28 +431,28 @@ class PianoRollInputController {
       if (pitchEditor.canChangeShape(pointHit.id)) {
         items.push(
           {
-            label: '设为平滑段',
+            label: t('contextMenu.set_smooth'),
             action: () => {
               pitchEditor.setPointShape(pointHit.id, PITCH_POINT_SHAPES.IN_OUT)
                 .catch((error) => console.error('[InputController] 设置平滑段失败:', error))
             },
           },
           {
-            label: '设为线性段',
+            label: t('contextMenu.set_linear'),
             action: () => {
               pitchEditor.setPointShape(pointHit.id, PITCH_POINT_SHAPES.LINEAR)
                 .catch((error) => console.error('[InputController] 设置线性段失败:', error))
             },
           },
           {
-            label: '设为缓入段',
+            label: t('contextMenu.set_ease_in'),
             action: () => {
               pitchEditor.setPointShape(pointHit.id, PITCH_POINT_SHAPES.IN)
                 .catch((error) => console.error('[InputController] 设置缓入段失败:', error))
             },
           },
           {
-            label: '设为缓出段',
+            label: t('contextMenu.set_ease_out'),
             action: () => {
               pitchEditor.setPointShape(pointHit.id, PITCH_POINT_SHAPES.OUT)
                 .catch((error) => console.error('[InputController] 设置缓出段失败:', error))
@@ -465,28 +466,28 @@ class PianoRollInputController {
       if (segmentHit.canChangeShape) {
         items.push(
           {
-            label: '设为平滑段',
+            label: t('contextMenu.set_smooth'),
             action: () => {
               pitchEditor.setSelectedSegmentShape(PITCH_POINT_SHAPES.IN_OUT)
                 .catch((error) => console.error('[InputController] 设置平滑段失败:', error))
             },
           },
           {
-            label: '设为线性段',
+            label: t('contextMenu.set_linear'),
             action: () => {
               pitchEditor.setSelectedSegmentShape(PITCH_POINT_SHAPES.LINEAR)
                 .catch((error) => console.error('[InputController] 设置线性段失败:', error))
             },
           },
           {
-            label: '设为缓入段',
+            label: t('contextMenu.set_ease_in'),
             action: () => {
               pitchEditor.setSelectedSegmentShape(PITCH_POINT_SHAPES.IN)
                 .catch((error) => console.error('[InputController] 设置缓入段失败:', error))
             },
           },
           {
-            label: '设为缓出段',
+            label: t('contextMenu.set_ease_out'),
             action: () => {
               pitchEditor.setSelectedSegmentShape(PITCH_POINT_SHAPES.OUT)
                 .catch((error) => console.error('[InputController] 设置缓出段失败:', error))
@@ -504,7 +505,7 @@ class PianoRollInputController {
     const selectedRange = pitchEditor.getTickRangeForNoteEntries(noteSelection.getSelected())
     if (selectedRange && pitchEditor.hasOriginalPitch()) {
       items.push({
-        label: '恢复所选音高',
+        label: t('contextMenu.restore_selected_pitch'),
         action: () => {
           pitchEditor.restoreRange(selectedRange.startTick, selectedRange.endTick)
             .catch((error) => console.error('[InputController] 恢复所选音高失败:', error))
@@ -514,7 +515,7 @@ class PianoRollInputController {
 
     if (pitchEditor.hasOriginalPitch()) {
       items.push({
-        label: '恢复全部音高',
+        label: t('contextMenu.restore_all_pitch'),
         action: () => {
           pitchEditor.restoreAll()
             .catch((error) => console.error('[InputController] 恢复全部音高失败:', error))

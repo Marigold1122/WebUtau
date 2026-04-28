@@ -17,97 +17,84 @@
  *     { type: 'dom-click', selector, captureBranchAttr? }
  *     { type: 'dom-dblclick-track' }
  *     { type: 'eventbus', event }
- * - body: 字符串 HTML 片段；若为对象 { 'God Knows': html, '海阔天空': html, default: html } 则按分支取
+ * - body: 字符串 HTML 片段；若为函数 { (branch) => string } 则按分支动态生成
+ *
+ * i18n：所有文案现在都从 ../i18n 拉取，运行时动态生成。
  */
+
+import { t } from '../i18n/index.js'
 
 const BRAND_GREEN = '#3ddc84'
 
-/** 分支元数据（Step 2 被点击后设置 state.branch 为对应 key） */
+// 分支元数据 —— vocalTrackLabel / languageLabel 现在按 locale 计算
 export const BRANCH_CONFIG = {
   'God Knows': {
     vocalTrackCandidates: ['轨道10', '轨道 10', 'Track 10', 'vocal', '人声'],
-    vocalTrackLabel: '轨道 10',
-    languageLabel: '日语',
+    get vocalTrackLabel() { return 'Track 10' },
+    get languageLabel() { return t('language.ja') },
   },
   '海阔天空': {
     vocalTrackCandidates: ['主弦律1', '主弦律 1', '主弦律', 'vocal', '人声'],
-    vocalTrackLabel: '主弦律 1',
-    languageLabel: '中文',
+    get vocalTrackLabel() { return 'Lead 1' },
+    get languageLabel() { return t('language.zh') },
   },
 }
 
 export const TOTAL_STEPS = 6
 
-const welcomeBody = `
-  <p>欢迎来到 WebUtau～</p>
-  <p>这是一站式虚拟歌姬工作站，区别于简单的变声处理，您可以使用 WebUtau 来让虚拟歌姬唱出您想要的<b>歌词</b>和<b>旋律</b>。</p>
+const tp = (key, vars) => `<p>${t(key, vars)}</p>`
+
+const welcomeBody = () => `
+  ${tp('onboarding.welcome.p1')}
+  ${tp('onboarding.welcome.p2')}
 `
 
-const importDemoBody = `
-  <p>您可以导入 MIDI 文件来使 WebUtau 获取自定义乐谱，但请先等等。</p>
-  <p>如果您没有使用类似工具的经验，我们<b style="color:${BRAND_GREEN}">强烈建议</b>您点击下方的「God Knows」或「海阔天空」，来通过示例快速体验 WebUtau！</p>
+const importDemoBody = () => `
+  ${tp('onboarding.importDemo.p1')}
+  ${tp('onboarding.importDemo.p2', { accent: BRAND_GREEN })}
 `
 
-const syncImportBody = `
-  <p>加载示例后会弹出「导入时序信息」窗口，点击<b>同步应用</b>按钮以套用示例的节拍与速度。</p>
-`
+const syncImportBody = () => tp('onboarding.syncImport')
+const playBody = () => tp('onboarding.play')
 
-const playBody = `
-  <p>所有轨道的乐器默认都为钢琴，您可以先不急着调整乐器，先点击最上方的播放键来<b>试听</b>一下效果。</p>
-`
-
-const dblclickTrackBody = {
-  'God Knows': `
-    <p>God Knows 的人声轨道是「轨道 10」，您可以通过<b>双击</b>轨道 10 来编辑它。</p>
-  `,
-  '海阔天空': `
-    <p>海阔天空的人声轨道是「主弦律 1」，您可以通过<b>双击</b>主弦律 1 来编辑它。</p>
-  `,
+const dblclickTrackBody = (branch) => {
+  if (branch === '海阔天空') return tp('onboarding.dblclickTrack_alt')
+  return tp('onboarding.dblclickTrack')
 }
 
-const renderVoiceBody = {
-  'God Knows': `
-    <p>然后点击「将该轨道渲染为人声」按钮，来使轨道 10 由钢琴渲染为人声。</p>
-  `,
-  '海阔天空': `
-    <p>然后点击「将该轨道渲染为人声」按钮，来使主弦律 1 由钢琴渲染为人声。</p>
-  `,
+const renderVoiceBody = (branch) => {
+  if (branch === '海阔天空') return tp('onboarding.renderVoice_alt')
+  return tp('onboarding.renderVoice')
 }
 
-const chooseLanguageBody = {
-  'God Knows': `
-    <p>「歌曲语言」推荐您选择<b>日语</b>，如果您没有自己的声库，则暂时只能使用 WebUtau 内置的 yousa 声库。</p>
-    <p>当渲染结束后，再次播放，轨道 10 就会变为人声啦～</p>
-  `,
-  '海阔天空': `
-    <p>「歌曲语言」推荐您选择<b>中文</b>，如果您没有自己的声库，则暂时只能使用 WebUtau 内置的 yousa 声库。</p>
-    <p>当渲染结束后，再次播放，主弦律 1 就会变为人声啦～</p>
-  `,
+const chooseLanguageBody = (branch) => {
+  if (branch === '海阔天空') {
+    return `${tp('onboarding.chooseLanguage.p1_alt')}${tp('onboarding.chooseLanguage.p2_alt')}`
+  }
+  return `${tp('onboarding.chooseLanguage.p1')}${tp('onboarding.chooseLanguage.p2')}`
 }
 
-const waitPredictionBody = `
-  <p>WebUtau 正在根据乐谱<b>预测音高</b>，请稍候…</p>
-  <p>预测完成后，教程会自动进入下一步。</p>
+const waitPredictionBody = () => `
+  ${tp('onboarding.waitPrediction.p1')}
+  ${tp('onboarding.waitPrediction.p2')}
 `
 
-const quickLyricOpenBody = `
-  <p>您会发现，人声并没有唱出歌词，而是使用「a」来代替每一个<b>音</b>。</p>
-  <p>点击「快速填词」按钮，将「a」改为自定义歌词，每个「a」对应一个<b>音/字</b>。</p>
+const quickLyricOpenBody = () => `
+  ${tp('onboarding.quickLyricOpen.p1')}
+  ${tp('onboarding.quickLyricOpen.p2')}
 `
 
-const quickLyricPanelBody = `
-  <p>修改完毕后点击「解析」按钮，如果字数与句数无误，则解析成功。点击「保存」按钮。然后再次播放，虚拟歌姬就会将您的歌词唱出来啦！</p>
+const quickLyricPanelBody = () => tp('onboarding.quickLyricPanel')
+
+const miscBody = () => `
+  ${tp('onboarding.misc.p1')}
+  ${tp('onboarding.misc.p2')}
+  ${tp('onboarding.misc.p3')}
 `
 
-const miscBody = `
-  <p>如需调整音轨的乐器，您可以点击音轨最左侧的<b>虚线圆</b>，来为该音轨选择任意一种乐器。</p>
-  <p>您也可以单击音轨名下方的「M」来<b>静音</b>该音轨，单击「S」来<b>独奏</b>该音轨，单击「FX」来对该音轨进行<b>混响</b>编辑。</p>
-  <p>您还可以在右侧分享链接面板中生成公网链接，转发给朋友，直接通过浏览器打开体验您的作品！</p>
-`
-
-const finishBody = `
-  <p>当一切编辑结束，点击最上方「文件」，即可选择导出 MIDI 文件或是音频。</p>
-  <p>更多高级功能，相信您会在实际使用中慢慢解锁。最后祝您创作出属于您自己的，独一无二的音乐！(*´∀\`)~♥</p>
+const finishBody = () => `
+  ${tp('onboarding.finish.p1')}
+  ${tp('onboarding.finish.p2')}
 `
 
 export const ONBOARDING_SCREENS = [

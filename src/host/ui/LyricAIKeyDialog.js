@@ -16,47 +16,31 @@
 //   if (result.action === 'clear') → 用户点了清除已保存
 //   if (result.action === 'cancel') → 用户取消，无副作用
 
-const PROVIDER_PRESETS = [
-  {
-    id: 'deepseek',
-    name: 'DeepSeek',
-    baseUrl: 'https://api.deepseek.com/v1',
-    model: 'deepseek-chat',
-  },
-  {
-    id: 'qwen',
-    name: '通义 (DashScope)',
-    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-    model: 'qwen-plus',
-  },
-  {
-    id: 'glm',
-    name: '智谱 GLM',
-    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-    model: 'glm-4-flash',
-  },
-  {
-    id: 'kimi',
-    name: '月之暗面 Kimi',
-    baseUrl: 'https://api.moonshot.cn/v1',
-    model: 'moonshot-v1-8k',
-  },
-]
+import { t } from '../../i18n/index.js'
+
+function getProviderPresets() {
+  return [
+    { id: 'deepseek', name: t('lyricKey.vendor.deepseek'), baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
+    { id: 'qwen', name: t('lyricKey.vendor.dashscope'), baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus' },
+    { id: 'glm', name: t('lyricKey.vendor.glm'), baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-flash' },
+    { id: 'kimi', name: t('lyricKey.vendor.kimi'), baseUrl: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k' },
+  ]
+}
 
 function buildSecurityNotice(isDesktop) {
   if (isDesktop) {
     return [
-      '✓ 你的 key 存在系统级密钥库（macOS Keychain / Windows Credential Manager / Linux Secret Service）',
-      '✓ 浏览器引擎、网页 JS、流氓浏览器扩展都无法读到——OS 进程外隔离存储',
-      '✓ 调用时桌面应用直接发到 LLM 厂商服务器，绝不经过 WebUtau 服务器',
-      '⚠ 仍无法防御本机被植入恶意 root 级软件——任何安全方案都防不住',
+      t('lyricKey.safety.desktop_1'),
+      t('lyricKey.safety.desktop_2'),
+      t('lyricKey.safety.desktop_3'),
+      t('lyricKey.safety.desktop_4'),
     ]
   }
   return [
-    '✓ 你的 key 只保存在本浏览器（已 AES-GCM 加密）',
-    '✓ 调用时浏览器直接发到 LLM 厂商，绝不经过 WebUtau 服务器',
-    '⚠ 浏览器侧加密只防 F12 一眼看明文，不防本机木马 / XSS / 流氓扩展',
-    '· 需要绝对安全请用桌面版（系统钥匙库存储）',
+    t('lyricKey.safety.browser_1'),
+    t('lyricKey.safety.browser_2'),
+    t('lyricKey.safety.browser_3'),
+    t('lyricKey.safety.browser_4'),
   ]
 }
 
@@ -68,12 +52,12 @@ export function openLyricAIKeyDialog({ initial = {}, isDesktop = false } = {}) {
     const dialog = document.createElement('div')
     dialog.className = 'lyric-ai-key-dialog'
     dialog.setAttribute('role', 'dialog')
-    dialog.setAttribute('aria-label', 'AI 协作填词配置')
+    dialog.setAttribute('aria-label', t('lyricKey.dialog_aria'))
 
     // 标题
     const title = document.createElement('h2')
     title.className = 'lyric-ai-key-title'
-    title.textContent = isDesktop ? 'AI 写词配置（桌面版）' : 'AI 写词配置（网页版）'
+    title.textContent = isDesktop ? t('lyricKey.dialog_title_desktop') : t('lyricKey.dialog_title_browser')
     dialog.appendChild(title)
 
     // 安全告知 panel
@@ -81,7 +65,7 @@ export function openLyricAIKeyDialog({ initial = {}, isDesktop = false } = {}) {
     noticeWrap.className = 'lyric-ai-key-notice'
     const noticeTitle = document.createElement('div')
     noticeTitle.className = 'lyric-ai-key-notice-title'
-    noticeTitle.textContent = '关于你的 API key 安全'
+    noticeTitle.textContent = t('lyricKey.title')
     noticeWrap.appendChild(noticeTitle)
     buildSecurityNotice(isDesktop).forEach((line) => {
       const p = document.createElement('div')
@@ -96,9 +80,9 @@ export function openLyricAIKeyDialog({ initial = {}, isDesktop = false } = {}) {
     presetRow.className = 'lyric-ai-key-presets'
     const presetLabel = document.createElement('span')
     presetLabel.className = 'lyric-ai-key-presets-label'
-    presetLabel.textContent = '厂商预设：'
+    presetLabel.textContent = t('lyricKey.vendors_label')
     presetRow.appendChild(presetLabel)
-    PROVIDER_PRESETS.forEach((preset) => {
+    getProviderPresets().forEach((preset) => {
       const chip = document.createElement('button')
       chip.type = 'button'
       chip.className = 'lyric-ai-key-preset-chip'
@@ -106,7 +90,7 @@ export function openLyricAIKeyDialog({ initial = {}, isDesktop = false } = {}) {
       chip.addEventListener('click', () => {
         baseUrlInput.value = preset.baseUrl
         modelInput.value = preset.model
-        keyInput.focus() // 聚焦 key 框等待填入
+        keyInput.focus()
       })
       presetRow.appendChild(chip)
     })
@@ -120,22 +104,22 @@ export function openLyricAIKeyDialog({ initial = {}, isDesktop = false } = {}) {
       handleSave()
     })
 
-    const keyField = createField('API Key', 'password', initial.apiKey || '', '请粘贴 LLM 厂商提供的 key')
+    const keyField = createField(t('lyricKey.api_key_label'), 'password', initial.apiKey || '', t('lyricKey.api_key_placeholder'))
     const keyInput = keyField.input
 
     const baseUrlField = createField(
-      'Base URL（OpenAI 兼容路径）',
+      t('lyricKey.base_url_label'),
       'text',
       initial.baseUrl || '',
-      '点上方厂商预设自动填，或手动填写',
+      t('lyricKey.base_url_placeholder'),
     )
     const baseUrlInput = baseUrlField.input
 
     const modelField = createField(
-      '模型名',
+      t('lyricKey.model_label'),
       'text',
       initial.model || '',
-      '例：deepseek-chat / qwen-plus / glm-4-flash',
+      t('lyricKey.model_placeholder'),
     )
     const modelInput = modelField.input
 
@@ -155,33 +139,31 @@ export function openLyricAIKeyDialog({ initial = {}, isDesktop = false } = {}) {
     const btnCancel = document.createElement('button')
     btnCancel.type = 'button'
     btnCancel.className = 'lyric-ai-key-btn lyric-ai-key-btn--ghost'
-    btnCancel.textContent = '取消'
+    btnCancel.textContent = t('lyricKey.cancel')
     btnCancel.addEventListener('click', () => closeWith({ action: 'cancel' }))
 
     const btnClear = document.createElement('button')
     btnClear.type = 'button'
     btnClear.className = 'lyric-ai-key-btn lyric-ai-key-btn--danger'
-    btnClear.textContent = '清除已保存的 key'
+    btnClear.textContent = t('lyricKey.clear')
     btnClear.disabled = !initial.apiKey
     btnClear.addEventListener('click', () => {
       if (!window.confirm) {
-        // 极端情况兜底——直接清
         closeWith({ action: 'clear' })
         return
       }
-      // 用户已经在自定义模态里了，再来一层 confirm 容易卡死，改用模态自己的提示
       errorEl.hidden = false
       errorEl.dataset.tone = 'warn'
-      errorEl.textContent = '再次点击"清除已保存的 key"以确认清除'
+      errorEl.textContent = t('lyricKey.err_confirm_clear')
       btnClear.dataset.confirming = '1'
-      btnClear.textContent = '确认清除？'
+      btnClear.textContent = t('lyricKey.confirm_clear')
       btnClear.addEventListener('click', () => closeWith({ action: 'clear' }), { once: true })
     })
 
     const btnSave = document.createElement('button')
     btnSave.type = 'button'
     btnSave.className = 'lyric-ai-key-btn lyric-ai-key-btn--primary'
-    btnSave.textContent = '保存'
+    btnSave.textContent = t('lyricKey.save')
     btnSave.addEventListener('click', handleSave)
 
     actions.append(btnCancel, btnClear, btnSave)
@@ -190,19 +172,15 @@ export function openLyricAIKeyDialog({ initial = {}, isDesktop = false } = {}) {
     overlay.appendChild(dialog)
     document.body.appendChild(overlay)
 
-    // 入场聚焦：有 initial 时聚焦 key 框，否则聚焦第一个 chip 让用户先选厂商
     requestAnimationFrame(() => {
-      if (initial.apiKey) keyInput.focus()
-      else keyInput.focus()
+      keyInput.focus()
     })
 
-    // ESC 关闭
     const escHandler = (e) => {
       if (e.key === 'Escape') closeWith({ action: 'cancel' })
     }
     document.addEventListener('keydown', escHandler)
 
-    // 点 overlay 空白处关闭（dialog 里的点击不冒泡到这里）
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) closeWith({ action: 'cancel' })
     })
@@ -214,23 +192,22 @@ export function openLyricAIKeyDialog({ initial = {}, isDesktop = false } = {}) {
       const model = modelInput.value.trim()
 
       if (!apiKey) {
-        showError('请填 API key（或点"取消"放弃）')
+        showError(t('lyricKey.err_need_key'))
         keyInput.focus()
         return
       }
       if (!baseUrl) {
-        showError('请填 Base URL（点上方厂商预设自动填）')
+        showError(t('lyricKey.err_need_baseurl'))
         baseUrlInput.focus()
         return
       }
       if (!model) {
-        showError('请填模型名（点上方厂商预设自动填）')
+        showError(t('lyricKey.err_need_model'))
         modelInput.focus()
         return
       }
-      // 简单校验 URL 格式——必须以 http(s):// 开头
       if (!/^https?:\/\//i.test(baseUrl)) {
-        showError('Base URL 必须以 http:// 或 https:// 开头')
+        showError(t('lyricKey.err_baseurl_format'))
         baseUrlInput.focus()
         return
       }

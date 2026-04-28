@@ -4,11 +4,14 @@ import {
 } from '../../project/trackSourceAssignment.js'
 import { isAudioTrack } from '../../project/trackContentType.js'
 import { createTrackSourceIcon } from './TrackSourceIcon.js'
+import { t } from '../../../i18n/index.js'
 
-const MENU_OPTIONS = [
-  { id: null, label: '默认钢琴' },
-  ...TRACK_SOURCE_OPTIONS,
-]
+function getMenuOptions() {
+  return [
+    { id: null, label: t('trackSource.default_piano') },
+    ...TRACK_SOURCE_OPTIONS,
+  ]
+}
 
 function buildOptionButton(track, option, handlers) {
   const button = document.createElement('button')
@@ -43,10 +46,10 @@ export function createTrackSourcePicker(track, options = {}) {
     const trigger = document.createElement('button')
     trigger.type = 'button'
     trigger.className = 'track-source-trigger'
-    trigger.title = '音频轨'
+    trigger.title = t('trackSource.audio_track')
     trigger.disabled = true
-    trigger.setAttribute('aria-label', '音频轨')
-    appendTriggerContent(trigger, 'audio', '音频轨')
+    trigger.setAttribute('aria-label', t('trackSource.audio_track'))
+    appendTriggerContent(trigger, 'audio', t('trackSource.audio_track'))
     picker.appendChild(trigger)
     return picker
   }
@@ -58,14 +61,15 @@ export function createTrackSourcePicker(track, options = {}) {
   const trigger = document.createElement('button')
   trigger.type = 'button'
   trigger.className = 'track-source-trigger'
-  trigger.title = `${hasAssignedSource ? '更换轨道声源' : '为轨道选择声源'}（当前：${currentLabel}）`
-  trigger.setAttribute('aria-label', `轨道声源按钮，当前${currentLabel}`)
+  const titleHead = hasAssignedSource ? t('trackSource.change') : t('trackSource.pick_for_track')
+  trigger.title = `${titleHead}（${t('trackSource.current_prefix', { label: currentLabel })}）`
+  trigger.setAttribute('aria-label', `${titleHead} · ${t('trackSource.current_prefix', { label: currentLabel })}`)
   trigger.setAttribute('aria-haspopup', 'menu')
   trigger.setAttribute('aria-expanded', String(isOpen))
   appendTriggerContent(
     trigger,
     hasAssignedSource ? track.playbackState.assignedSourceId : null,
-    hasAssignedSource ? currentLabel : '添加或更换声源',
+    hasAssignedSource ? currentLabel : t('trackSource.add_or_change'),
   )
   trigger.addEventListener('click', (event) => {
     event.preventDefault()
@@ -78,7 +82,7 @@ export function createTrackSourcePicker(track, options = {}) {
     const menu = document.createElement('div')
     menu.className = 'track-source-menu'
     menu.setAttribute('role', 'menu')
-    MENU_OPTIONS.forEach((option) => {
+    getMenuOptions().forEach((option) => {
       menu.appendChild(buildOptionButton(track, option, { onAssignSource }))
     })
     picker.appendChild(menu)
