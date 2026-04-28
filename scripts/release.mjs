@@ -192,7 +192,9 @@ run(`git commit -m "${tagName}"`)
 
 info(`打注解 tag ${tagName}（注解内容 = 更新日志）`)
 if (!dryRun) {
-  const result = spawnSync('git', ['tag', '-a', tagName, '-F', archivedNotesPath], {
+  // --cleanup=verbatim 保留 Markdown 标题——git 默认的 strip 模式会把所有以 # 开头的行
+  // 当注释删掉，导致 ## / ### 全军覆没（v1.1.2 release 就是这么丢的小标题）
+  const result = spawnSync('git', ['tag', '-a', tagName, '--cleanup=verbatim', '-F', archivedNotesPath], {
     cwd: rootDir,
     stdio: 'inherit',
   })
