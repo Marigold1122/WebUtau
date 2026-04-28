@@ -213,6 +213,8 @@ export function createHostApp() {
         render('reverb-dock-closed')
         return
       }
+      // 打开混音面板时收回编辑器——保持与 toggleReverbDock 一致的互斥策略
+      clearEditorTrackState()
       sessionStore.setReverbDockOpen(true)
       render('master-chain-focus-requested')
       // render 之后 ReverbDockView 会重建 DOM，找到 master chain 模块加高亮
@@ -426,6 +428,8 @@ export function createHostApp() {
     trackMonitorController,
     render,
     view,
+    // 混音面板与编辑器互斥；打开 dock 前先收回编辑器，注入 clearEditorTrackState 让 reverbController 自己决定时机
+    closeEditorPanel: () => clearEditorTrackState(),
   })
   const shortcutRouter = new HostShortcutRouter({
     onTogglePlayback: handlePlay,
@@ -698,6 +702,13 @@ export function createHostApp() {
     const previousEditorTrack = store.getEditorTrack()
     if (previousEditorTrack?.id && previousEditorTrack.id !== track.id) {
       stopPreviewMidiNotes('editor-track-switched')
+    }
+    // 编辑器与混音面板互斥——同时显示意义不大且会争抢工作区高度，所以打开编辑器时静默收起混音面板
+    if (sessionStore.isReverbDockOpen()) {
+      sessionStore.setReverbDockOpen(false)
+    }
+    if (sessionStore.getOpenReverbTrackIds().length > 0) {
+      sessionStore.setOpenReverbTrackIds([])
     }
     store.setEditorTrack(track.id)
     playbackMode.setEditorOpen(track.id)

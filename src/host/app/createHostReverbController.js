@@ -8,6 +8,7 @@ export function createHostReverbController({
   trackMonitorController,
   render,
   view,
+  closeEditorPanel = null,
 }) {
   const trackReverbReturnResumeValues = new Map()
   let projectReverbResumeValue = null
@@ -68,6 +69,8 @@ export function createHostReverbController({
     }
 
     const nextOpen = sessionStore.toggleReverbDock()
+    // 打开 dock 时关闭编辑器——两个面板互斥，避免高度争抢
+    if (nextOpen) closeEditorPanel?.()
     render(nextOpen ? 'reverb-dock-opened' : 'reverb-dock-closed')
     view.setStatus(buildDockStatusText(nextOpen))
     return nextOpen
@@ -82,6 +85,8 @@ export function createHostReverbController({
     const nextDockOpen = sessionStore.getOpenReverbTrackIds().length > 0
       ? sessionStore.setReverbDockOpen(true)
       : sessionStore.setReverbDockOpen(false)
+    // 单轨 fx 让 dock 打开时也走互斥——编辑器若开着会被收回
+    if (nextDockOpen) closeEditorPanel?.()
     render(trackModuleOpen ? 'track-fx-opened' : 'track-fx-closed')
     view.setStatus(trackModuleOpen
       ? buildTrackRackStatusText(track.name, true)

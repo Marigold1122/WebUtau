@@ -190,6 +190,7 @@ export class ShellLayoutView {
     })
     if (this.reverbDockVisible !== reverbDockVisible) {
       this.reverbDockVisible = reverbDockVisible
+      this.workspaceSplitController.setReverbDockVisible(reverbDockVisible)
       this.notifyRuntimeLayoutChanged()
     }
     this.setMidiRecordingEnabled(Boolean(editorTrack) && !isAudioTrack(editorTrack) && viewState?.editorMode === 'note')

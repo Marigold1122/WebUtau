@@ -31,6 +31,23 @@ function ensureReverbDockPanel() {
   return panel
 }
 
+// 拖拽手柄必须紧贴 reverb-dock 上方——dock 是 flex 末项，
+// 把 resizer 插在 dock 之前就能与 panel-resizer 一致地"通过 ns-resize 改 flex 邻项的大小"
+function ensureReverbDockResizer() {
+  let resizer = document.getElementById('reverb-dock-resizer')
+  if (resizer) return resizer
+
+  const dock = ensureReverbDockPanel()
+  if (!dock) return null
+
+  resizer = document.createElement('div')
+  resizer.id = 'reverb-dock-resizer'
+  resizer.className = 'reverb-dock-resizer hidden'
+  resizer.setAttribute('aria-hidden', 'true')
+  dock.insertAdjacentElement('beforebegin', resizer)
+  return resizer
+}
+
 export function createShellLayoutRefs() {
   return {
     workspace: document.getElementById('workspace'),
@@ -89,6 +106,7 @@ export function createShellLayoutRefs() {
     voiceRuntimeFrame: document.getElementById('voice-runtime-frame'),
     instrumentEditorRoot: document.getElementById('instrument-editor-root'),
     reverbDock: ensureReverbDockPanel(),
+    reverbDockResizer: ensureReverbDockResizer(),
     timeDisplay: document.getElementById('time-display'),
   }
 }

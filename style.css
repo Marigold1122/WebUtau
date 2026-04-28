@@ -934,6 +934,7 @@ body {
   display: flex;
   flex-direction: column;
   --track-view-open-height: 180px;
+  --reverb-dock-open-height: 320px;
   background: var(--bg-0);
 }
 
@@ -2072,6 +2073,13 @@ body {
 .panel-resizer:hover, .panel-resizer.active { background: var(--accent-color); opacity: 0.5; }
 .workspace.piano-hidden .panel-resizer { display: none; }
 
+/* 混音面板的拖拽手柄——位于面板上方，沿用 panel-resizer 的视觉与交互 */
+.reverb-dock-resizer {
+  height: 4px; flex-shrink: 0; background: transparent; cursor: ns-resize; transition: background 0.1s;
+}
+.reverb-dock-resizer:hover, .reverb-dock-resizer.active { background: var(--accent-color); opacity: 0.5; }
+.reverb-dock-resizer.hidden { display: none !important; }
+
 /* 底部编辑器区域 */
 .editor-panel {
   flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden;
@@ -2080,8 +2088,8 @@ body {
 .editor-panel.hidden { display: none !important; }
 
 .bottom-fx-panel {
-  height: 252px;
-  flex: 0 0 252px;
+  height: var(--reverb-dock-open-height);
+  flex: 0 0 var(--reverb-dock-open-height);
   background-color: var(--bg-fx-panel);
   border-top: 2px solid #AAA39A;
   display: flex;
