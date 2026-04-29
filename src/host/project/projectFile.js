@@ -6,11 +6,29 @@
 //      防止旧文件里挂着已失效的 server-side ID 反而把状态搞乱
 //   4. assets 内嵌用户导入的音频原始字节（base64），保证工程**自包含**——
 //      在另一台电脑 / 另一份浏览器 profile 里打开，音频也能正常播
+//
+// v1 → v2（2026-04-30）：持久化音高预测结果（prepState + voiceSnapshot.pitchData）。
+// 之前每次加载工程都要重新走一遍音高预测，体验差。现在保留预测，跨会话直接进编辑态。
+// 仍然保留"运行时引用清零"原则——voiceSnapshot.jobId / renderManifest 这些 server
+// 侧失效的部分照常剥掉，只持久化 pitchData 等真正可复用的"内容"
 
 export const WEBUTAU_PROJECT_FORMAT = 'webutau-project'
-export const WEBUTAU_PROJECT_VERSION = 1
+export const WEBUTAU_PROJECT_VERSION = 2
 export const WEBUTAU_PROJECT_EXTENSION = '.webutau'
 export const WEBUTAU_PROJECT_MIME_TYPE = 'application/json'
+
+// voiceSnapshot 持久化前的清洗：保留 pitchData / phrases / encodedMidi 等"基于 MIDI
+// 计算出来的内容"，剔除 server-side jobId 和包含 jobId 的 renderManifest（跨会话失效）。
+// 返回 null 表示"没有可保留的内容"——调用方据此决定是否同步把 prepState 拉回 idle
+function pruneVoiceSnapshot(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return null
+  const cloned = structuredClone(snapshot)
+  delete cloned.jobId        // server 侧任务 ID，下次会话失效
+  delete cloned.renderManifest // 与 track.vocalManifest 重叠 + 含 jobId 引用
+  // pitchData 是这一层最珍贵的——预测出来的 pitchCurve 数组。没有它整个 snapshot 没意义
+  if (!cloned.pitchData?.pitchCurve?.length) return null
+  return cloned
+}
 
 // 凡是依赖运行时上下文（合成任务、渲染状态、bridge 句柄）的字段，加载时都得重置，
 // 不能让旧文件里的过期引用污染新会话。
@@ -18,12 +36,25 @@ function pruneTrack(track) {
   if (!track) return null
   const cloned = structuredClone(track)
   delete cloned.jobRef
-  delete cloned.prepState
   delete cloned.renderState
   delete cloned.vocalManifest
-  delete cloned.voiceSnapshot
   delete cloned.pendingVoiceEditState
   delete cloned.revision
+  // prepState 与 voiceSnapshot 是一对：
+  //   prepState 'ready' 才持久化 voiceSnapshot.pitchData——保证 pitchData 跟当前 notes 同步
+  //   （编辑笔记会把 prepState 重置为 idle；这里以 prepState 状态为权威信号）
+  //   其它情况 voiceSnapshot 一律丢弃，避免序列化过时 pitchData
+  if (cloned.prepState?.status === 'ready') {
+    cloned.voiceSnapshot = pruneVoiceSnapshot(cloned.voiceSnapshot)
+    // 二次一致性校验：prepState 说 ready 但 pitchData 实际缺失（runtime 异常 / 数据丢了）
+    // → 拉回 idle，让下次加载触发重测，比悬空状态安全
+    if (!cloned.voiceSnapshot) {
+      cloned.prepState = { status: 'idle', progress: 0, error: null }
+    }
+  } else {
+    // prepState 非 ready：voiceSnapshot 不带跨会话价值，不存
+    cloned.voiceSnapshot = null
+  }
   if (cloned.voiceConversionState) {
     cloned.voiceConversionState = pruneVoiceConversionState(cloned.voiceConversionState)
   }
@@ -163,12 +194,46 @@ export function deserializeProject(jsonString) {
   if (!parsed.project || typeof parsed.project !== 'object') {
     throw new Error('工程文件不完整：缺少 project 数据')
   }
+  // 反序列化后再做一次"防御性归一化"——保证读到 prepState='ready' 时一定有 pitchData，
+  // 不让损坏 / 手改过的 JSON 让运行时陷入悬空状态。同时给 v1（无 prepState）兜底
+  normalizeLoadedTracks(parsed.project)
   return {
     project: parsed.project,
     projectName: typeof parsed.projectName === 'string' ? parsed.projectName : null,
     savedAt: typeof parsed.savedAt === 'string' ? parsed.savedAt : null,
     sourceVersion: parsed.version,
     audioAssets: parseAssetsPayload(parsed.assets),
+  }
+}
+
+// 加载时归一化每条 track 的 prep / voiceSnapshot 状态——
+// 容忍 v1 老文件（这两字段都没）+ v2 自身可能被手改 / 部分腐烂的边界
+function normalizeLoadedTracks(project) {
+  if (!project || !Array.isArray(project.tracks)) return
+  for (const track of project.tracks) {
+    if (!track || typeof track !== 'object') continue
+    const prep = track.prepState
+    const validPrep = prep && typeof prep === 'object' && typeof prep.status === 'string'
+    const hasPitchCurve = Boolean(
+      track.voiceSnapshot?.pitchData?.pitchCurve?.length,
+    )
+    // v1 文件 / 字段缺失 → 给 idle 默认值
+    if (!validPrep) {
+      track.prepState = { status: 'idle', progress: 0, error: null }
+      track.voiceSnapshot = null
+      continue
+    }
+    // 一致性：prepState 'ready' 必有 pitchCurve，否则降级
+    if (prep.status === 'ready' && !hasPitchCurve) {
+      track.prepState = { status: 'idle', progress: 0, error: null }
+      track.voiceSnapshot = null
+      continue
+    }
+    // 反过来：prepState 非 ready 但 voiceSnapshot 有 pitchCurve（异常，理应被 prune 掉）
+    // → 丢弃 voiceSnapshot，让重测覆盖
+    if (prep.status !== 'ready' && hasPitchCurve) {
+      track.voiceSnapshot = null
+    }
   }
 }
 
