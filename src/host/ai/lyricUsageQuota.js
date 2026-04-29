@@ -45,26 +45,43 @@ export function getQuotaSnapshot({ limit = DAILY_LIMIT_DEFAULT } = {}) {
   }
 }
 
-// 后端响应里如果带回真实剩余量，用这一份覆盖客户端缓存——以后端为准
+// 后端响应里如果带回真实剩余量，用这一份**只增不减**地同步客户端缓存。
+// 为什么不允许向下同步：后端的限速器是纯内存的，重启 / 多副本部署会丢失计数；
+// 这种情况下后端报的 used 可能反而比客户端缓存还小（比如客户端记着 used=2，
+// 重启后第一个请求触发 TryConsume + Refund 后服务端报 used=0）——
+// 直接覆盖会让用户看见"凭空多出来"几次额度，体验和真实限速都对不上。
+// 只允许向上：多设备 / 多浏览器场景下，别的会话消耗的配额能正常反映过来
 export function setQuotaFromServer({ used, remaining, limit }) {
   const today = todayKey()
   const safeLimit = Number.isFinite(limit) && limit > 0 ? limit : DAILY_LIMIT_DEFAULT
-  let safeUsed
+  let serverUsed
   if (Number.isFinite(used)) {
-    safeUsed = Math.max(0, used)
+    serverUsed = Math.max(0, used)
   } else if (Number.isFinite(remaining)) {
-    safeUsed = Math.max(0, safeLimit - remaining)
+    serverUsed = Math.max(0, safeLimit - remaining)
   } else {
-    safeUsed = 0
+    // 服务端没给数 → 啥也不动
+    return getQuotaSnapshot({ limit: safeLimit })
   }
+  const local = getQuotaSnapshot({ limit: safeLimit })
+  const safeUsed = Math.max(local.used, serverUsed)
   safeWrite({ date: today, used: safeUsed })
   return getQuotaSnapshot({ limit: safeLimit })
 }
 
-// 没拿到后端响应时（网络错误等）给客户端做个保底自增——不影响真实限速
+// 发请求前先乐观自增一次（用户视觉上立刻看到剩余数 -1）。
+// 真实限速仍以服务端为准——这只是 UI 占位，避免依赖响应往返才更新显示
 export function bumpQuotaOptimistically({ limit = DAILY_LIMIT_DEFAULT } = {}) {
   const cur = getQuotaSnapshot({ limit })
   safeWrite({ date: cur.date, used: cur.used + 1 })
+  return getQuotaSnapshot({ limit })
+}
+
+// 撤销乐观自增：用于请求失败、被拒（429）、上游错误等"实际没消耗"的情形。
+// 与 bump 严格成对调用，否则计数会漂
+export function unbumpQuotaOptimistically({ limit = DAILY_LIMIT_DEFAULT } = {}) {
+  const cur = getQuotaSnapshot({ limit })
+  safeWrite({ date: cur.date, used: Math.max(0, cur.used - 1) })
   return getQuotaSnapshot({ limit })
 }
 

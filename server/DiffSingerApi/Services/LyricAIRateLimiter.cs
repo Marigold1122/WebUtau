@@ -81,4 +81,28 @@ public sealed class LyricAIRateLimiter {
         var used = Math.Max(0, existing.Used);
         return new QuotaSnapshot(used, Math.Max(0, dailyLimit - used), dailyLimit);
     }
+
+    // 退还一次配额——用于 AI 请求最终没产出可用歌词的情况（上游失败 / 响应不合规）。
+    // 只对当天计数生效；跨日记录会被忽略（新一天本来就重置了）。
+    // 用 AddOrUpdate 保持与 TryConsume 同样的原子性，防并发抖动
+    public QuotaSnapshot Refund(string ip, int dailyLimit) {
+        var key = ip ?? "unknown";
+        var today = TodayKey();
+        int finalUsed = 0;
+        _counters.AddOrUpdate(
+            key,
+            // 没记录 → 不需要退（视作已经是 0）
+            _ => new Counter(today, 0),
+            (_, existing) => {
+                if (existing.DayKey != today) {
+                    // 跨日：旧计数已无意义，给当天补一条 0
+                    finalUsed = 0;
+                    return new Counter(today, 0);
+                }
+                finalUsed = Math.Max(0, existing.Used - 1);
+                return new Counter(today, finalUsed);
+            });
+        var remaining = Math.Max(0, dailyLimit - finalUsed);
+        return new QuotaSnapshot(finalUsed, remaining, dailyLimit);
+    }
 }

@@ -16,7 +16,11 @@
 import { buildLyricAIUrl } from '../../config/serviceEndpoints.js'
 import { buildLyricPrompt, parseLyricResponse } from './buildLyricPrompt.js'
 import { getUserApiConfig, hasUserApiKey } from './lyricApiKeyStore.js'
-import { setQuotaFromServer } from './lyricUsageQuota.js'
+import {
+  bumpQuotaOptimistically,
+  setQuotaFromServer,
+  unbumpQuotaOptimistically,
+} from './lyricUsageQuota.js'
 
 const DEFAULT_BACKEND_URL = buildLyricAIUrl('/api/ai/lyric')
 
@@ -60,6 +64,10 @@ export class LyricAIClient {
       musicStructure,
       // 关键：不再发送任何 userApi 字段。后端也不接收
     }
+    // 发送前先乐观自增本地计数：UI 立刻 -1。任何"实际没消耗"的失败分支
+    // 都要在返回前调用 unbump 撤回，否则次数会被错误地扣掉
+    bumpQuotaOptimistically()
+
     let response
     try {
       response = await this.fetchImpl(this.backendUrl, {
@@ -69,20 +77,54 @@ export class LyricAIClient {
         signal,
       })
     } catch (error) {
+      // 网络 / abort / 浏览器拒发——根本没到服务端
+      unbumpQuotaOptimistically()
       return { ok: false, reason: 'network-error', error: error?.message }
     }
-    if (!response) return { ok: false, reason: 'no-response' }
+    if (!response) {
+      unbumpQuotaOptimistically()
+      return { ok: false, reason: 'no-response' }
+    }
 
     let payload = null
     try { payload = await response.json() } catch (_e) {}
 
     if (!response.ok) {
+      // 所有非 2xx：服务端要么没扣（429），要么扣了但已 Refund（5xx / 422）。
+      // 都属于"用户没真正消耗"——撤回 UI 上的乐观自增。
+      // 服务端报的 quota 仍然走一次"只增不减"同步：让多设备等场景下别的会话
+      // 消耗的真实计数也能反映过来；不会让本地凭空多出额度
+      unbumpQuotaOptimistically()
+      if (payload?.quota) setQuotaFromServer(payload.quota)
+
+      // 422 = 服务端已校验出"AI 返回与音乐结构不匹配"——结构化的 parseFailure
+      // 直接转成前端原有的 parse-failed 错误形态
+      if (response.status === 422 && payload?.parseFailure) {
+        return {
+          ok: false,
+          reason: 'parse-failed',
+          parseReason: payload.parseFailure.reason,
+          phraseIndex: payload.parseFailure.phraseIndex,
+          expected: payload.parseFailure.expected,
+          actual: payload.parseFailure.actual,
+          // _formatAIError 通过 result.details?.* 取这些值，保持兼容
+          details: {
+            reason: payload.parseFailure.reason,
+            phraseIndex: payload.parseFailure.phraseIndex,
+            expected: payload.parseFailure.expected,
+            actual: payload.parseFailure.actual,
+          },
+          message: payload.message || '',
+        }
+      }
       const reason = response.status === 429 ? 'quota-exceeded'
         : response.status === 401 ? 'invalid-key'
         : `http-${response.status}`
-      if (payload?.quota) setQuotaFromServer(payload.quota)
       return { ok: false, reason, message: payload?.message || response.statusText }
     }
+
+    // 200 OK：服务端正常扣了一次——乐观自增就是对的，不要 unbump。
+    // setQuotaFromServer 会把客户端 used 与服务端对齐（向上同步）
     if (payload?.quota) setQuotaFromServer(payload.quota)
 
     const rawText = typeof payload?.content === 'string' ? payload.content : ''
