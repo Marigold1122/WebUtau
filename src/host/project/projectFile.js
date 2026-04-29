@@ -52,7 +52,10 @@ function pruneTrack(track) {
       cloned.prepState = { status: 'idle', progress: 0, error: null }
     }
   } else {
-    // prepState 非 ready：voiceSnapshot 不带跨会话价值，不存
+    // prepState 非 ready：voiceSnapshot 不带跨会话价值，不存。
+    // 同时把 'queued' / 'predicting' 这类"进行中"状态拉回 idle——它们依赖
+    // 当前会话的 server 任务，下次加载没有任务在跑，悬空会让 UI 显示永不结束的进度
+    cloned.prepState = { status: 'idle', progress: 0, error: null }
     cloned.voiceSnapshot = null
   }
   if (cloned.voiceConversionState) {
@@ -64,13 +67,23 @@ function pruneTrack(track) {
 function pruneVoiceConversionState(state) {
   if (!state || typeof state !== 'object') return state
   const cloned = structuredClone(state)
-  // 用户填的转换参数（reference 文件名、扩散步数等）保留；
+  // 用户填的转换参数（params / referenceAudioName 等）保留作为"上次配置"提示；
   // 但 server 侧的 jobId / assetUrl / 临时上传记录在新会话里都失效了，必须清掉
   delete cloned.jobId
   delete cloned.assetUrl
   delete cloned.draftAsset
   delete cloned.activeJob
   delete cloned.lastError
+  // sourceJobId 与 resultAssetKey / resultAssetUrl 都是 server 端任务产物的引用，
+  // 跨会话失效。VocalPlaybackResolver 依赖 resultAssetUrl 播放转换后的音频，
+  // 留着会指向失效 URL → 显式置 null，并把状态降级到"未转换"，要求用户重新跑
+  cloned.sourceJobId = null
+  cloned.resultAssetKey = null
+  cloned.resultAssetUrl = null
+  cloned.status = 'idle'
+  cloned.appliedVariant = 'original'
+  cloned.stale = false
+  cloned.error = null
   return cloned
 }
 
@@ -233,6 +246,12 @@ function normalizeLoadedTracks(project) {
     // → 丢弃 voiceSnapshot，让重测覆盖
     if (prep.status !== 'ready' && hasPitchCurve) {
       track.voiceSnapshot = null
+    }
+    // 兜底：保存侧已经把非 ready 状态归一到 idle，但手改过的 JSON / v1 老文件
+    // 可能仍带着 'queued' / 'predicting' / 'error' 这类需要运行时上下文的状态
+    // → 一律拉回 idle，避免 UI 显示永不结束的进度
+    if (prep.status !== 'ready' && prep.status !== 'idle') {
+      track.prepState = { status: 'idle', progress: 0, error: null }
     }
   }
 }

@@ -115,8 +115,37 @@ test('round-trip - prepState=predicting 也按 idle 处理（不持久化中间�
   const { restored } = roundTrip(project)
   // predicting 不是 ready → voiceSnapshot 不存
   assert.equal(restored.tracks[0].voiceSnapshot, null)
-  // prepState 本身保留了 predicting 状态——加载逻辑会把它当未就绪处理
-  // （isTrackPrepReady 只在 'ready' 时返回 true）
+  // prepState 也被拉回 idle：'predicting' 依赖运行时任务，下次会话没有任务在跑，
+  // 留着会让 UI 显示永不结束的进度条
+  assert.deepEqual(restored.tracks[0].prepState, { status: 'idle', progress: 0, error: null })
+})
+
+test('round-trip - prepState=queued 同样降级到 idle', () => {
+  const track = makeReadyVocalTrack()
+  track.prepState = { status: 'queued', progress: 0, error: null }
+  const project = makeProject([track])
+  const { restored } = roundTrip(project)
+  assert.deepEqual(restored.tracks[0].prepState, { status: 'idle', progress: 0, error: null })
+  assert.equal(restored.tracks[0].voiceSnapshot, null)
+})
+
+test('反序列化兜底：手改 JSON 让 prepState=predicting → 加载侧拉回 idle', () => {
+  // 模拟有人编辑 .webutau 文件 / v1 文件残留 / 文件损坏，绕过保存侧 prune 直接进加载
+  const malformedJson = JSON.stringify({
+    format: 'webutau-project',
+    version: 2,
+    project: {
+      tracks: [{
+        id: 'track-1',
+        prepState: { status: 'predicting', progress: 60, error: null },
+        voiceSnapshot: null,
+        playbackState: { assignedSourceId: 'vocal' },
+      }],
+    },
+    assets: {},
+  })
+  const { project } = deserializeProject(malformedJson)
+  assert.deepEqual(project.tracks[0].prepState, { status: 'idle', progress: 0, error: null })
 })
 
 test('反序列化兼容：v1 老文件没有 prepState/voiceSnapshot 字段 → 给 idle 兜底', () => {
@@ -216,4 +245,39 @@ test('反序列化容错：voiceConversionState 仍走原有 prune（jobId / dra
   assert.equal(vc.assetUrl, undefined)
   assert.equal(vc.draftAsset, undefined)
   assert.equal(vc.activeJob, undefined)
+})
+
+test('round-trip - voiceConversionState 已就绪时：server 资产引用清掉，状态降级回 original', () => {
+  const track = makeReadyVocalTrack()
+  // 模拟"用户已经成功跑过一次音色转换并应用了结果"的状态
+  track.voiceConversionState = {
+    status: 'ready',
+    appliedVariant: 'converted',
+    sourceJobId: 'vc-job-stale-77',
+    sourceRevision: 3,
+    sourceAssetSignature: 'sig-source',
+    resultAssetKey: 'asset-key-stale',
+    resultAssetUrl: 'blob:server/old-converted.wav',
+    referenceAudioName: 'ref.wav',
+    referenceAudioSignature: 'sig-ref',
+    params: { diffusionSteps: 28, lengthAdjust: 1, cfgRate: 0.7, f0Condition: true, autoF0Adjust: false, pitchShift: 0 },
+    stale: false,
+    error: null,
+    updatedAt: '2026-04-30T10:00:00Z',
+  }
+  const { restored } = roundTrip(makeProject([track]))
+  const vc = restored.tracks[0].voiceConversionState
+  // server 端任务产物的引用全部清掉——下次会话失效，不能拿来播
+  assert.equal(vc.sourceJobId, null, 'sourceJobId 跨会话失效，必须清掉')
+  assert.equal(vc.resultAssetKey, null, 'resultAssetKey 跨会话失效，必须清掉')
+  assert.equal(vc.resultAssetUrl, null, 'resultAssetUrl 跨会话失效，必须清掉')
+  // 状态降级：要求用户重新跑转换，避免 VocalPlaybackResolver 误以为可播
+  assert.equal(vc.status, 'idle')
+  assert.equal(vc.appliedVariant, 'original')
+  assert.equal(vc.stale, false)
+  assert.equal(vc.error, null)
+  // "上次配置"提示信息保留——重跑时方便用户对照
+  assert.equal(vc.referenceAudioName, 'ref.wav')
+  assert.equal(vc.referenceAudioSignature, 'sig-ref')
+  assert.equal(vc.params?.diffusionSteps, 28)
 })
