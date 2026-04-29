@@ -137,6 +137,12 @@
   box-shadow: var(--shadow-panel), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
+/* 钢琴卷帘最下面的音素时长图：CSS 写的纯白 inset 高光在暗模式下会"发光"，
+   反而显得 canvas 顶部有一道白条。压暗到几乎不可见 */
+[data-theme='dark'] .piano-roll-phoneme-timing {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
 /* scrollbar */
 [data-theme='dark'] ::-webkit-scrollbar-thumb {
   background: var(--border-dark);

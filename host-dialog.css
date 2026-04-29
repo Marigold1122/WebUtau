@@ -93,3 +93,73 @@
 .modal-overlay#export-audio-modal.visible { display: flex; }
 
 body.modal-open .app-container, body.modal-open .menubar, body.modal-open #status-bar { user-select: none; }
+
+/* =============================================================
+   暗色模式覆盖：恢复弹窗、MIDI 导入、声库 / 语言选择、导出 等所有
+   走 .modal-dialog / .modal-btn 系列的弹窗都靠这一段反相
+   ============================================================= */
+[data-theme='dark'] .modal-overlay {
+  background: rgba(0, 0, 0, 0.6);
+}
+[data-theme='dark'] .modal-dialog {
+  background: var(--bg-1);
+  border-color: var(--border-light);
+  color: var(--text-main);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+[data-theme='dark'] .modal-title {
+  color: var(--text-main);
+}
+[data-theme='dark'] .modal-hint,
+[data-theme='dark'] .modal-label,
+[data-theme='dark'] .modal-summary-label,
+[data-theme='dark'] .export-progress-text {
+  color: var(--text-muted);
+}
+[data-theme='dark'] .modal-summary {
+  background: var(--bg-2);
+  border-color: var(--border-color);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.04);
+}
+[data-theme='dark'] .modal-summary-value {
+  color: var(--text-main);
+}
+[data-theme='dark'] .modal-select,
+[data-theme='dark'] .modal-input {
+  background: var(--bg-3);
+  border-color: var(--border-color);
+  color: var(--text-main);
+}
+[data-theme='dark'] .modal-select:focus,
+[data-theme='dark'] .modal-input:focus {
+  border-color: var(--accent-color);
+}
+[data-theme='dark'] .modal-btn {
+  border-color: var(--border-color);
+}
+[data-theme='dark'] .modal-btn.secondary {
+  background: linear-gradient(180deg, var(--bg-3) 0%, var(--bg-2) 100%);
+  color: var(--text-main);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+[data-theme='dark'] .modal-btn.secondary:hover:not(:disabled) {
+  background: var(--bg-4);
+  border-color: var(--border-light);
+}
+[data-theme='dark'] .modal-btn.primary {
+  background: var(--accent-color);
+  border-color: rgba(0, 0, 0, 0.4);
+}
+[data-theme='dark'] .modal-btn.primary:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+[data-theme='dark'] .modal-progress-bar {
+  background: var(--bg-3);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+[data-theme='dark'] .modal-progress-fill {
+  background: var(--accent-color);
+}
+[data-theme='dark'] .export-warning-text {
+  color: #DD5C4E;
+}
