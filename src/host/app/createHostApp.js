@@ -1966,6 +1966,15 @@ export function createHostApp() {
       }
       const editorTrack = store.getEditorTrack()
       if (!editorTrack || isAudioTrack(editorTrack) || !isVoiceRuntimeSource(editorTrack.playbackState?.assignedSourceId)) return
+      // 通过 openTrackById 打开 MIDI 人声轨道时走的是 loadTrackIntoInstrumentEditor，
+      // 它只 setEditorTrackState、不调 bridge.loadTrack——voice runtime 里没装这条
+      // track 的 snapshot，requestSnapshot 拿不到东西，面板就开不起来。
+      // 这里先确认 runtime 已挂上当前轨；没有就走 'lyric' 模式入口（带 prediction gate +
+      // loadTrackIntoVoiceEditor），让用户不必手动点一下"音高/歌词"才能用快速填词
+      if (!taskCoordinator.isRuntimeAttachedTo(editorTrack.id)) {
+        const ready = await handleEditorModeSelected('lyric')
+        if (!ready) return
+      }
       try {
         const snapshot = await bridge.requestSnapshot()
         if (!snapshot?.phrases?.length) {
