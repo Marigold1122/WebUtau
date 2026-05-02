@@ -19,6 +19,8 @@ export const RENDER_PRIORITY = {
 
 export const EVENTS = {
   MIDI_LOADED: 'midi:loaded',
+  USTX_LOADED: 'ustx:loaded',
+  USTX_EXPORT: 'ustx:export',
   TRACK_SELECTED: 'track:selected',
   TRANSPORT_PLAY: 'transport:play',
   TRANSPORT_PAUSE: 'transport:pause',

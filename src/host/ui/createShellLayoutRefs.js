@@ -57,6 +57,7 @@ export function createShellLayoutRefs() {
     workspace: document.getElementById('workspace'),
     fileInput: document.getElementById('midi-file-input'),
     audioFileInput: document.getElementById('audio-file-input'),
+    ustxFileInput: document.getElementById('ustx-file-input'),
     btnImport: document.getElementById('btn-import'),
     menubarProjectPlate: document.getElementById('menubar-project-plate'),
     menubarProjectPlateName: document.getElementById('menubar-project-plate-name'),

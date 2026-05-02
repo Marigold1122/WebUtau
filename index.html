@@ -17,6 +17,7 @@
           <button type="button" class="menu-item" id="btn-import" data-i18n="menubar.file" data-i18n-attr="title:menubar.file">文件</button>
           <input type="file" id="midi-file-input" accept=".mid,.midi" hidden />
           <input type="file" id="audio-file-input" accept="audio/*,.wav,.mp3,.flac,.m4a,.ogg" hidden />
+          <input type="file" id="ustx-file-input" accept=".ustx" hidden />
         </div>
         <button type="button" class="menubar-project-plate" id="menubar-project-plate" data-i18n-attr="aria-label:menubar.project_aria">
           <span class="menubar-project-plate-name" id="menubar-project-plate-name" data-i18n="menubar.project_default_name">未命名工程</span>
@@ -405,6 +406,22 @@
           <button type="button" class="modal-btn secondary" id="btn-export-audio-cancel" data-i18n="modal.export.cancel">取消</button>
           <button type="button" class="modal-btn secondary" id="btn-export-audio-selected" disabled data-i18n="modal.export.export_selected">导出所选轨道</button>
           <button type="button" class="modal-btn primary" id="btn-export-audio-confirm" data-i18n="modal.export.export_all">整体导出</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="ustx-export-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="ustx-export-title">
+      <div class="modal-dialog">
+        <div class="modal-title" id="ustx-export-title" data-i18n="modal.ustxExport.title">导出 USTX</div>
+        <div class="modal-hint" data-i18n="modal.ustxExport.hint">选择要导出的声乐轨道（仅声乐轨道可被 OpenUtau 识别）</div>
+        <div class="ustx-export-track-list" id="ustx-export-track-list"></div>
+        <div class="ustx-export-actions">
+          <button type="button" class="modal-btn text-btn" id="btn-ustx-select-all" data-i18n="modal.ustxExport.select_all">全选</button>
+          <button type="button" class="modal-btn text-btn" id="btn-ustx-deselect-all" data-i18n="modal.ustxExport.deselect_all">取消全选</button>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="modal-btn secondary" id="btn-ustx-export-cancel" data-i18n="modal.ustxExport.cancel">取消</button>
+          <button type="button" class="modal-btn primary" id="btn-ustx-export-confirm" data-i18n="modal.ustxExport.export">导出</button>
         </div>
       </div>
     </div>

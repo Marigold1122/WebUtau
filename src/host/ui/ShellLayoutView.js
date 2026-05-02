@@ -446,6 +446,7 @@ export class ShellLayoutView {
     })
     this.refs.fileInput?.addEventListener('change', (event) => this.handlers.onMidiFileSelected?.(event.target.files?.[0] || null))
     this.refs.audioFileInput?.addEventListener('change', (event) => this.handlers.onAudioFileSelected?.(event.target.files?.[0] || null))
+    this.refs.ustxFileInput?.addEventListener('change', (event) => this.handlers.onUstxFileSelected?.(event.target.files?.[0] || null))
     this.refs.btnCloseEditor?.addEventListener('click', () => {
       if (this.editorPlaceholderActive) {
         this.hideEditorPlaceholder()
@@ -988,6 +989,15 @@ export class ShellLayoutView {
       onClick: () => this.refs.audioFileInput?.click(),
     })
 
+    const importUstxButton = this._buildFileMenuItem({
+      label: t('fileMenu.import_ustx'),
+      onClick: () => this.refs.ustxFileInput?.click(),
+    })
+    const exportUstxButton = this._buildFileMenuItem({
+      label: t('fileMenu.export_ustx'),
+      onClick: () => this.handlers.onExportUstx?.(),
+    })
+
     const exportMidiButton = this._buildFileMenuItem({
       label: t('fileMenu.export_midi'),
       onClick: () => this.handlers.onExportMidi?.(),
@@ -1008,9 +1018,11 @@ export class ShellLayoutView {
       this._buildFileMenuDivider(),
       importMidiButton,
       importAudioButton,
+      importUstxButton,
       this._buildFileMenuDivider(),
       exportMidiButton,
       exportAudioButton,
+      exportUstxButton,
     )
     this.fileMenuExportButton = exportMidiButton
     this.fileMenuExportAudioButton = exportAudioButton
