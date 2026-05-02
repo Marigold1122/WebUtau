@@ -77,8 +77,15 @@ function buildRetimedSourcePhrases(sourcePhrases = [], previewNotes = []) {
   if (!Array.isArray(sourcePhrases) || sourcePhrases.length === 0) {
     return buildSourcePhrasesFromPreviewNotes(previewNotes)
   }
+  // 在 retime 前提取 _startTick/_endTick 元数据（createPhraseDocument 会剔除未知字段）
+  const tickMeta = sourcePhrases.map((phrase) => ({
+    _startTick: phrase._startTick ?? (Array.isArray(phrase.notes) && phrase.notes.length > 0 ? phrase.notes[0].tick : undefined),
+    _endTick: phrase._endTick ?? (Array.isArray(phrase.notes) && phrase.notes.length > 0
+      ? phrase.notes[phrase.notes.length - 1].tick + (phrase.notes[phrase.notes.length - 1].durationTicks ?? 0)
+      : undefined),
+  }))
   let noteIndex = 0
-  return createPhraseDocuments(sourcePhrases.map((phrase, phraseIndex) => {
+  const retimedPhrases = createPhraseDocuments(sourcePhrases.map((phrase, phraseIndex) => {
     const nextNotes = (Array.isArray(phrase?.notes) ? phrase.notes : []).map((note) => {
       const previewNote = previewNotes[noteIndex] || null
       noteIndex += 1
@@ -106,6 +113,15 @@ function buildRetimedSourcePhrases(sourcePhrases = [], previewNotes = []) {
       notes: nextNotes,
     }
   }))
+  // 重新挂载 _startTick/_endTick（防御：即使 createPhraseDocument 已传播，此处保证不丢失）
+  return retimedPhrases.map((phrase, i) => {
+    const meta = tickMeta[i]
+    return {
+      ...phrase,
+      _startTick: phrase._startTick ?? meta?._startTick,
+      _endTick: phrase._endTick ?? meta?._endTick,
+    }
+  })
 }
 
 function getExportableTracks(project = {}) {

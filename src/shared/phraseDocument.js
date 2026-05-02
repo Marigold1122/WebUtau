@@ -30,6 +30,14 @@ export function createNoteDocument(note = {}) {
 export function createPhraseDocument(phrase = {}, phraseIndex = 0) {
   const notes = Array.isArray(phrase.notes) ? phrase.notes.map(createNoteDocument) : []
   const text = buildPhraseText(notes, phrase.text)
+  const knownKeys = new Set(['index', 'startTime', 'endTime', 'text', 'notes', 'inputHash', 'baseInputHash'])
+
+  const extra = {}
+  for (const [key, value] of Object.entries(phrase)) {
+    if (!knownKeys.has(key)) {
+      extra[key] = value
+    }
+  }
 
   return {
     index: Number.isInteger(phrase.index) ? phrase.index : phraseIndex,
@@ -38,6 +46,7 @@ export function createPhraseDocument(phrase = {}, phraseIndex = 0) {
     text,
     notes,
     inputHash: computePhraseHash(phrase, notes, text),
+    ...extra,
   }
 }
 

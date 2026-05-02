@@ -48,6 +48,9 @@ import { ProjectTransportCoordinator } from '../transport/ProjectTransportCoordi
 import { ProjectTransportStore } from '../transport/ProjectTransportStore.js'
 import { ShellLayoutView } from '../ui/ShellLayoutView.js'
 import { installMenubarMeter } from '../ui/menubarMeter.js'
+import { parseUstxToWebUtau } from '../../formats/ustx-import.js'
+import { serializeWebUtauToUstx } from '../../formats/ustx-export.js'
+import { UstxExportModal } from '../../formats/UstxExportModal.js'
 import { t } from '../../i18n/index.js'
 import { ConvertedVocalAssetRegistry } from '../vocal/ConvertedVocalAssetRegistry.js'
 import { ConvertedVocalScheduler } from '../vocal/ConvertedVocalScheduler.js'
@@ -629,7 +632,138 @@ export function createHostApp() {
     return true
   }
 
+  async function handleUstxFileSelected(file) {
+    if (!file) return
+    try {
+      view.setStatus(t('hostStatus.parsing_ustx'))
+      view.hidePlaybackToast('voice-language-reminder')
+
+      const yamlString = await file.text()
+      const importedProject = parseUstxToWebUtau(yamlString)
+      const incomingTracks = importedProject.tracks || []
+
+      if (incomingTracks.length === 0) {
+        view.setStatus(t('hostStatus.ustx_no_tracks'))
+        return
+      }
+
+      const currentProject = store.getProject()
+      const isFirstImport = !(currentProject?.tracks?.length > 0)
+
+      if (isFirstImport) {
+        // ── 空白工程：完整导入 ──
+        transportCoordinator.reset()
+        vocalManifestController.resetProjectAssets()
+        voiceConversionController?.reset?.()
+        importedAudioAssetRegistry?.reset?.()
+
+        const cancelledTrack = await taskCoordinator.cancelConflictingTask(null, '已切换到新的项目')
+        if (cancelledTrack && predictionGateController.getActiveTrackId() === cancelledTrack.id) {
+          prepWaiters.resolve(cancelledTrack.id, { ok: false, error: '任务已取消' })
+        }
+
+        await persistEditorSnapshot()
+        bridge.resetRuntime()
+        taskCoordinator.clearRuntimeTrack()
+        focusSoloController.clearCurrentTrack()
+        sessionStore?.setReverbDockOpen?.(false)
+        sessionStore?.setOpenReverbTrackIds?.([])
+        trackShellSessionController.closeSourcePicker(null, 'project-import')
+
+        const restoredProject = projectAudioMixPersistence?.restoreProject?.(importedProject) || importedProject
+        store.setProject(restoredProject)
+        projectAudioMixPersistence?.saveProject?.(store.getProject())
+        projectMixController?.syncProjectState?.(store.getProject())
+        render('project-imported')
+        view.showEditorPlaceholder()
+        view.setStatus(t('hostStatus.ustx_imported', { name: importedProject.fileName, count: incomingTracks.length }))
+      } else {
+        // ── 已有工程：追加模式 ──
+        // 将导入轨道的 tick 重对齐到当前工程的曲速/拍号
+        const timedProject = importService.applyProjectTiming(importedProject, {
+          tempoData: currentProject.tempoData,
+          ppq: currentProject.ppq,
+        })
+        const timedTracks = timedProject?.tracks || []
+
+        if (timedTracks.length === 0) {
+          view.setStatus(t('hostStatus.ustx_no_tracks'))
+          return
+        }
+
+        let lastCreatedTrackId = null
+        for (const incomingTrack of timedTracks) {
+          const newTrack = store.createTrack({
+            name: incomingTrack.name || '',
+            languageCode: incomingTrack.languageCode || null,
+            afterTrackId: lastCreatedTrackId,
+          })
+          lastCreatedTrackId = newTrack.id
+          store.updateTrack(newTrack.id, {
+            singerId: incomingTrack.singerId || null,
+            color: incomingTrack.color || null,
+            hasLyrics: incomingTrack.hasLyrics ?? true,
+            role: incomingTrack.role || 'vocal',
+            contentType: incomingTrack.contentType || 'midi',
+            playbackState: incomingTrack.playbackState || newTrack.playbackState,
+            sourcePhrases: incomingTrack.sourcePhrases,
+            _extensions: incomingTrack._extensions,
+          })
+          // 填充音符（不重建 sourcePhrases，保留 USTX phrase 结构）
+          store.replaceTrackPreviewNotes(newTrack.id, incomingTrack.previewNotes, {
+            rebuildSourcePhrases: false,
+            clearVoiceSnapshot: true,
+            clearPendingVoiceEditState: false,
+          })
+        }
+
+        projectAudioMixPersistence?.saveProject?.(store.getProject())
+        projectMixController?.syncProjectState?.(store.getProject())
+        render('ustx-appended')
+        view.setStatus(t('hostStatus.ustx_appended', { count: timedTracks.length }))
+      }
+    } catch (error) {
+      console.error('USTX 导入失败:', error)
+      view.setStatus(t('hostStatus.ustx_import_failed', { message: error?.message || t('hostStatus.unknown_error') }))
+    } finally {
+      view.refs.ustxFileInput.value = ''
+    }
+  }
+
+  async function handleExportUstx() {
+    await persistEditorSnapshot()
+    const project = store.getProject()
+    if (!project) {
+      view.setStatus(t('hostStatus.no_ustx_to_export'))
+      return false
+    }
+    try {
+      // 弹窗选择声乐轨道（按需 export 所需轨道，默认全选）
+      const checkedTrackIds = await ustxExportModal.open(project.tracks || [])
+      if (!checkedTrackIds || checkedTrackIds.length === 0) {
+        return false
+      }
+      const filteredProject = {
+        ...project,
+        tracks: (project.tracks || []).filter((t) => checkedTrackIds.includes(t.id)),
+      }
+      const yamlString = serializeWebUtauToUstx(filteredProject, { projectName: project.fileName })
+      const blob = new Blob([yamlString], { type: 'application/x-yaml' })
+      const fileName = (project.fileName?.trim() || 'New Project') + '.ustx'
+      const file = new File([blob], fileName, { type: 'application/x-yaml' })
+      triggerDownload(file)
+      view.setStatus(t('hostStatus.ustx_exported', { file: fileName }))
+      return true
+    } catch (error) {
+      if (error === 'cancelled') return false
+      console.error('USTX 导出失败:', error)
+      view.setStatus(t('hostStatus.ustx_export_failed', { message: error?.message || t('hostStatus.unknown_error') }))
+      return false
+    }
+  }
+
   const exportAudioModal = new ExportAudioModal()
+  const ustxExportModal = new UstxExportModal()
   const offlineAudioExporter = new OfflineAudioExporter({
     projectStore: store,
     sessionStore,
@@ -1282,6 +1416,7 @@ export function createHostApp() {
     bridge.init()
     view.init()
     exportAudioModal.init()
+    ustxExportModal.init()
     void bridge.setPlayheadFollowMode(sessionStore.getPlayheadFollowMode())
     transportCoordinator.init()
     shortcutRouter.init()
@@ -1783,6 +1918,8 @@ export function createHostApp() {
   view.setHandlers({
     onMidiFileSelected: handleFileSelected,
     onAudioFileSelected: handleAudioFileSelected,
+    onUstxFileSelected: handleUstxFileSelected,
+    onExportUstx: handleExportUstx,
     onProjectNew: projectFileHandlers.onProjectNew,
     onProjectOpen: projectFileHandlers.onProjectOpen,
     onProjectSave: projectFileHandlers.onProjectSave,

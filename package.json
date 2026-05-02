@@ -24,6 +24,7 @@
     "@aws-sdk/client-s3": "^3.705.0",
     "@sglkc/kuromoji": "^1.1.0",
     "@tonejs/midi": "^2.0.28",
+    "js-yaml": "^4.1.1",
     "tone": "^14.7.77",
     "wanakana": "^5.3.1"
   }
