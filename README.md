@@ -6,6 +6,8 @@
 
 在线体验版：[https://singer.haruyuki.cn/](https://singer.haruyuki.cn/) ，受服务器资源限制，体验版可能卡顿，且有时不可用，体验后请优先下载本地版使用。体验版中预设的声库为[泠鸢yousa](https://github.com/yousa-ling-official-production/yousa-ling-diffsinger-v1)声库，使用时请遵守其使用规定。
 
+WebUtau 交流群：[1095642281](https://qm.qq.com/q/bu34h3wR9e)
+
 
 ## 功能亮点
 
