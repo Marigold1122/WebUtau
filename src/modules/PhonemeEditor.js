@@ -4,6 +4,7 @@ import { commitPhonemeTimingPreview } from './PhonemeTimingCommit.js'
 import { projectPhonemeTimingItem } from './PhonemeTimingProjection.js'
 import {
   buildPhonemeTimingPreviewEdit,
+  buildPhonemeTimingResetEdit,
   createPhonemeTimingSession,
 } from './PhonemeTimingPreview.js'
 import viewport from '../ui/PianoRollViewport.js'
@@ -37,10 +38,12 @@ class PhonemeEditor {
     store = phonemeTimingStore,
     getLaneRect = () => null,
     commitPreview = commitPhonemeTimingPreview,
+    viewportAdapter = null,
   } = {}) {
     this.store = store
     this.getLaneRect = getLaneRect
     this.commitPreview = commitPreview
+    this._injectedAdapter = typeof viewportAdapter === 'function' ? viewportAdapter : null
     this.session = null
   }
 
@@ -91,6 +94,19 @@ class PhonemeEditor {
     this.store.setPreview(null)
   }
 
+  handleContextMenu(event) {
+    if (this.session) return false
+    const adapter = this._viewportAdapter()
+    const laneRect = this.getLaneRect()
+    const items = this.store.getItems()
+    const hit = hitTestPhonemeTiming(event, items, adapter, laneRect)
+    if (!hit) return false
+    const reset = buildPhonemeTimingResetEdit(hit)
+    if (!reset) return false
+    this._commitReleasedPreview(reset)
+    return true
+  }
+
   _previewActiveSession(event, adapter) {
     this.store.setPreview(buildPhonemeTimingPreviewEdit(this.session, event, adapter))
     return true
@@ -103,6 +119,7 @@ class PhonemeEditor {
   }
 
   _viewportAdapter() {
+    if (this._injectedAdapter) return this._injectedAdapter()
     return {
       pixelsPerSecond: viewport.pixelsPerSecond,
       minPixelsPerSecond: PIANO_ROLL.PHONEME_TIMING_MIN_PPS,

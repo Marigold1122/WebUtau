@@ -25,10 +25,11 @@ public partial class SynthesisService {
             if (!result.Changed) {
                 RestoreInteractivePhaseState(job, previousStatus, previousProgress);
                 phaseStateResolved = true;
-                return PhonemeTimingResponse(beforeSnapshot, new List<int>());
+                return PhonemeTimingResponse(beforeSnapshot, new List<int>(), phrasesChanged: false);
             }
 
-            var affectedIndices = RefreshPhonemeTimingRuntime(job, result);
+            var refreshResult = RefreshPhonemeTimingRuntime(job, result);
+            var affectedIndices = refreshResult.AffectedIndices;
             QueuePhonemeTimingRerender(job, affectedIndices);
             CleanupJobOutputArtifacts(job.JobId, CollectReferencedPhraseOutputPaths(job));
 
@@ -42,16 +43,17 @@ public partial class SynthesisService {
 
             var snapshot = PhonemeTimingAdapter.ReadSnapshot(job);
             Log.Information(
-                "[phoneme-timings] job={JobId} editType={EditType} part={PartIndex} noteKey={NoteKey} phoneme={PhonemeIndex} affected=[{Affected}] revision={Before}->{After}",
+                "[phoneme-timings] job={JobId} editType={EditType} part={PartIndex} noteKey={NoteKey} phoneme={PhonemeIndex} affected=[{Affected}] phrasesChanged={PhrasesChanged} revision={Before}->{After}",
                 job.JobId,
                 request.EditType,
                 request.PartIndex,
                 request.NoteKey,
                 request.PhonemeIndex,
                 string.Join(", ", affectedIndices),
+                refreshResult.PhrasesChanged,
                 beforeSnapshot.Revision,
                 snapshot.Revision);
-            return PhonemeTimingResponse(snapshot, affectedIndices);
+            return PhonemeTimingResponse(snapshot, affectedIndices, refreshResult.PhrasesChanged);
         } finally {
             if (!phaseStateResolved) {
                 RestoreInteractivePhaseState(job, previousStatus, previousProgress);
@@ -79,7 +81,7 @@ public partial class SynthesisService {
         throw new PhonemeTimingEditException(409, "snapshot_conflict", "Phoneme timing snapshot is stale.");
     }
 
-    private List<int> RefreshPhonemeTimingRuntime(SynthesisJob job, PhonemeTimingEditResult result) {
+    private PhonemeTimingRefreshResult RefreshPhonemeTimingRuntime(SynthesisJob job, PhonemeTimingEditResult result) {
         try {
             job.Progress = "Refreshing phoneme timing...";
             job.Project!.Validate(new ValidateOptions {
@@ -95,11 +97,15 @@ public partial class SynthesisService {
 
         var allPhrases = CollectAllPhrases(job.VoiceParts!);
         job.AllPhrases = allPhrases;
-        var changedPhraseJobs = SyncPhonemeTimingPhraseJobs(job, allPhrases);
+        var sync = SyncPhonemeTimingPhraseJobs(job, allPhrases);
         var ranges = CollectPhonemeTimingRanges(result);
         var fromRanges = CollectAffectedPhraseIndices(allPhrases, ranges);
-        return MergePhonemeTimingAffectedIndices(fromRanges, changedPhraseJobs, allPhrases.Count);
+        var indices = MergePhonemeTimingAffectedIndices(fromRanges, sync.ChangedIndices, allPhrases.Count);
+        return new PhonemeTimingRefreshResult(indices, sync.StructureChanged);
     }
+
+    private readonly record struct PhonemeTimingRefreshResult(List<int> AffectedIndices, bool PhrasesChanged);
+    private readonly record struct PhonemeTimingSyncResult(List<int> ChangedIndices, bool StructureChanged);
 
     private static void TryRestorePhonemeTimingRuntime(SynthesisJob job, OpenUtau.Core.Ustx.UVoicePart part) {
         try {
@@ -122,13 +128,13 @@ public partial class SynthesisService {
         return ranges;
     }
 
-    private static List<int> SyncPhonemeTimingPhraseJobs(SynthesisJob job, List<RenderPhrase> allPhrases) {
+    private static PhonemeTimingSyncResult SyncPhonemeTimingPhraseJobs(SynthesisJob job, List<RenderPhrase> allPhrases) {
         lock (job.RenderLock) {
             if (job.Phrases == null || job.Phrases.Count != allPhrases.Count) {
                 job.Phrases = allPhrases.Select((phrase, index) => NewPhraseJob(phrase, index)).ToList();
-                return Enumerable.Range(0, allPhrases.Count).ToList();
+                return new PhonemeTimingSyncResult(Enumerable.Range(0, allPhrases.Count).ToList(), StructureChanged: true);
             }
-            return UpdatePhonemeTimingPhraseJobs(job.Phrases, allPhrases);
+            return new PhonemeTimingSyncResult(UpdatePhonemeTimingPhraseJobs(job.Phrases, allPhrases), StructureChanged: false);
         }
     }
 
@@ -231,10 +237,12 @@ public partial class SynthesisService {
 
     private static PhonemeTimingEditResponse PhonemeTimingResponse(
         PhonemeTimingSnapshotResponse snapshot,
-        List<int> affectedIndices) {
+        List<int> affectedIndices,
+        bool phrasesChanged) {
         return new PhonemeTimingEditResponse {
             Snapshot = snapshot,
             AffectedIndices = affectedIndices,
+            PhrasesChanged = phrasesChanged,
         };
     }
 }

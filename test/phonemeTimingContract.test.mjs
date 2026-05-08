@@ -59,7 +59,7 @@ test('reset request value is always null', () => {
   }
 })
 
-test('invalid 4.1 request shapes are rejected before fetch', () => {
+test('invalid phoneme timing request shapes are rejected before fetch', () => {
   assert.equal(buildPhonemeTimingEditRequest(preview('badType', 1), { revision: 'r' }), null)
   assert.equal(buildPhonemeTimingEditRequest(preview('offsetTick', 1.25), { revision: 'r' }), null)
   assert.equal(buildPhonemeTimingEditRequest(preview('preutterDeltaMs', '12'), { revision: 'r' }), null)

@@ -18,7 +18,9 @@ public partial class SynthesisController {
 
         try {
             var response = _synthesis.ApplyPhonemeTimingEditAndRerender(job, request);
-            if (response.AffectedIndices.Count > 0) {
+            // Only return Phrases when Validate actually changed phrase count or split.
+            // Stable timing edits skip the heavy phraseStore.rebuildFromEdit on the client.
+            if (response.PhrasesChanged) {
                 response.Phrases = BuildPhonemeTimingPhraseResponses(job);
             }
             return Ok(response);

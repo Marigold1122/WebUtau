@@ -377,6 +377,8 @@ class PianoRollInputController {
     if (playheadController.isDraggingPlayhead?.()) return
     if (this._shouldIgnorePointerTarget(e.target)) return
 
+    if (phonemeEditor.handleContextMenu(e)) return
+
     if (pitchEditor.isEnabled()) {
       this._onPitchContextMenu(e)
       return

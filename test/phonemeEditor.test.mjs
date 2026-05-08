@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import {
   hitTestPhonemeTiming,
   isPointInPhonemeTimingLane,
+  PhonemeEditor,
 } from '../src/modules/PhonemeEditor.js'
 import {
   buildPhonemeTimingPreviewEdit,
@@ -270,4 +271,69 @@ test('reset intent contains enum and null value', () => {
     editType: 'resetPreutter',
     value: null,
   })
+})
+
+function makeEditor(items = [item()]) {
+  const commits = []
+  const editor = new PhonemeEditor({
+    store: {
+      getItems: () => items,
+      getHover: () => null,
+      setHover: () => {},
+      getPreview: () => null,
+      setPreview: () => {},
+    },
+    getLaneRect: () => lane,
+    commitPreview: async (preview) => {
+      commits.push(preview)
+      return { ok: true, snapshot: { revision: 'after', items: [] }, affectedIndices: [] }
+    },
+    viewportAdapter: () => adapter,
+  })
+  return { editor, commits }
+}
+
+test('right-click on position triggers resetOffset commit', () => {
+  const { editor, commits } = makeEditor()
+  const handled = editor.handleContextMenu(point(200, 48))
+  assert.equal(handled, true)
+  assert.equal(commits.length, 1)
+  assert.equal(commits[0].editType, 'resetOffset')
+  assert.equal(commits[0].value, null)
+  assert.equal(commits[0].hit.kind, 'position')
+})
+
+test('right-click on preutter triggers resetPreutter commit', () => {
+  const { editor, commits } = makeEditor()
+  editor.handleContextMenu(point(184, 59.5))
+  assert.equal(commits.length, 1)
+  assert.equal(commits[0].editType, 'resetPreutter')
+})
+
+test('right-click on overlap triggers resetOverlap commit', () => {
+  const { editor, commits } = makeEditor()
+  editor.handleContextMenu(point(208, 35.5))
+  assert.equal(commits.length, 1)
+  assert.equal(commits[0].editType, 'resetOverlap')
+})
+
+test('right-click outside lane does not commit', () => {
+  const { editor, commits } = makeEditor()
+  const handled = editor.handleContextMenu({ x: 5, y: 5 })
+  assert.equal(handled, false)
+  assert.equal(commits.length, 0)
+})
+
+test('right-click on envelope points 2/3/4 does not commit', () => {
+  const { editor, commits } = makeEditor()
+  editor.handleContextMenu(point(220, 47.5))
+  assert.equal(commits.length, 0)
+})
+
+test('right-click during active drag session is suppressed', () => {
+  const { editor, commits } = makeEditor()
+  editor.session = { hit: { kind: 'position' } }
+  const handled = editor.handleContextMenu(point(200, 48))
+  assert.equal(handled, false)
+  assert.equal(commits.length, 0)
 })

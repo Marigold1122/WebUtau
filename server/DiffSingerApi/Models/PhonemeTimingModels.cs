@@ -54,6 +54,11 @@ public class PhonemeTimingEditResponse {
     public PhonemeTimingSnapshotResponse Snapshot { get; set; } = new();
     public List<int> AffectedIndices { get; set; } = new();
     public List<PhonemeTimingPhraseDto>? Phrases { get; set; }
+
+    // Server-only flag: true when Validate changed phrase count or split. Controller
+    // uses this to decide whether to populate Phrases; never serialized to clients.
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool PhrasesChanged { get; set; }
 }
 
 public class PhonemeTimingPhraseDto {

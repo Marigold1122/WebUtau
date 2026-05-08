@@ -53,6 +53,18 @@ export function applyPhonemeTimingCommitResponse(response, preview, deps = defau
   const phrases = Array.isArray(normalized.phrases) ? normalized.phrases : []
   const phraseUpdate = applyReturnedPhraseMetadata(phrases, deps.phraseStore)
   const phraseCount = deps.phraseStore.getPhrases().length
+  // Backend should send Phrases only when structure truly changed. If a
+  // non-trivial project (>4 phrases) still flags ≥50% of phrases as affected with
+  // phrasesChanged=false, treat it as anomalous and fall back to the wide restart
+  // path so renderJobManager preserves cached audio via hasAudio() rather than
+  // clearing nearly everything piecewise.
+  const looksLikeStructureChange = !phraseUpdate.phrasesChanged
+    && phraseCount > 4
+    && affected.length > Math.floor(phraseCount / 2)
+  if (looksLikeStructureChange) {
+    console.warn(`[PhonemeTimingCommit] affected≈all but phrasesChanged=false, falling back to full restart (affected=${affected.length}/${phraseCount})`)
+  }
+  const phrasesChanged = phraseUpdate.phrasesChanged || looksLikeStructureChange
   const affectedSet = new Set(affected)
   const restoredSeed = seed.filter((index) => !affectedSet.has(index))
   const affectedToClear = deps.optimisticSeed
@@ -76,7 +88,7 @@ export function applyPhonemeTimingCommitResponse(response, preview, deps = defau
   restartPhonemeTimingRender(deps, {
     affectedIndices: affected,
     phraseCount,
-    phrasesChanged: phraseUpdate.phrasesChanged,
+    phrasesChanged,
     snapshot: normalized.snapshot,
   })
   deps.jobs.endInteractiveEdit?.(deps.interactiveEditToken)
@@ -107,49 +119,24 @@ function normalizeIndices(values) {
 }
 
 function applyReturnedPhraseMetadata(phrases, phraseStore) {
+  // Contract: backend only sends Phrases when phrase count or split actually changed
+  // (see SynthesisController.PhonemeTiming.cs and the PhrasesChanged flag). Reaching
+  // here with a non-empty phrases array means structure changed, so rebuild directly.
   if (!Array.isArray(phrases) || phrases.length === 0) {
     return { phrasesChanged: false, timingChanged: false }
   }
-
-  const current = phraseStore.getPhrases()
-  if (canApplyTimingMetadataOnly(phrases, current)
-    && typeof phraseStore.applyBackendPhraseTimingMetadata === 'function') {
-    return {
-      phrasesChanged: false,
-      timingChanged: phraseStore.applyBackendPhraseTimingMetadata(phrases),
-    }
-  }
-
   phraseStore.rebuildFromEdit(phrases)
   return { phrasesChanged: true, timingChanged: true }
-}
-
-function canApplyTimingMetadataOnly(phrases, currentPhrases) {
-  if (!Array.isArray(currentPhrases) || currentPhrases.length === 0) return false
-  return phrases.every((phrase) => {
-    const index = Number.isInteger(phrase?.index) ? phrase.index : -1
-    const current = currentPhrases[index]
-    if (!current) return false
-    return phraseNoteShapeMatches(phrase, current)
-  })
-}
-
-function phraseNoteShapeMatches(backendPhrase, currentPhrase) {
-  const backendNotes = Array.isArray(backendPhrase?.notes) ? backendPhrase.notes : []
-  const currentNotes = Array.isArray(currentPhrase?.notes) ? currentPhrase.notes : []
-  if (backendNotes.length !== currentNotes.length) return false
-  return backendNotes.every((note, index) => {
-    const current = currentNotes[index]
-    return Math.max(0, Math.round(note?.position || 0)) === Math.max(0, Math.round(current?.tick || 0))
-      && Math.max(1, Math.round(note?.duration || 1)) === Math.max(1, Math.round(current?.durationTicks || 1))
-      && Math.round(note?.tone || 60) === Math.round(current?.midi || 60)
-  })
 }
 
 function restartPhonemeTimingRender(deps, options) {
   if (options.affectedIndices.length === 0 && !options.phrasesChanged) return
   if (typeof deps.jobs.restartForPhonemeTimingEdit === 'function') {
     deps.jobs.restartForPhonemeTimingEdit(options)
+    // restartForPhonemeTimingEdit delegates to restartForEdit when phrasesChanged,
+    // and restartForEdit clears phonemeTimingStore (it's also used by reset paths).
+    // Re-apply the authoritative snapshot so the visual layer doesn't flash empty.
+    if (options.phrasesChanged) deps.store.setSnapshot?.(options.snapshot)
     return
   }
   deps.jobs.restartForEdit(options.phraseCount)
