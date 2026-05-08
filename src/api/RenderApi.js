@@ -1,4 +1,5 @@
 import { RENDER_API_BASE_URL, buildRenderApiUrl } from '../config/serviceEndpoints.js'
+import { assertValidPhonemeTimingEditRequest } from '../shared/phonemeTimingContract.js'
 
 let _audioCtx = null
 
@@ -66,6 +67,19 @@ const renderApi = {
     const data = await response.json().catch(() => null)
     if (!response.ok) {
       throw new Error(data?.error || `getPhonemeTimings failed: ${response.status}`)
+    }
+    return data
+  },
+  async applyPhonemeTimingEdit(jobId, edit) {
+    const request = assertValidPhonemeTimingEditRequest(edit)
+    const response = await fetch(buildRenderApiUrl(`/api/jobs/${jobId}/phoneme-timings`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    })
+    const data = await response.json().catch(() => null)
+    if (!response.ok) {
+      throw new Error(data?.error || `applyPhonemeTimingEdit failed: ${response.status}`)
     }
     return data
   },

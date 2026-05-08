@@ -37,3 +37,39 @@ public class PhonemeTimingEnvelopePointDto {
     public double XMs { get; set; }
     public double YPercent { get; set; }
 }
+
+public class PhonemeTimingEditRequest {
+    public int PartIndex { get; set; }
+    public string NoteKey { get; set; } = string.Empty;
+    public int PhonemeIndex { get; set; }
+    // Field-level timing command: offsetTick is ticks; preutter/overlap deltas are milliseconds.
+    public string EditType { get; set; } = string.Empty;
+    // Reset commands must send null so no pointer geometry can cross the API boundary.
+    public double? Value { get; set; }
+    public string ClientRevision { get; set; } = string.Empty;
+}
+
+public class PhonemeTimingEditResponse {
+    public bool Ok { get; set; } = true;
+    public PhonemeTimingSnapshotResponse Snapshot { get; set; } = new();
+    public List<int> AffectedIndices { get; set; } = new();
+    public List<PhonemeTimingPhraseDto>? Phrases { get; set; }
+}
+
+public class PhonemeTimingPhraseDto {
+    public int Index { get; set; }
+    public double StartMs { get; set; }
+    public double DurationMs { get; set; }
+    public string Status { get; set; } = "pending";
+    public List<PhonemeTimingNoteDto> Notes { get; set; } = new();
+}
+
+public class PhonemeTimingNoteDto {
+    public int Position { get; set; }
+    public int Duration { get; set; }
+    public int Tone { get; set; }
+    public string Lyric { get; set; } = "a";
+    public int Tuning { get; set; }
+    public NotePitchData? Pitch { get; set; }
+    public NoteVibratoData? Vibrato { get; set; }
+}

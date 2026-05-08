@@ -337,6 +337,30 @@ class PhraseStore {
     return true
   }
 
+  applyBackendPhraseTimingMetadata(backendPhrases) {
+    if (!Array.isArray(backendPhrases) || backendPhrases.length === 0) return false
+    let changed = false
+    for (const bp of backendPhrases) {
+      const index = Number.isInteger(bp?.index) ? bp.index : -1
+      const phrase = this._phrases[index]
+      if (!phrase) continue
+      const startMs = Number(bp?.startMs)
+      const durationMs = Number(bp?.durationMs)
+      if (!Number.isFinite(startMs) || !Number.isFinite(durationMs)) continue
+      const startTime = startMs / 1000
+      const endTime = (startMs + durationMs) / 1000
+      if (Math.abs((phrase.startTime ?? 0) - startTime) <= 0.0005
+        && Math.abs((phrase.endTime ?? 0) - endTime) <= 0.0005) {
+        continue
+      }
+      phrase.startTime = startTime
+      phrase.endTime = endTime
+      changed = true
+    }
+    if (changed) eventBus.emit(EVENTS.PHRASES_UPDATED)
+    return changed
+  }
+
   _computeHashFromNotes(notes, text) {
     if (notes.length === 0) return `empty-${text}`
     const first = notes[0].time

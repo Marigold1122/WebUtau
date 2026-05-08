@@ -8,7 +8,7 @@ namespace DiffSingerApi.Controllers;
 
 [ApiController]
 [Route("api")]
-public class SynthesisController : ControllerBase {
+public partial class SynthesisController : ControllerBase {
     private readonly SynthesisService _synthesis;
 
     public SynthesisController(SynthesisService synthesis) {

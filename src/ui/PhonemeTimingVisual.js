@@ -1,5 +1,5 @@
 import { PIANO_ROLL } from '../config/constants.js'
-import { projectPhonemeTimingItem } from '../modules/PhonemeEditor.js'
+import { projectPhonemeTimingItem } from '../modules/PhonemeTimingProjection.js'
 import phonemeTimingStore from '../modules/PhonemeTimingStore.js'
 import viewport from './PianoRollViewport.js'
 

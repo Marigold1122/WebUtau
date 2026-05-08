@@ -1,13 +1,15 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
+  hitTestPhonemeTiming,
+  isPointInPhonemeTimingLane,
+} from '../src/modules/PhonemeEditor.js'
+import {
   buildPhonemeTimingPreviewEdit,
   buildPhonemeTimingResetEdit,
   createPhonemeTimingSession,
-  hitTestPhonemeTiming,
-  isPointInPhonemeTimingLane,
-  projectPhonemeTimingItem,
-} from '../src/modules/PhonemeEditor.js'
+} from '../src/modules/PhonemeTimingPreview.js'
+import { projectPhonemeTimingItem } from '../src/modules/PhonemeTimingProjection.js'
 
 const lane = { left: 10, top: 20, width: 600, height: 76 }
 const adapter = {

@@ -16,7 +16,7 @@ using Serilog;
 
 namespace DiffSingerApi.Services;
 
-public class SynthesisService : IHostedService {
+public partial class SynthesisService : IHostedService {
     private readonly ConcurrentDictionary<string, SynthesisJob> _jobs = new();
     private readonly ConcurrentQueue<string> _queue = new();
     private readonly string _outputDir;
@@ -774,7 +774,7 @@ public class SynthesisService : IHostedService {
 
                 Log.Information("Job {JobId}: phrase {Index}/{Total} completed.",
                     job.JobId, nextIndex, total);
-            } catch (Exception ex) when (phraseCts.IsCancellationRequested) {
+            } catch (Exception) when (phraseCts.IsCancellationRequested) {
                 // 被 edit 中断——把这个 phrase 从 RenderedSet 移除，让下一轮循环重新选择
                 lock (job.RenderLock) {
                     job.RenderedSet.Remove(nextIndex);

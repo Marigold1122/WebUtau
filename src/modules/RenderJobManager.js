@@ -96,6 +96,34 @@ class RenderJobManager {
     this._startPolling()
   }
 
+  restartForPhonemeTimingEdit({ affectedIndices = [], phraseCount = phraseStore.getPhrases().length, phrasesChanged = false } = {}) {
+    if (phrasesChanged) {
+      this.restartForEdit(phraseCount)
+      return
+    }
+
+    const affected = new Set([...new Set(affectedIndices)]
+      .filter((index) => Number.isInteger(index) && index >= 0))
+    if (affected.size === 0) return
+
+    const oldGen = this._generation
+    this._generation++
+    const oldSize = this._knownCompleted.size
+    const validCompleted = new Set()
+    for (const idx of this._knownCompleted) {
+      if (affected.has(idx)) continue
+      if (idx < phraseCount && renderCache.hasAudio(idx)) {
+        validCompleted.add(idx)
+      }
+    }
+    this._knownCompleted = validCompleted
+    for (const idx of affected) {
+      this._downloadsInFlight.delete(idx)
+    }
+    console.log(`${M} 音素时机编辑后重启 | 世代=${oldGen}→${this._generation}, affected=[${[...affected].join(',')}], 已完成集合=${oldSize}→${validCompleted.size}`)
+    this._startPolling()
+  }
+
   incrementGeneration() {
     const oldGen = this._generation
     this._generation++
@@ -416,4 +444,5 @@ class RenderJobManager {
   }
 }
 
+export { RenderJobManager }
 export default new RenderJobManager()

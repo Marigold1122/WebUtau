@@ -17,7 +17,7 @@ public class PhonemeTimingReadException : Exception {
     public string Code { get; }
 }
 
-public static class PhonemeTimingAdapter {
+public static partial class PhonemeTimingAdapter {
     private const int OpenUtauTickPpq = 480;
 
     public static PhonemeTimingSnapshotResponse ReadSnapshot(SynthesisJob job) {

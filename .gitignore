@@ -8,6 +8,8 @@ dist/
 server/*
 !server/DiffSingerApi/
 !server/DiffSingerApi/**
+!server/DiffSingerApi.Tests/
+!server/DiffSingerApi.Tests/**
 server/DiffSingerApi/bin/
 server/DiffSingerApi/obj/
 server/DiffSingerApi/output/
@@ -15,6 +17,8 @@ server/DiffSingerApi/uploads/
 server/DiffSingerApi/voicebanks/
 server/DiffSingerApi/tempdiffsingertest/
 server/DiffSingerApi/TestBuild/
+server/DiffSingerApi.Tests/bin/
+server/DiffSingerApi.Tests/obj/
 
 # ===== 不要提交含敏感信息的本地配置 =====
 # appsettings.json 是仓库里的"空模板"——所有 key 字段必须留空
