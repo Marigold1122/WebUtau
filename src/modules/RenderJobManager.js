@@ -120,7 +120,6 @@ class RenderJobManager {
     for (const idx of affected) {
       this._downloadsInFlight.delete(idx)
     }
-    console.log(`${M} 音素时机编辑后重启 | 世代=${oldGen}→${this._generation}, affected=[${[...affected].join(',')}], 已完成集合=${oldSize}→${validCompleted.size}`)
     this._startPolling()
   }
 

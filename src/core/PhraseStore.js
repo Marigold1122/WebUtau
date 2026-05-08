@@ -80,24 +80,11 @@ class PhraseStore {
   }
 
   applyPitchRenderVersion(indices, versionTag) {
-    if (!Array.isArray(indices) || indices.length === 0 || typeof versionTag !== 'string' || versionTag.length === 0) {
-      return
-    }
+    this._applyRenderVersion(indices, 'pitch', versionTag)
+  }
 
-    let changed = false
-    for (const index of [...new Set(indices)]) {
-      if (!Number.isInteger(index) || index < 0) continue
-      const phrase = this._phrases[index]
-      if (!phrase) continue
-      const baseInputHash = this._resolveBaseInputHash(phrase)
-      const nextInputHash = `${baseInputHash}|pitch:${versionTag}`
-      if (phrase.baseInputHash === baseInputHash && phrase.inputHash === nextInputHash) continue
-      phrase.baseInputHash = baseInputHash
-      phrase.inputHash = nextInputHash
-      changed = true
-    }
-
-    if (changed) eventBus.emit(EVENTS.PHRASES_UPDATED)
+  applyPhonemeTimingRenderVersion(indices, versionTag) {
+    this._applyRenderVersion(indices, 'phoneme', versionTag)
   }
 
   setMidiFile(file) {
@@ -355,12 +342,40 @@ class PhraseStore {
 
   _resolveBaseInputHash(phrase) {
     if (typeof phrase?.baseInputHash === 'string' && phrase.baseInputHash.length > 0) {
-      return phrase.baseInputHash
+      return this._stripRenderVersions(phrase.baseInputHash)
     }
     if (typeof phrase?.inputHash === 'string' && phrase.inputHash.length > 0) {
-      return phrase.inputHash.split('|pitch:')[0]
+      return this._stripRenderVersions(phrase.inputHash)
     }
     return this._computeHash(phrase)
+  }
+
+  _applyRenderVersion(indices, channel, versionTag) {
+    if (!Array.isArray(indices) || indices.length === 0 || typeof versionTag !== 'string' || versionTag.length === 0) {
+      return
+    }
+    if (!/^[a-z]+$/.test(channel)) return
+
+    let changed = false
+    for (const index of [...new Set(indices)]) {
+      if (!Number.isInteger(index) || index < 0) continue
+      const phrase = this._phrases[index]
+      if (!phrase) continue
+      const baseInputHash = this._resolveBaseInputHash(phrase)
+      const nextInputHash = `${baseInputHash}|${channel}:${versionTag}`
+      if (phrase.baseInputHash === baseInputHash && phrase.inputHash === nextInputHash) continue
+      phrase.baseInputHash = baseInputHash
+      phrase.inputHash = nextInputHash
+      changed = true
+    }
+
+    if (changed) eventBus.emit(EVENTS.PHRASES_UPDATED)
+  }
+
+  _stripRenderVersions(inputHash) {
+    const value = typeof inputHash === 'string' ? inputHash : ''
+    const marker = value.search(/\|(pitch|phoneme):/)
+    return marker >= 0 ? value.slice(0, marker) : value
   }
 
   _normalizePhraseHashes(phrase) {

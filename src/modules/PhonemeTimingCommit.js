@@ -1,4 +1,6 @@
 import phraseStore from '../core/PhraseStore.js'
+import eventBus from '../core/EventBus.js'
+import { EVENTS } from '../config/constants.js'
 import renderApi from '../api/RenderApi.js'
 import audioEngine from './AudioEngine.js'
 import renderCache from './RenderCache.js'
@@ -22,10 +24,14 @@ export async function commitPhonemeTimingPreview(preview, deps = defaultDeps()) 
   if (!jobId) throw new Error('No active job')
 
   const seed = collectPreviewPhraseIndices(preview)
+  const renderVersion = buildPhonemeTimingRenderVersion(request)
+  const phraseHashSnapshot = deps.phraseStore.capturePhraseHashes?.(seed) ?? []
   const cacheSnapshot = deps.cache.capture?.(seed) ?? []
   const interactiveEditToken = deps.jobs.beginInteractiveEdit?.(seed) ?? null
   if (seed.length > 0) {
+    applyPhonemeTimingRenderVersion(deps.phraseStore, seed, renderVersion)
     deps.cache.clearIndices(seed)
+    emitCacheInvalidated(deps, seed)
     deps.audio.cancelPhrases?.(seed)
   }
 
@@ -36,9 +42,12 @@ export async function commitPhonemeTimingPreview(preview, deps = defaultDeps()) 
       cacheSnapshot,
       interactiveEditToken,
       optimisticSeed: seed,
+      phraseHashSnapshot,
+      renderVersion,
     })
     return response
   } catch (error) {
+    deps.phraseStore.restorePhraseHashes?.(phraseHashSnapshot)
     deps.cache.restore?.(cacheSnapshot)
     deps.store.setPreview?.(null)
     deps.jobs.endInteractiveEdit?.(interactiveEditToken)
@@ -53,17 +62,15 @@ export function applyPhonemeTimingCommitResponse(response, preview, deps = defau
   const phrases = Array.isArray(normalized.phrases) ? normalized.phrases : []
   const phraseUpdate = applyReturnedPhraseMetadata(phrases, deps.phraseStore)
   const phraseCount = deps.phraseStore.getPhrases().length
+  const renderVersion = deps.renderVersion || buildPhonemeTimingSnapshotRenderVersion(normalized.snapshot)
   // Backend should send Phrases only when structure truly changed. If a
-  // non-trivial project (>4 phrases) still flags ≥50% of phrases as affected with
+  // non-trivial project (>4 phrases) still flags at least 50% of phrases as affected with
   // phrasesChanged=false, treat it as anomalous and fall back to the wide restart
   // path so renderJobManager preserves cached audio via hasAudio() rather than
   // clearing nearly everything piecewise.
   const looksLikeStructureChange = !phraseUpdate.phrasesChanged
     && phraseCount > 4
     && affected.length > Math.floor(phraseCount / 2)
-  if (looksLikeStructureChange) {
-    console.warn(`[PhonemeTimingCommit] affected≈all but phrasesChanged=false, falling back to full restart (affected=${affected.length}/${phraseCount})`)
-  }
   const phrasesChanged = phraseUpdate.phrasesChanged || looksLikeStructureChange
   const affectedSet = new Set(affected)
   const restoredSeed = seed.filter((index) => !affectedSet.has(index))
@@ -74,11 +81,17 @@ export function applyPhonemeTimingCommitResponse(response, preview, deps = defau
   deps.store.setSnapshot(normalized.snapshot)
 
   if (restoredSeed.length > 0 && Array.isArray(deps.cacheSnapshot)) {
+    deps.phraseStore.restorePhraseHashes?.((deps.phraseHashSnapshot || []).filter((entry) => restoredSeed.includes(entry.phraseIndex)))
     deps.cache.restore?.(deps.cacheSnapshot.filter((entry) => restoredSeed.includes(entry.phraseIndex)))
+  }
+
+  if (affected.length > 0) {
+    applyPhonemeTimingRenderVersion(deps.phraseStore, affected, renderVersion)
   }
 
   if (affectedToClear.length > 0) {
     deps.cache.clearIndices(affectedToClear)
+    emitCacheInvalidated(deps, affectedToClear)
     deps.audio.cancelPhrases?.(affectedToClear)
   }
   if (phraseUpdate.phrasesChanged) {
@@ -111,6 +124,7 @@ function defaultDeps() {
     jobs: renderJobManager,
     phraseStore,
     store: phonemeTimingStore,
+    events: eventBus,
   }
 }
 
@@ -141,4 +155,46 @@ function restartPhonemeTimingRender(deps, options) {
   }
   deps.jobs.restartForEdit(options.phraseCount)
   deps.store.setSnapshot?.(options.snapshot)
+}
+
+function applyPhonemeTimingRenderVersion(phraseStore, indices, renderVersion) {
+  phraseStore?.applyPhonemeTimingRenderVersion?.(indices, renderVersion)
+}
+
+function emitCacheInvalidated(deps, indices) {
+  if (!Array.isArray(indices) || indices.length === 0) return
+  for (const phraseIndex of indices) {
+    deps.events?.emit?.(EVENTS.CACHE_INVALIDATED, { phraseIndex })
+  }
+}
+
+function buildPhonemeTimingRenderVersion(request) {
+  return fnvRenderVersion([
+    request?.clientRevision || '',
+    request?.partIndex ?? '',
+    request?.noteKey || '',
+    request?.phonemeIndex ?? '',
+    request?.editType || '',
+    request?.value == null ? '<null>' : request.value,
+  ])
+}
+
+function buildPhonemeTimingSnapshotRenderVersion(snapshot) {
+  return fnvRenderVersion([snapshot?.revision || 'snapshot'])
+}
+
+function fnvRenderVersion(values) {
+  let hash = 2166136261
+  let length = 0
+  for (const value of values) {
+    const text = String(value)
+    length += text.length
+    for (let index = 0; index < text.length; index += 1) {
+      hash ^= text.charCodeAt(index)
+      hash = Math.imul(hash, 16777619)
+    }
+    hash ^= 31
+    hash = Math.imul(hash, 16777619)
+  }
+  return `${length.toString(36)}-${(hash >>> 0).toString(36)}`
 }

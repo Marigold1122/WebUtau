@@ -108,6 +108,31 @@ test('commitPhonemeTimingPreview posts once and applies authoritative snapshot',
   assert.deepEqual(d.calls.at(-1), ['end', 'edit-1'])
 })
 
+test('commitPhonemeTimingPreview versions affected phrase audio assets', async () => {
+  const d = deps()
+  d.events = { emit: (event, payload) => d.calls.push(['event', event, payload.phraseIndex]) }
+  d.phraseStore.capturePhraseHashes = (indices) => {
+    d.calls.push(['hashCapture', indices])
+    return indices.map((phraseIndex) => ({ phraseIndex, exists: true, inputHash: `h${phraseIndex}`, baseInputHash: `h${phraseIndex}` }))
+  }
+  d.phraseStore.restorePhraseHashes = (snapshot) => d.calls.push(['hashRestore', snapshot.map((entry) => entry.phraseIndex)])
+  d.phraseStore.applyPhonemeTimingRenderVersion = (indices, version) => d.calls.push(['hashVersion', indices, version])
+
+  await commitPhonemeTimingPreview(preview(), d)
+
+  const firstHashVersion = d.calls.find((call) => call[0] === 'hashVersion')
+  const firstClear = d.calls.find((call) => call[0] === 'clear')
+  const apiCall = d.calls.find((call) => call[0] === 'api')
+  assert.deepEqual(firstHashVersion?.[1], [2, 3])
+  assert.equal(typeof firstHashVersion?.[2], 'string')
+  assert.ok(d.calls.indexOf(firstHashVersion) < d.calls.indexOf(firstClear))
+  assert.ok(d.calls.indexOf(firstHashVersion) < d.calls.indexOf(apiCall))
+  assert.deepEqual(
+    d.calls.filter((call) => call[0] === 'event').map((call) => call[2]),
+    [2, 3],
+  )
+})
+
 test('failed phoneme timing commit restores cache and clears preview', async () => {
   const d = deps()
   d.api.applyPhonemeTimingEdit = async () => { throw new Error('snapshot_conflict') }

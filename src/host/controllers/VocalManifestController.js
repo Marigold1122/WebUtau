@@ -19,6 +19,11 @@ function getManifestPhraseState(manifest, phraseIndex) {
   return (manifest?.phraseStates || []).find((phraseState) => phraseState?.phraseIndex === phraseIndex) || null
 }
 
+function isPhraseStateAvailableForPayload(phraseState, payload = {}) {
+  if (phraseState?.status !== 'available') return false
+  return (phraseState.inputHash || null) === (payload.inputHash || null)
+}
+
 function manifestsEquivalent(left, right) {
   if (left === right) return true
   if (!left || !right) return false
@@ -174,7 +179,7 @@ export class VocalManifestController {
     if (!track) return false
     const manifest = track.vocalManifest
     if (!manifest?.jobId || manifest.jobId !== payload.jobId || !Number.isInteger(payload.phraseIndex)) return false
-    if (getManifestPhraseState(manifest, payload.phraseIndex)?.status === 'available') return false
+    if (isPhraseStateAvailableForPayload(getManifestPhraseState(manifest, payload.phraseIndex), payload)) return false
 
     const phraseRef = {
       trackId: track.id,
@@ -189,7 +194,7 @@ export class VocalManifestController {
     const asset = await this.assetRegistry.ensurePhraseAsset(phraseRef)
     const freshTrack = this.store.getTrack(track.id)
     if (!freshTrack?.vocalManifest || freshTrack.vocalManifest.jobId !== phraseRef.jobId) return false
-    if (getManifestPhraseState(freshTrack.vocalManifest, phraseRef.phraseIndex)?.status === 'available') return false
+    if (isPhraseStateAvailableForPayload(getManifestPhraseState(freshTrack.vocalManifest, phraseRef.phraseIndex), phraseRef)) return false
 
     const nextManifest = markManifestPhraseAvailable(freshTrack.vocalManifest, {
       phraseIndex: phraseRef.phraseIndex,
