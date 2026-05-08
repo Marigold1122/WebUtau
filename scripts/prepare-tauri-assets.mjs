@@ -19,6 +19,8 @@ const manifestPath = resolve(runtimeResourcesDir, 'backend-manifest.json')
 const cloudflaredResourcesDir = resolve(srcTauriDir, 'resources', 'cloudflared')
 const cloudflaredCacheDir = resolve(rootDir, '.cloudflared-cache')
 const CLOUDFLARED_RELEASE_BASE = 'https://github.com/cloudflare/cloudflared/releases/latest/download/'
+const vstHostResourcesDir = resolve(srcTauriDir, 'resources', 'vst-host')
+const vstHostSourceDir = resolve(rootDir, 'external', 'vst-host')
 const backendProjectPath = resolve(rootDir, 'server', 'DiffSingerApi', 'DiffSingerApi.csproj')
 const voicebanksSourceDir = resolve(rootDir, 'server', 'voicebanks')
 const backendBuildRoot = resolve(rootDir, 'src-tauri', '.backend-build')
@@ -66,6 +68,7 @@ if (bundleVoicebanks && await directoryHasFiles(voicebanksSourceDir)) {
 }
 
 await ensureCloudflaredBundled(host)
+await ensureVstHostBundled(host)
 
 const fingerprint = await fingerprintDirectory(runtimeResourcesDir)
 const manifest = {
@@ -310,6 +313,38 @@ function pickCloudflaredAsset(targetHost) {
     return { file, archive: 'raw', binary: 'cloudflared.exe' }
   }
   return null
+}
+
+// 把 external/vst-host 构建产物复制到 src-tauri/resources/vst-host/。
+// 没构建过 = 友好警告并跳过——VST 子系统在前端会优雅降级，整个打包不应因此失败
+async function ensureVstHostBundled(targetHost) {
+  await rm(vstHostResourcesDir, { recursive: true, force: true })
+  await mkdir(vstHostResourcesDir, { recursive: true })
+
+  const binaryName = targetHost.platform === 'win32' ? 'webutau_vst_host.exe' : 'webutau_vst_host'
+  // JUCE console_app 的标准产物路径
+  const candidates = [
+    resolve(vstHostSourceDir, 'build', `${binaryName}_artefacts`, 'Release', binaryName),
+    resolve(vstHostSourceDir, 'build', `${binaryName}_artefacts`, binaryName),
+    resolve(vstHostSourceDir, 'build', binaryName),
+    resolve(vstHostSourceDir, 'build', 'Release', binaryName),
+  ]
+  const explicit = process.env.MELODY_TAURI_VST_HOST_PATH?.trim()
+  if (explicit) candidates.unshift(resolve(rootDir, explicit))
+
+  const sourcePath = candidates.find((path) => existsSync(path))
+  if (!sourcePath) {
+    console.warn('[vst-host] 未找到 webutau_vst_host 产物，VST 子系统将不可用。')
+    console.warn('[vst-host] 构建步骤：cd external/vst-host && cmake -S . -B build && cmake --build build --config Release')
+    return
+  }
+
+  const dest = resolve(vstHostResourcesDir, binaryName)
+  await cp(sourcePath, dest, { force: true })
+  if (process.platform !== 'win32') {
+    await chmod(dest, 0o755)
+  }
+  console.log(`[vst-host] 已打包到 ${relative(rootDir, dest)}`)
 }
 
 async function downloadFile(url, destPath) {

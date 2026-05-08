@@ -58,11 +58,11 @@ function roundTrip(project) {
   return { restored, sourceVersion }
 }
 
-test('serializeProject - 版本号是 v2', () => {
-  assert.equal(WEBUTAU_PROJECT_VERSION, 2)
+test('serializeProject - 版本号是 v3', () => {
+  assert.equal(WEBUTAU_PROJECT_VERSION, 3)
   const json = serializeProject({ project: makeProject([]) })
   const parsed = JSON.parse(json)
-  assert.equal(parsed.version, 2)
+  assert.equal(parsed.version, 3)
 })
 
 test('round-trip - 有预测结果的 vocal 轨：prepState + pitchCurve 都保留', () => {

@@ -285,6 +285,42 @@
               </div>
             </details>
 
+            <!-- VST 插件（仅有选中轨道时） -->
+            <details class="inspector-section" id="inspector-section-vst" hidden>
+              <summary class="inspector-section-header">
+                <svg class="section-icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <rect x="2.5" y="3.5" width="11" height="9" rx="1.6" stroke="currentColor" stroke-width="1.4" fill="none"/>
+                  <circle cx="6" cy="8" r="1.5" fill="currentColor"/>
+                  <circle cx="10" cy="8" r="1.5" fill="currentColor"/>
+                  <line x1="2.5" y1="6" x2="13.5" y2="6" stroke="currentColor" stroke-width="1"/>
+                </svg>
+                <span data-i18n="inspector.vst.heading">VST 插件</span>
+              </summary>
+              <div class="inspector-section-body vst-insert-section" id="vst-insert-section">
+                <div class="vst-insert-empty" data-vst-ref="empty">
+                  <p class="vst-insert-hint" data-i18n="inspector.vst.empty_hint">为该轨道加载一个 VST3 插件作为 insert 效果</p>
+                  <button type="button" class="panel-action-btn panel-action-btn--primary" data-vst-ref="load-button" data-i18n="inspector.vst.load_button">加载 VST 插件</button>
+                  <p class="vst-insert-unavailable" data-vst-ref="unavailable" hidden data-i18n="inspector.vst.unavailable">仅桌面版支持 VST 插件</p>
+                </div>
+                <div class="vst-insert-loaded" data-vst-ref="loaded" hidden>
+                  <div class="vst-insert-card">
+                    <div class="vst-insert-card-name" data-vst-ref="display-name">—</div>
+                    <div class="vst-insert-card-status" data-vst-ref="status"></div>
+                    <div class="vst-insert-card-actions">
+                      <button type="button" class="panel-action-btn panel-action-btn--primary" data-vst-ref="open-editor" data-i18n="inspector.vst.open_editor">打开界面</button>
+                      <label class="vst-insert-bypass">
+                        <input type="checkbox" data-vst-ref="bypass-toggle" />
+                        <span data-i18n="inspector.vst.bypass">绕过</span>
+                      </label>
+                      <button type="button" class="panel-action-btn" data-vst-ref="replace" data-i18n="inspector.vst.replace">更换</button>
+                      <button type="button" class="panel-action-btn panel-action-btn--danger" data-vst-ref="remove" data-i18n="inspector.vst.remove">移除</button>
+                    </div>
+                    <div class="vst-insert-card-error" data-vst-ref="error" hidden></div>
+                  </div>
+                </div>
+              </div>
+            </details>
+
             <!-- 分享链接（常驻） -->
             <details class="inspector-section" id="inspector-section-share" open>
               <summary class="inspector-section-header">

@@ -92,12 +92,14 @@ export function createShellLayoutRefs() {
     inspectorSectionVoicebank: document.getElementById('inspector-section-voicebank'),
     inspectorSectionTone: document.getElementById('inspector-section-tone'),
     inspectorSectionVc: document.getElementById('inspector-section-vc'),
+    inspectorSectionVst: document.getElementById('inspector-section-vst'),
     inspectorSectionShare: document.getElementById('inspector-section-share'),
     // 乐器音色的内容挂载点；父 section 可容纳多个子模块（当下只有吉他 Amp Sim 3）
     inspectorToneSlot: document.getElementById('inspector-tone-slot'),
     // 兼容老 ref 名（TrackTonePanelView 仍然用 inspectorTonePanel 读取）
     inspectorTonePanel: document.getElementById('inspector-tone-slot'),
     voiceConversionSection: document.getElementById('voice-conversion-section'),
+    vstInsertSection: document.getElementById('vst-insert-section'),
     trackView: document.getElementById('track-view'),
     editorPanel: document.getElementById('editor-panel'),
     panelResizer: document.getElementById('panel-resizer'),

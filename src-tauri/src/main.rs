@@ -5,6 +5,7 @@ mod backend;
 mod local_server;
 mod tunnel;
 mod updater;
+mod vst_host;
 
 use std::{
     io,
@@ -15,22 +16,26 @@ use std::{
 };
 use tauri::Manager;
 use tunnel::{TunnelState, TunnelStatus};
+use vst_host::VstHostState;
 
 pub struct AppCtx {
     pub tunnel: Arc<TunnelState>,
     pub local_port: AtomicU16,
+    pub vst_host: Arc<VstHostState>,
 }
 
 fn main() {
     let ctx = Arc::new(AppCtx {
         tunnel: Arc::new(TunnelState::default()),
         local_port: AtomicU16::new(0),
+        vst_host: Arc::new(VstHostState::default()),
     });
 
     let manage_ctx = Arc::clone(&ctx);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             tunnel_get_status,
             tunnel_start,
@@ -39,10 +44,25 @@ fn main() {
             api_key_vault::save_api_key_config,
             api_key_vault::get_api_key_config,
             api_key_vault::clear_api_key_config,
+            vst_host::vst_list_plugins,
+            vst_host::vst_scan_dirs,
+            vst_host::vst_load,
+            vst_host::vst_unload,
+            vst_host::vst_show_editor,
+            vst_host::vst_hide_editor,
+            vst_host::vst_set_param,
+            vst_host::vst_get_param,
+            vst_host::vst_get_state,
+            vst_host::vst_set_state,
+            vst_host::vst_process_offline,
+            vst_host::vst_get_ws_endpoint,
+            vst_host::vst_pick_plugin_file,
         ])
         .setup(move |app| {
             app.manage(backend::BackendState::default());
             app.manage(Arc::clone(&manage_ctx));
+            // VST 宿主状态作为独立 State 管理，便于命令拿到 Arc
+            app.manage(Arc::clone(&manage_ctx.vst_host));
 
             backend::start(app.handle()).map_err(io_error)?;
 
@@ -82,6 +102,15 @@ fn main() {
                     .map_err(|error| io_error(error.to_string()))?;
             }
 
+            // VST 集成自检：环境变量触发，跑一次 host spawn + list_plugins
+            if std::env::var("MELODY_VST_SELF_TEST").ok().as_deref() == Some("1") {
+                let test_app = app.handle().clone();
+                let test_state = Arc::clone(&manage_ctx.vst_host);
+                tauri::async_runtime::spawn(async move {
+                    vst_host::run_self_test(test_app, test_state).await;
+                });
+            }
+
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -92,8 +121,10 @@ fn main() {
                 tauri::RunEvent::Exit | tauri::RunEvent::ExitRequested { .. }
             ) {
                 let tunnel = Arc::clone(&ctx.tunnel);
+                let vst = Arc::clone(&ctx.vst_host);
                 tauri::async_runtime::block_on(async move {
                     let _ = tunnel::stop_tunnel(tunnel).await;
+                    vst_host::shutdown(&vst).await;
                 });
                 backend::stop(app);
             }

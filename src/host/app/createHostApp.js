@@ -11,6 +11,7 @@ import { createTrackSourceAssignmentHandler } from './createTrackSourceAssignmen
 import { createTransportSeekHandler } from './createTransportSeekHandler.js'
 import { createTransportStepHandler } from './createTransportStepHandler.js'
 import { createVoiceConversionViewHandlers } from './createVoiceConversionViewHandlers.js'
+import { createVstInsertViewHandlers } from './createVstInsertViewHandlers.js'
 import { createWaiterRegistry } from './createWaiterRegistry.js'
 import { createTimelineAxis } from '../../shared/timelineAxis.js'
 import { isKeyboardShortcutTargetEditable } from '../../shared/isKeyboardShortcutTargetEditable.js'
@@ -285,12 +286,20 @@ export function createHostApp() {
   const isDirty = () => currentRevision !== savedRevision
   const markPristine = () => { savedRevision = currentRevision }
 
+  // VST insert handlers 在 render 构造前先实例化——computeViewState 透传给 render 闭包
+  const vstInsertViewHandlers = createVstInsertViewHandlers({
+    store,
+    audioGraph: projectAudioGraph,
+    onProjectChanged: ({ silent } = {}) => render(silent ? 'vst-host-event' : 'vst-insert-changed'),
+    logger,
+  })
   const render = createHostRender({
     logger,
     store,
     sessionStore,
     view,
     getVoiceConversionState: (trackId) => voiceConversionController?.buildInspectorState(trackId) || { visible: false },
+    getVstInsertState: () => vstInsertViewHandlers.computeViewState(store.getSelectedTrack?.() || null),
     onAfterRender: (reason) => {
       const wasPristine = PRISTINE_RENDER_REASONS.has(reason)
       if (!wasPristine) currentRevision += 1
@@ -2162,6 +2171,7 @@ export function createHostApp() {
       trackId: store.getEditorTrack()?.id || null,
     }),
     ...voiceConversionViewHandlers,
+    ...vstInsertViewHandlers.handlers,
   })
   return { init }
 }

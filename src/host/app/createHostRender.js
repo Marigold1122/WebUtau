@@ -6,6 +6,7 @@ export function createHostRender({
   sessionStore,
   view,
   getVoiceConversionState = null,
+  getVstInsertState = null,
   onAfterRender = null,
 }) {
   return function render(reason = 'state-changed') {
@@ -21,6 +22,7 @@ export function createHostRender({
       ...sessionState,
       audibleTrackIds: resolveAudibleTrackIds(store.getTracks(), sessionState),
       voiceConversion: getVoiceConversionState?.(selectedTrackId) || { visible: false },
+      vstInsert: getVstInsertState?.() || { visible: false },
     })
     onAfterRender?.(reason)
   }

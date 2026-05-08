@@ -11,9 +11,16 @@
 // 之前每次加载工程都要重新走一遍音高预测，体验差。现在保留预测，跨会话直接进编辑态。
 // 仍然保留"运行时引用清零"原则——voiceSnapshot.jobId / renderManifest 这些 server
 // 侧失效的部分照常剥掉，只持久化 pitchData 等真正可复用的"内容"
+//
+// v2 → v3：每条 track 多一个可选的 vstInsert 字段，描述用户加载的 VST3 插件 +
+// 它的状态 chunk + 是否 bypass。chunkB64 是插件自身导出的二进制状态（VST3
+// IComponent::getState），跨机器/跨重装可由 host 还原参数。pluginUid 优先用于解析，
+// pluginPath 兜底；插件文件不在时保留 chunk 让用户重新指定路径后能恢复
+
+import { serializeVstInsertState } from '../audio/insert/vst/vstInsertState.js'
 
 export const WEBUTAU_PROJECT_FORMAT = 'webutau-project'
-export const WEBUTAU_PROJECT_VERSION = 2
+export const WEBUTAU_PROJECT_VERSION = 3
 export const WEBUTAU_PROJECT_EXTENSION = '.webutau'
 export const WEBUTAU_PROJECT_MIME_TYPE = 'application/json'
 
@@ -40,6 +47,8 @@ function pruneTrack(track) {
   delete cloned.vocalManifest
   delete cloned.pendingVoiceEditState
   delete cloned.revision
+  // VST insert：只保留可序列化字段；handle 等运行时数据不进文件
+  cloned.vstInsert = serializeVstInsertState(cloned.vstInsert)
   // prepState 与 voiceSnapshot 是一对：
   //   prepState 'ready' 才持久化 voiceSnapshot.pitchData——保证 pitchData 跟当前 notes 同步
   //   （编辑笔记会把 prepState 重置为 idle；这里以 prepState 状态为权威信号）
@@ -219,12 +228,15 @@ export function deserializeProject(jsonString) {
   }
 }
 
-// 加载时归一化每条 track 的 prep / voiceSnapshot 状态——
-// 容忍 v1 老文件（这两字段都没）+ v2 自身可能被手改 / 部分腐烂的边界
+// 加载时归一化每条 track 的 prep / voiceSnapshot / vstInsert 状态——
+// 容忍 v1/v2 老文件（这些字段都没）+ v3 自身可能被手改 / 部分腐烂的边界
 function normalizeLoadedTracks(project) {
   if (!project || !Array.isArray(project.tracks)) return
   for (const track of project.tracks) {
     if (!track || typeof track !== 'object') continue
+    // VST insert：v1/v2 不存在该字段，自然为 undefined → 归一为 null。
+    // v3 文件里如有非法形态（pluginPath 缺失等）也会被 normalize 拦下
+    track.vstInsert = serializeVstInsertState(track.vstInsert)
     const prep = track.prepState
     const validPrep = prep && typeof prep === 'object' && typeof prep.status === 'string'
     const hasPitchCurve = Boolean(

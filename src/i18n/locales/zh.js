@@ -43,6 +43,21 @@ export const messages = {
     tone: {
       heading: '乐器音色',
     },
+    vst: {
+      heading: 'VST 插件',
+      empty_hint: '为该轨道加载一个 VST3 插件作为 insert 效果',
+      load_button: '加载 VST 插件',
+      open_editor: '打开界面',
+      bypass: '绕过',
+      replace: '更换',
+      remove: '移除',
+      unavailable: '仅桌面版支持 VST 插件',
+      unknown_plugin: '未命名插件',
+      status_loading: '正在加载…',
+      status_ready: '已就绪',
+      status_error: '加载失败',
+      status_unavailable: '宿主未启动',
+    },
     vc: {
       heading: '音色转换',
       choose_reference: '选择参考',

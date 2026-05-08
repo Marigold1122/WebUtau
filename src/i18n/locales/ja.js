@@ -43,6 +43,21 @@ export const messages = {
     tone: {
       heading: '音色',
     },
+    vst: {
+      heading: 'VST プラグイン',
+      empty_hint: 'このトラックの insert として VST3 プラグインを読み込みます',
+      load_button: 'VST プラグインを読み込む',
+      open_editor: 'GUI を開く',
+      bypass: 'バイパス',
+      replace: '差し替え',
+      remove: '削除',
+      unavailable: 'VST プラグインはデスクトップ版のみ対応',
+      unknown_plugin: '名称未設定プラグイン',
+      status_loading: '読み込み中…',
+      status_ready: '準備完了',
+      status_error: '読み込み失敗',
+      status_unavailable: 'ホスト未起動',
+    },
     vc: {
       heading: '音色変換',
       choose_reference: '参照を選ぶ',

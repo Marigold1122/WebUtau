@@ -43,6 +43,21 @@ export const messages = {
     tone: {
       heading: 'Instrument tone',
     },
+    vst: {
+      heading: 'VST plugin',
+      empty_hint: 'Load a VST3 plugin as an insert effect for this track',
+      load_button: 'Load VST plugin',
+      open_editor: 'Open editor',
+      bypass: 'Bypass',
+      replace: 'Replace',
+      remove: 'Remove',
+      unavailable: 'VST plugins are only supported in the desktop build',
+      unknown_plugin: 'Unnamed plugin',
+      status_loading: 'Loading…',
+      status_ready: 'Ready',
+      status_error: 'Load failed',
+      status_unavailable: 'Host not running',
+    },
     vc: {
       heading: 'Voice conversion',
       choose_reference: 'Pick reference',

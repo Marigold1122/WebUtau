@@ -12,12 +12,9 @@ import { startToneAudio } from './instruments/toneRuntime.js'
 import { LufsMeter } from './master/LufsMeter.js'
 import { MasterChainBus } from './master/MasterChainBus.js'
 import { TrackReverbBus } from './TrackReverbBus.js'
-import { createTrackInsertEffect } from './insert/createTrackInsertEffect.js'
-import {
-  buildTrackInsertProfile,
-  normalizeTrackInsertId,
-  supportsTrackGuitarToneInsertId,
-} from './insert/trackInsertCatalog.js'
+import { normalizeTrackInsertId } from './insert/trackInsertCatalog.js'
+import { normalizeVstInsertState } from './insert/vst/vstInsertState.js'
+import { syncTrackInsertChain } from './trackInsertSync.js'
 
 function disconnectNode(node) {
   try { node?.disconnect?.() } catch (_error) {}
@@ -193,7 +190,8 @@ export class ProjectAudioGraph {
     if (!channel) return false
 
     this.trackChannels.delete(trackId)
-    channel.insertEffect?.dispose?.()
+    channel.builtinInsertEffect?.dispose?.()
+    channel.vstInsertEffect?.dispose?.()
     channel.reverbBus?.dispose?.()
     disconnectNode(channel.input)
     disconnectNode(channel.postInsert)
@@ -209,6 +207,7 @@ export class ProjectAudioGraph {
       : null
     const previous = this.trackStates.get(trackId) || {
       insertId: null,
+      vstInsert: null,
       volume: normalizeTrackVolume(),
       pan: normalizeTrackPan(),
       reverbSend: normalizeTrackReverbSend(),
@@ -234,6 +233,9 @@ export class ProjectAudioGraph {
       insertId: hasOwn(changes, 'insertId')
         ? normalizeTrackInsertId(changes.insertId)
         : previous.insertId,
+      vstInsert: hasOwn(changes, 'vstInsert')
+        ? normalizeVstInsertState(changes.vstInsert)
+        : previous.vstInsert,
       volume: hasOwn(changes, 'volume')
         ? normalizeTrackVolume(changes.volume, previous.volume)
         : previous.volume,
@@ -309,9 +311,12 @@ export class ProjectAudioGraph {
         state.reverbConfig,
         this.defaultReverbConfig,
       ),
-      insertEffect: null,
-      insertId: '__uninitialized__',
-      insertStateKey: '__uninitialized__',
+      builtinInsertEffect: null,
+      builtinInsertId: '__uninitialized__',
+      builtinInsertKey: '__uninitialized__',
+      vstInsertEffect: null,
+      vstInsertInstanceId: '__uninitialized__',
+      vstInsertKey: '__uninitialized__',
     }
     this.trackChannels.set(trackId, channel)
     this._syncTrackInsert(channel, state)
@@ -355,69 +360,10 @@ export class ProjectAudioGraph {
   }
 
   _syncTrackInsert(channel, state) {
-    const nextInsertId = normalizeTrackInsertId(state?.insertId)
-    const nextInsertStateKey = this._buildInsertStateKey(nextInsertId, state?.guitarTone)
-    if (channel.insertStateKey === nextInsertStateKey) return false
-
-    if (
-      channel.insertId === nextInsertId
-      && nextInsertId
-      && channel.insertEffect
-      && typeof channel.insertEffect.updateProfile === 'function'
-    ) {
-      try {
-        channel.insertEffect.updateProfile(buildTrackInsertProfile(nextInsertId, {
-          guitarToneConfig: state?.guitarTone,
-        }))
-        channel.insertStateKey = nextInsertStateKey
-        return true
-      } catch (error) {
-        this.logger?.warn?.('Track insert live profile update failed; recreating insert', {
-          insertId: nextInsertId,
-          error: error?.message || String(error),
-        })
-      }
-    }
-
-    disconnectNode(channel.input)
-    channel.insertEffect?.dispose?.()
-    channel.insertEffect = null
-
-    try {
-      if (nextInsertId) {
-        const insertEffect = createTrackInsertEffect({
-          rawContext: this.rawContext,
-          insertId: nextInsertId,
-          guitarToneConfig: state?.guitarTone,
-          logger: this.logger,
-        })
-        if (insertEffect) {
-          channel.input.connect(insertEffect.input)
-          insertEffect.output.connect(channel.postInsert)
-          channel.insertEffect = insertEffect
-          channel.insertId = nextInsertId
-          channel.insertStateKey = nextInsertStateKey
-          return true
-        }
-      }
-    } catch (error) {
-      this.logger?.warn?.('Track insert setup failed', {
-        insertId: nextInsertId,
-        error: error?.message || String(error),
-      })
-    }
-
-    channel.input.connect(channel.postInsert)
-    channel.insertId = null
-    channel.insertStateKey = 'none'
-    return true
-  }
-
-  _buildInsertStateKey(insertId, guitarTone) {
-    const normalizedInsertId = normalizeTrackInsertId(insertId)
-    if (!normalizedInsertId) return 'none'
-    if (!supportsTrackGuitarToneInsertId(normalizedInsertId)) return normalizedInsertId
-    return `${normalizedInsertId}::${JSON.stringify(normalizeTrackGuitarToneConfig(guitarTone))}`
+    return syncTrackInsertChain(channel, state, {
+      rawContext: this.rawContext,
+      logger: this.logger,
+    })
   }
 
   _normalizeReverbEngineId(value, fallback = LEGACY_REVERB_ENGINE_ID) {

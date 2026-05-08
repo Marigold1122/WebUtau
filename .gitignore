@@ -43,9 +43,16 @@ OpenUtau/OpenUtau.Plugin.Builtin/bin/
 OpenUtau/OpenUtau.Plugin.Builtin/obj/
 OpenUtau/OpenUtau.Plugin.Builtin/tempdiffsingertest/
 
-# External model/runtime trees
-external/
+# External model/runtime trees。用 external/* 通配而非 external/——
+# 否则 external/vst-host/ 的 negation 不生效（git 不会进 ignore 的目录看子项）
+external/*
 $dest/
+# external/vst-host/ 是 webUTAU 自己维护的 JUCE host 子项目，源码入 git；
+# JUCE submodule 与 build/ 产物排除
+!external/vst-host/
+external/vst-host/JUCE/
+external/vst-host/build/
+external/vst-host/build-*/
 
 # SeedVC local service source is tracked, but local runtime data is not
 scripts/seedvc_service/__pycache__/
@@ -77,6 +84,7 @@ src-tauri/binaries/
 src-tauri/.backend-build/
 src-tauri/resources/runtime/
 src-tauri/resources/cloudflared/
+src-tauri/resources/vst-host/
 .cloudflared-cache/
 
 # Environment

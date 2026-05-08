@@ -3,6 +3,7 @@ import { getLanguageLabel } from '../../config/languageOptions.js'
 import { PLAYHEAD_FOLLOW_MODE_LABELS, PLAYHEAD_FOLLOW_MODES, normalizePlayheadFollowMode } from '../../shared/playheadFollowMode.js'
 import { AboutPanelView } from './AboutPanelView.js'
 import { InspectorVoiceConversionSection } from './InspectorVoiceConversionSection.js'
+import { InspectorVstInsertSection } from './InspectorVstInsertSection.js'
 import { MenubarTransportView } from './MenubarTransportView.js'
 import { PlaybackToastView } from './PlaybackToastView.js'
 import { ReverbDockView } from './ReverbDockView.js'
@@ -69,6 +70,7 @@ export class ShellLayoutView {
     this.lastPlayheadTraceAtMs = 0
     this.trackSynthesisOverlay = new TrackSynthesisOverlay()
     this.voiceConversionSection = new InspectorVoiceConversionSection(this.refs.voiceConversionSection, handlers)
+    this.vstInsertSection = new InspectorVstInsertSection(this.refs.vstInsertSection, handlers, { translate: t })
     this.trackViewportController = new TrackViewportController(this.refs, handlers)
     this.instrumentEditorView = new InstrumentEditorView(this.refs.instrumentEditorRoot, handlers)
     this.reverbDockView = new ReverbDockView(this.refs, handlers)
@@ -107,6 +109,7 @@ export class ShellLayoutView {
   setHandlers(handlers = {}) {
     this.handlers = handlers
     this.voiceConversionSection.setHandlers(handlers)
+    this.vstInsertSection.setHandlers(handlers)
     this.trackViewportController.setHandlers(handlers)
     this.instrumentEditorView.setHandlers(handlers)
     this.reverbDockView.setHandlers(handlers)
@@ -119,6 +122,7 @@ export class ShellLayoutView {
     this.menubarTransportView.init()
     this.playbackToastView.init()
     this.voiceConversionSection.init()
+    this.vstInsertSection.init()
     this.instrumentEditorView.init()
     this.reverbDockView.init()
     this.trackTonePanelView.init()
@@ -169,6 +173,11 @@ export class ShellLayoutView {
     // 外层 <details> 与内部 section 的可见性同步，避免"标题在、内容空"的残影
     if (this.refs.inspectorSectionVc) {
       this.refs.inspectorSectionVc.hidden = !vcState.visible
+    }
+    const vstState = viewState?.vstInsert || { visible: false }
+    this.vstInsertSection.render(vstState)
+    if (this.refs.inspectorSectionVst) {
+      this.refs.inspectorSectionVst.hidden = !vstState.visible
     }
     const toneSupported = this.trackTonePanelView.render({
       project,
