@@ -40,6 +40,11 @@ function pruneTrack(track) {
   delete cloned.vocalManifest
   delete cloned.pendingVoiceEditState
   delete cloned.revision
+  // 注意：track.officialLyrics 是用户在 Quick Lyric 的"📖 官方歌词"小窗里粘贴的
+  // 真实歌词（按 \n 分隔的 string[]），用作 AI 写词的"行结构"权威来源——
+  // 后端 phrase 切分（按音符间隔）跟真实歌词行对不上，必须靠前端这份数据告诉 AI
+  // "该写几行、每行几字"。属于用户数据，跨会话有用，必须持久化。structuredClone
+  // 默认就保留这字段；校验合法性放在加载侧（normalizeLoadedTracks）
   // prepState 与 voiceSnapshot 是一对：
   //   prepState 'ready' 才持久化 voiceSnapshot.pitchData——保证 pitchData 跟当前 notes 同步
   //   （编辑笔记会把 prepState 重置为 idle；这里以 prepState 状态为权威信号）
@@ -253,6 +258,17 @@ function normalizeLoadedTracks(project) {
     if (prep.status !== 'ready' && prep.status !== 'idle') {
       track.prepState = { status: 'idle', progress: 0, error: null }
     }
+    // officialLyrics：用户在 Quick Lyric 的"📖 官方歌词"小窗里粘贴的真实歌词
+    // （string[]，每行一句）。形状不对就丢弃为 null——下次用户打开重填
+    if (track.officialLyrics !== undefined && track.officialLyrics !== null) {
+      if (!Array.isArray(track.officialLyrics)
+          || !track.officialLyrics.every((s) => typeof s === 'string')) {
+        track.officialLyrics = null
+      }
+    }
+    // 旧字段（v2 早期版本可能写过）→ 直接清掉，避免占空间
+    if ('aiLyricLines' in track) delete track.aiLyricLines
+    if ('aiLyricPhrases' in track) delete track.aiLyricPhrases
   }
 }
 

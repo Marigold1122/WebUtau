@@ -376,7 +376,10 @@ export class ShellLayoutView {
     this.instrumentEditorView.markSaved()
   }
 
-  openQuickLyricPanel(snapshot, { onSave, languageCode }) {
+  openQuickLyricPanel(snapshot, {
+    onSave, languageCode, songName,
+    savedOfficialLyrics, onOfficialLyricsChanged,
+  }) {
     const container = this.refs.editorRuntimeTools || this.refs.editorPanel
     if (!container) return
     this.quickLyricPanel.open(snapshot, container, {
@@ -384,6 +387,9 @@ export class ShellLayoutView {
       onClose: () => this.btnQuickLyric?.classList.remove('active'),
       languageCode,
       anchor: this.refs.trackView || container,
+      songName,
+      savedOfficialLyrics,
+      onOfficialLyricsChanged,
     })
     this.btnQuickLyric?.classList.add('active')
   }

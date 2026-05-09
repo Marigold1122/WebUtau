@@ -1,14 +1,19 @@
 /**
- * 快速填词浮窗 —— 允许用户一次性编辑整轨歌词。
+ * 快速填词浮窗 —— 编辑整轨歌词。
  *
- * 打开时，从 voice runtime snapshot 中提取当前歌词，按分句换行展示。
- * 用户编辑后点击「解析」：去除所有空白，按字拆分，校验数量是否与音符数一致；
- * 若一致则重新按分句换行排列，方便用户二次检查；「保存」按钮变为可用。
- * 点击「保存」后，将歌词变更构造成 lyric-edit 数组，交由外部回调提交。
+ * 普通流程：
+ *   - 打开时从 voice runtime snapshot 读出当前歌词，按后端 phrase 切分换行展示
+ *   - 用户编辑文本后点「解析」校验：总字数 ≤ 总音符数即通过（不够补 '+' 延音）
+ *   - 点「保存」按 backend phrases 顺序贪心分配字到 note，发 lyric edits
  *
- * AI 协作填词：toggle 开启后展开 AI 区——用户输入主题/风格 → 后端调 LLM →
- * 返回符合音节数的歌词 → 自动填入文本框（用户仍可二次编辑后再保存）
+ * AI 协作填词：
+ *   - toggle 开启 AI 区
+ *   - **必填官方歌词**：点「📖 官方歌词」弹小窗，把这首歌真实的歌词粘贴进来（每行一句）
+ *     这是 AI 写词的"行结构"权威来源——后端 phrase 切分（按音符间隔）跟真实歌词行对不上，
+ *     不让 AI 看真实结构、AI 就只能按错乱的 phrase 数瞎写
+ *   - 输入主题/风格 → AI 按官方歌词的行结构（每行字数）写新词 → 自动填入文本框
  */
+
 import { extractMusicStructure } from '../ai/extractMusicStructure.js'
 import { LyricAIClient } from '../ai/LyricAIClient.js'
 import {
@@ -19,7 +24,9 @@ import {
   setUserApiConfig,
 } from '../ai/lyricApiKeyStore.js'
 import { DAILY_LIMIT_DEFAULT, getQuotaSnapshot } from '../ai/lyricUsageQuota.js'
+import { flattenSnapshotNotes } from '../ai/syllableAdjustments.js'
 import { openLyricAIKeyDialog } from './LyricAIKeyDialog.js'
+import { openOfficialLyricsDialog } from './OfficialLyricsDialog.js'
 import { t } from '../../i18n/index.js'
 
 export class QuickLyricPanel {
@@ -33,7 +40,7 @@ export class QuickLyricPanel {
 
     /** @type {{ phrases: Array, bpm: number } | null} */
     this._snapshot = null
-    /** @type {string[] | null} 解析成功后的歌词数组（每字一项） */
+    /** @type {string[] | null} 解析成功后的 flat 字符数组 */
     this._parsedLyrics = null
     /** @type {((edits: Array) => void) | null} */
     this._onSave = null
@@ -51,15 +58,31 @@ export class QuickLyricPanel {
     this._aiClient = new LyricAIClient()
     this._aiBusy = false
     this._aiAbortController = null
+    this._songName = null
+
+    // 官方歌词（前端持久化的真实歌词行结构，用于 AI 写词的 musicStructure）
+    /** @type {string[]} */
+    this._officialLyrics = []
+    this._btnOfficialLyrics = null
+    this._officialLyricsStatusEl = null
+    this._aiHintEl = null
+    /** @type {((lines: string[]) => void) | null} */
+    this._onOfficialLyricsChanged = null
   }
 
-  /** 打开面板并填充当前歌词。anchor 决定初次弹出的位置，后续可由用户拖动 */
-  open(snapshot, container, { onSave, onClose, languageCode, anchor }) {
+  open(snapshot, container, {
+    onSave, onClose, languageCode, anchor, songName,
+    savedOfficialLyrics = null,
+    onOfficialLyricsChanged = null,
+  }) {
     this.close()
     this._snapshot = snapshot
     this._onSave = onSave
     this._languageCode = languageCode || null
     this._parsedLyrics = null
+    this._songName = songName || null
+    this._officialLyrics = Array.isArray(savedOfficialLyrics) ? savedOfficialLyrics.slice() : []
+    this._onOfficialLyricsChanged = onOfficialLyricsChanged
     this._build(container, onClose)
     this._applyInitialPosition(anchor)
     this._installDrag()
@@ -68,7 +91,7 @@ export class QuickLyricPanel {
 
   close() {
     this._uninstallDrag()
-    // 取消正在飞的 AI 请求——避免回包后写到已经摘掉的 DOM 上
+    // 取消正在飞的 AI 请求
     if (this._aiAbortController) {
       try { this._aiAbortController.abort() } catch (_e) {}
       this._aiAbortController = null
@@ -82,7 +105,9 @@ export class QuickLyricPanel {
     this._snapshot = null
     this._parsedLyrics = null
     this._onSave = null
-    // 清理 AI 区 refs——不让下一个 await 回调写到悬空 DOM
+    this._songName = null
+    this._officialLyrics = []
+    this._onOfficialLyricsChanged = null
     this._aiSection = null
     this._aiToggle = null
     this._aiQuotaEl = null
@@ -90,13 +115,14 @@ export class QuickLyricPanel {
     this._aiStyleInput = null
     this._aiBtnGenerate = null
     this._aiBtnConfig = null
+    this._btnOfficialLyrics = null
+    this._officialLyricsStatusEl = null
+    this._aiHintEl = null
   }
 
-  isOpen() {
-    return this._el !== null
-  }
+  isOpen() { return this._el !== null }
 
-  // ── 内部 ──────────────────────────────────────────
+  // ── 构造 DOM ──────────────────────────────────────
 
   _build(_container, onClose) {
     const el = document.createElement('div')
@@ -105,7 +131,6 @@ export class QuickLyricPanel {
     el.addEventListener('mousedown', (e) => e.stopPropagation())
     el.addEventListener('pointerdown', (e) => e.stopPropagation())
 
-    // 标题栏
     const header = document.createElement('div')
     header.className = 'quick-lyric-header'
     this._header = header
@@ -119,13 +144,11 @@ export class QuickLyricPanel {
     this._btnClose.addEventListener('click', () => { this.close(); onClose?.() })
     header.append(title, this._btnClose)
 
-    // 文本框
     this._textarea = document.createElement('textarea')
     this._textarea.className = 'quick-lyric-textarea'
     this._textarea.spellcheck = false
     this._textarea.placeholder = t('quickLyric.placeholder')
     this._textarea.addEventListener('input', () => {
-      // 内容变动后，重置解析状态
       this._parsedLyrics = null
       this._btnSave.disabled = true
       this._hideFix()
@@ -133,11 +156,9 @@ export class QuickLyricPanel {
     })
     this._textarea.addEventListener('keydown', (e) => e.stopPropagation())
 
-    // 状态
     this._statusEl = document.createElement('div')
     this._statusEl.className = 'quick-lyric-status'
 
-    // 按钮
     const actions = document.createElement('div')
     actions.className = 'quick-lyric-actions'
     this._btnFix = document.createElement('button')
@@ -159,22 +180,18 @@ export class QuickLyricPanel {
     this._btnSave.addEventListener('click', () => this._handleSave())
     actions.append(this._btnFix, this._btnParse, this._btnSave)
 
-    // AI 协作填词区——默认折叠，toggle 打开后展开
     const aiSection = this._buildAISection()
-
     el.append(header, this._textarea, this._statusEl, aiSection, actions)
-    // 使用 position: fixed，挂到 body 避免被编辑面板的 overflow:hidden 裁剪
     document.body.appendChild(el)
     this._el = el
     this._textarea.focus()
   }
 
-  // 构造 AI 协作填词子面板：toggle + 主题输入 + 风格输入 + 配额显示 + 生成按钮
+  // AI 协作填词子面板：toggle + 官方歌词 + 主题/风格 + 配额 + 生成
   _buildAISection() {
     const wrap = document.createElement('div')
     wrap.className = 'quick-lyric-ai'
 
-    // toggle 行
     const toggleRow = document.createElement('label')
     toggleRow.className = 'quick-lyric-ai-toggle'
     const toggleInput = document.createElement('input')
@@ -193,10 +210,31 @@ export class QuickLyricPanel {
     })
     wrap.appendChild(toggleRow)
 
-    // 展开后的内容区（默认隐藏）
     const body = document.createElement('div')
     body.className = 'quick-lyric-ai-body'
     body.hidden = true
+
+    // 提示横幅 + 官方歌词按钮
+    const hint = document.createElement('div')
+    hint.className = 'quick-lyric-ai-hint'
+    hint.innerHTML = `
+      <span class="quick-lyric-ai-hint-icon" aria-hidden="true">⚠️</span>
+      <span class="quick-lyric-ai-hint-text">${t('quickLyric.ai.official_lyrics_hint')}</span>
+    `
+    this._aiHintEl = hint
+
+    const officialRow = document.createElement('div')
+    officialRow.className = 'quick-lyric-ai-adjust-row'
+    const btnOfficial = document.createElement('button')
+    btnOfficial.type = 'button'
+    btnOfficial.className = 'quick-lyric-ai-adjust-btn'
+    btnOfficial.innerHTML = `<span aria-hidden="true">📖</span> ${t('quickLyric.ai.btn_official_lyrics')}`
+    btnOfficial.addEventListener('click', () => this._handleOpenOfficialLyrics())
+    this._btnOfficialLyrics = btnOfficial
+    const officialStatus = document.createElement('span')
+    officialStatus.className = 'quick-lyric-ai-adjust-status'
+    this._officialLyricsStatusEl = officialStatus
+    officialRow.append(btnOfficial, officialStatus)
 
     const themeLabel = document.createElement('div')
     themeLabel.className = 'quick-lyric-ai-label'
@@ -218,7 +256,7 @@ export class QuickLyricPanel {
     styleInput.addEventListener('keydown', (e) => e.stopPropagation())
     this._aiStyleInput = styleInput
 
-    // 第三行：配额 + 配置链接 + 生成按钮
+    // 配额 + 配置 + 生成
     const footer = document.createElement('div')
     footer.className = 'quick-lyric-ai-footer'
     const quotaEl = document.createElement('span')
@@ -241,17 +279,54 @@ export class QuickLyricPanel {
     this._aiBtnGenerate = btnGenerate
     footer.append(quotaEl, btnConfig, btnGenerate)
 
-    body.append(themeLabel, themeInput, styleLabel, styleInput, footer)
+    body.append(hint, officialRow, themeLabel, themeInput, styleLabel, styleInput, footer)
     wrap.appendChild(body)
     this._aiSection = wrap
+    this._refreshOfficialLyricsStatus()
     return wrap
   }
 
+  // ── 官方歌词 ──────────────────────────────────────
+
+  async _handleOpenOfficialLyrics() {
+    const result = await openOfficialLyricsDialog({
+      initialLines: this._officialLyrics.slice(),
+    })
+    if (result.action !== 'save') return
+    // 去掉前后空白行；保留行内空格（用户可能写"风雨里追赶 雾里分不清影踪"这种带空格的）
+    const cleaned = result.lines.map((l) => l.replace(/^\s+|\s+$/g, ''))
+    while (cleaned.length > 0 && cleaned[cleaned.length - 1] === '') cleaned.pop()
+    while (cleaned.length > 0 && cleaned[0] === '') cleaned.shift()
+    this._officialLyrics = cleaned
+    this._onOfficialLyricsChanged?.(cleaned)
+    this._refreshOfficialLyricsStatus()
+    this._setStatus(t('quickLyric.ai.official_lyrics_saved'), 'success')
+  }
+
+  _refreshOfficialLyricsStatus() {
+    if (!this._officialLyricsStatusEl) return
+    const lines = this._officialLyrics || []
+    const nonEmpty = lines.filter((l) => l.replace(/\s/g, '').length > 0)
+    if (nonEmpty.length === 0) {
+      this._officialLyricsStatusEl.textContent = t('quickLyric.ai.official_lyrics_pending')
+      this._officialLyricsStatusEl.classList.remove('is-adjusted', 'is-over-limit')
+      this._officialLyricsStatusEl.classList.add('is-pending')
+    } else {
+      const totalChars = nonEmpty.reduce((s, l) => s + [...l.replace(/\s/g, '')].length, 0)
+      this._officialLyricsStatusEl.textContent = t('quickLyric.ai.official_lyrics_done', {
+        lines: nonEmpty.length,
+        chars: totalChars,
+      })
+      this._officialLyricsStatusEl.classList.remove('is-pending', 'is-over-limit')
+      this._officialLyricsStatusEl.classList.add('is-adjusted')
+    }
+  }
+
+  // ── AI 配额显示 ──────────────────────────────────
+
   async _refreshAIQuota() {
     if (!this._aiQuotaEl) return
-    // 异步：检查用户是否有自带 key（要解密 localStorage）
     const userKeyPresent = await hasUserApiKey().catch(() => false)
-    // 解密期间面板可能已经关闭——避免写到悬空 ref
     if (!this._aiQuotaEl) return
     if (userKeyPresent) {
       const where = getStorageKindLabel() === 'desktop-keychain'
@@ -272,10 +347,18 @@ export class QuickLyricPanel {
     }
   }
 
+  // ── AI 生成 ──────────────────────────────────────
+
   async _handleAIGenerate() {
     if (this._aiBusy) return
     if (!this._snapshot) {
       this._setStatus(t('quickLyric.ai.pick_track_first'), 'error')
+      return
+    }
+    // 必须先填官方歌词——这是 AI 看到的"行结构"权威来源
+    const officialNonEmpty = (this._officialLyrics || []).filter((l) => l.replace(/\s/g, '').length > 0)
+    if (officialNonEmpty.length === 0) {
+      this._setStatus(t('quickLyric.ai.official_lyrics_required'), 'error')
       return
     }
     const theme = this._aiThemeInput?.value?.trim()
@@ -292,15 +375,14 @@ export class QuickLyricPanel {
     this._setStatus(t('quickLyric.ai.generating_status'), 'info')
 
     this._aiAbortController = new AbortController()
-    const musicStructure = extractMusicStructure(this._snapshot)
+    const baseStructure = extractMusicStructure(this._snapshot)
+    const musicStructure = this._buildMusicStructureFromOfficial(baseStructure, officialNonEmpty)
     const result = await this._aiClient.generate({
       musicStructure,
       theme,
       style,
       signal: this._aiAbortController.signal,
     })
-
-    // await 期间用户可能已关掉面板，DOM ref 都是悬空的——直接退
     if (!this._el || !this._textarea) return
 
     this._aiBusy = false
@@ -316,13 +398,38 @@ export class QuickLyricPanel {
       return
     }
 
-    // 把生成出来的字按句换行填进文本框——用户还可手改后点解析 / 保存
-    const lines = result.phrases.map((p) => p.lyric.join(''))
+    // AI 返回每行字——直接拼成 textarea 内容（一行一句）
+    const lines = result.phrases.map((p) => (p.lyric || []).join(''))
     this._textarea.value = lines.join('\n')
     this._parsedLyrics = null
     this._btnSave.disabled = true
     this._hideFix()
     this._setStatus(t('quickLyric.ai.ai_done', { count: result.flatChars.length }), 'success')
+  }
+
+  // 把官方歌词的行结构 + snapshot 的整体音乐信息合成 musicStructure 给 AI
+  _buildMusicStructureFromOfficial(baseStructure, officialLines) {
+    const phrases = officialLines.map((line, i) => {
+      const chars = [...line.replace(/\s/g, '')]
+      return {
+        index: i + 1,
+        syllableCount: chars.length,
+        // 没有真实的 per-line note 映射；rhythm 用占位（'短' x N），AI 不靠它写出歌词
+        rhythm: new Array(chars.length).fill('短'),
+        pitchLow: baseStructure?.pitchLow || null,
+        pitchHigh: baseStructure?.pitchHigh || null,
+        existingLyrics: null,
+      }
+    })
+    return {
+      totalNotes: phrases.reduce((s, p) => s + p.syllableCount, 0),
+      phraseCount: phrases.length,
+      bpm: baseStructure?.bpm ?? 120,
+      tempoLabel: baseStructure?.tempoLabel ?? '中速',
+      pitchLow: baseStructure?.pitchLow || null,
+      pitchHigh: baseStructure?.pitchHigh || null,
+      phrases,
+    }
   }
 
   _formatAIError(result) {
@@ -360,9 +467,6 @@ export class QuickLyricPanel {
     return t('quickLyric.ai.err.generic', { message: result?.message || t('quickLyric.ai.err.generate_failed') })
   }
 
-  // 用自定义模态弹窗替代 window.prompt/confirm——后者在 Tauri webview 里
-  // 被静默拦截（点了没反应），自定义模态两端表现一致 + 单弹窗收齐 3 字段 +
-  // 厂商预设 chip 一键填 baseUrl + model
   async _openAPIKeyDialog() {
     const isDesktop = getStorageKindLabel() === 'desktop-keychain'
     const cur = await getUserApiConfig().catch(() => ({ apiKey: '', baseUrl: '', model: '' }))
@@ -395,7 +499,8 @@ export class QuickLyricPanel {
     }
   }
 
-  /** 根据传入的锚点（通常是轨道列表区域）计算初始位置：x 贴右 12px，y 贴锚点顶部 36px */
+  // ── 位置 / 拖拽 ─────────────────────────────────────
+
   _applyInitialPosition(anchor) {
     if (!this._el) return
     const rect = anchor?.getBoundingClientRect?.()
@@ -411,7 +516,6 @@ export class QuickLyricPanel {
     this._el.style.top = `${Math.round(top)}px`
   }
 
-  /** 允许用户通过拖动标题栏移动浮窗；点击关闭按钮时不触发拖动 */
   _installDrag() {
     if (!this._header || !this._el) return
     let startX = 0
@@ -459,7 +563,9 @@ export class QuickLyricPanel {
     this._onDocUp = null
   }
 
-  /** 从 snapshot 提取当前歌词，按分句换行 */
+  // ── textarea 填充 / 解析 / 保存 ──────────────────
+
+  /** 从 snapshot 提取当前歌词，按后端 phrase 切分换行 */
   _fillCurrentLyrics() {
     const phrases = this._snapshot?.phrases || []
     const lines = phrases.map((phrase) =>
@@ -470,98 +576,107 @@ export class QuickLyricPanel {
     this._setStatus(t('quickLyric.note_count', { count: totalNotes }), 'info')
   }
 
-  /** 解析用户输入：去空白 → (日语时汉字→假名) → 按字拆 → 验数量 → 重排分句换行 */
+  /** 解析用户输入：textarea 全部字符压成 flat 流，校验总字数 ≤ 总音符数。
+   *  保存时按后端 phrase 顺序贪心切分到每段（chars < notes 时自动合音补 '+' 延音） */
   async _handleParse() {
-    const phrases = this._snapshot?.phrases || []
-    const noteCounts = phrases.map((p) => (p.notes?.length || 0))
-    const totalNotes = noteCounts.reduce((a, b) => a + b, 0)
+    const flatNotes = flattenSnapshotNotes(this._snapshot?.phrases || [])
+    const totalNotes = flatNotes.length
 
-    // 去除所有空白字符
-    let raw = this._textarea.value.replace(/\s/g, '')
+    let raw = this._textarea.value
 
-    // 日语时自动将汉字转换为假名
-    if (this._isJapanese() && /[\u4e00-\u9fff]/.test(raw)) {
+    // 日语：汉字 → 假名
+    if (this._isJapanese() && /[一-鿿]/.test(raw)) {
       this._setStatus(t('quickLyric.converting_kanji'), 'info')
       this._btnParse.disabled = true
       try {
         const { convertKanjiToKana } = await import('../util/kanjiToKana.js')
         raw = await convertKanjiToKana(raw)
-        raw = raw.replace(/\s/g, '')
       } catch (error) {
         this._setStatus(t('quickLyric.convert_failed', { message: error?.message || t('quickLyric.unknown_error') }), 'error')
         this._btnParse.disabled = false
         return
       }
       this._btnParse.disabled = false
+      this._textarea.value = raw
     }
 
-    // 日语按拍（モーラ）拆分：拗音小假名（ゃゅょ等）与前一假名合为一个音符单位，
-    // 使拍数与音符数对齐，避免独立小假名触发后端音素化器重分句。
-    // 其他语言仍按字符拆分。
-    let chars
-    if (this._isJapanese()) {
-      const { splitMorae } = await import('../util/kanjiToKana.js')
-      chars = splitMorae(raw)
-    } else {
-      chars = [...raw] // 支持 Unicode 代理对
+    const splitMoraeIfNeeded = this._isJapanese()
+      ? (await import('../util/kanjiToKana.js')).splitMorae
+      : null
+    const flatChars = []
+    for (const line of raw.split('\n')) {
+      const lineRaw = line.replace(/\s/g, '')
+      const chars = splitMoraeIfNeeded ? splitMoraeIfNeeded(lineRaw) : [...lineRaw]
+      flatChars.push(...chars)
     }
-    if (chars.length === 0) {
+
+    if (flatChars.length === 0) {
       this._setStatus(t('quickLyric.empty'), 'error')
-      return
-    }
-    // 无论是否匹配，都按分句换行重排，方便用户查看对齐效果
-    const lines = []
-    let offset = 0
-    for (const count of noteCounts) {
-      lines.push(chars.slice(offset, offset + count).join(''))
-      offset += count
-    }
-    // 剩余超出部分追加到末行
-    if (offset < chars.length) {
-      lines.push(chars.slice(offset).join(''))
-    }
-    this._textarea.value = lines.join('\n')
-
-    if (chars.length !== totalNotes) {
-      this._setStatus(t('quickLyric.char_count_mismatch', { actual: chars.length, expected: totalNotes }), 'error')
       this._parsedLyrics = null
       this._btnSave.disabled = true
-      if (chars.length < totalNotes) {
-        this._showFix(t('quickLyric.fix_pad'), chars, totalNotes, noteCounts)
-      } else {
-        this._showFix(t('quickLyric.fix_trim'), chars, totalNotes, noteCounts)
-      }
+      this._hideFix()
+      return
+    }
+    if (flatChars.length > totalNotes) {
+      this._setStatus(
+        t('quickLyric.char_overflow', { actual: flatChars.length, max: totalNotes }),
+        'error',
+      )
+      this._parsedLyrics = null
+      this._btnSave.disabled = true
+      this._hideFix()
       return
     }
     this._hideFix()
 
-    this._parsedLyrics = chars
-    this._setStatus(t('quickLyric.parse_ok', { chars: chars.length, phrases: phrases.length }), 'success')
+    this._parsedLyrics = flatChars
+    this._setStatus(
+      t('quickLyric.parse_ok', { chars: flatChars.length, phrases: (this._snapshot?.phrases || []).length }),
+      'success',
+    )
     this._btnSave.disabled = false
   }
 
-  /** 构建 lyric edits 并提交 */
+  /** 构建 lyric edits 并提交。
+   *
+   *  ★★★ 两套数据架构（保住后端 phrase 结构不变）★★★
+   *  - 用户面（textarea）：自然格式，用户怎么写就怎么写——一行一句、不限行数
+   *  - 后端面（edits）：把 textarea 拍平成的 flat 字符流 **严格 1:1** 顺序灌进
+   *    后端切好的 phrase 里，每个 note 一个字、不引入任何延音 '+'
+   *
+   *  为什么不能用 '+'：
+   *    OpenUtau ValidateFull 重新音素化后，'+' 把多个 note 合并成同一个音节，
+   *    会改变 phrase 的音素结构，后端的 EnsureLyricEditPreservesStructure 就会
+   *    判定 "phrases 66→56" 拒绝整次编辑。
+   *
+   *  字数不足总 note 数：尾部多出的 note 保留 'a'（默认），不报错——后端结构不变 */
   async _handleSave() {
     if (!this._parsedLyrics || !this._snapshot) return
-    const phrases = this._snapshot.phrases || []
+    const flatNotes = flattenSnapshotNotes(this._snapshot.phrases || [])
     const bpm = this._snapshot.bpm || 120
     const edits = []
-    let charIndex = 0
-    for (const phrase of phrases) {
-      for (const note of (phrase.notes || [])) {
-        const newLyric = this._parsedLyrics[charIndex] || 'a'
-        if (newLyric !== (note.lyric || 'a')) {
-          edits.push({
-            action: 'lyric',
-            position: Math.round((note.time * 480 * bpm) / 60),
-            duration: Math.round((note.duration * 480 * bpm) / 60),
-            tone: note.midi,
-            lyric: newLyric,
-          })
-        }
-        charIndex++
+    const distributedByGlobal = new Map()
+    // 严格按全局 note 顺序 1:1 取字——不分段、不延音、不合并
+    flatNotes.forEach((_note, globalIdx) => {
+      const ch = this._parsedLyrics[globalIdx]
+      if (typeof ch === 'string' && ch.length > 0) {
+        distributedByGlobal.set(globalIdx, ch)
       }
-    }
+    })
+
+    flatNotes.forEach((note, globalIdx) => {
+      if (!note) return
+      const newLyric = distributedByGlobal.get(globalIdx) ?? 'a'
+      if (newLyric !== (note.lyric || 'a')) {
+        edits.push({
+          action: 'lyric',
+          position: Math.round((note.time * 480 * bpm) / 60),
+          duration: Math.round((note.duration * 480 * bpm) / 60),
+          tone: note.midi,
+          lyric: newLyric,
+        })
+      }
+    })
     if (edits.length === 0) {
       this._setStatus(t('quickLyric.no_change'), 'info')
       return
@@ -578,17 +693,14 @@ export class QuickLyricPanel {
       return
     }
 
-    // 保存成功后同步 snapshot，使后续编辑的 diff 基准为最新状态
-    charIndex = 0
-    for (const phrase of phrases) {
-      for (const note of (phrase.notes || [])) {
-        note.lyric = this._parsedLyrics[charIndex] || 'a'
-        charIndex++
-      }
-    }
+    flatNotes.forEach((note, globalIdx) => {
+      if (note) note.lyric = distributedByGlobal.get(globalIdx) ?? 'a'
+    })
     this._setStatus(t('quickLyric.saved', { count: edits.length }), 'success')
     this._parsedLyrics = null
   }
+
+  // ── 自动修复（字数不足时补 a / 多了时截断）──────
 
   _showFix(label, chars, totalNotes, noteCounts) {
     this._fixData = { chars, totalNotes, noteCounts }
@@ -610,7 +722,6 @@ export class QuickLyricPanel {
     } else {
       fixed = chars.slice(0, totalNotes)
     }
-    // 按分句换行写回
     const lines = []
     let offset = 0
     for (const count of noteCounts) {
@@ -619,9 +730,10 @@ export class QuickLyricPanel {
     }
     this._textarea.value = lines.join('\n')
     this._hideFix()
-    // 自动触发一次解析
     this._handleParse()
   }
+
+  // ── 工具 ──────────────────────────────────────────
 
   _isJapanese() {
     return this._languageCode?.toUpperCase() === 'JA'

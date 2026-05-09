@@ -224,6 +224,56 @@ test('反序列化拒绝：版本号 > 当前支持的最大版本', () => {
   assert.throws(() => deserializeProject(futureJson), /不支持的工程文件版本/)
 })
 
+test('officialLyrics：用户在 Quick Lyric 填的官方歌词跨会话保留', () => {
+  const track = makeReadyVocalTrack()
+  track.officialLyrics = [
+    '今天我寒夜里看雪飘过',
+    '怀着冷却了的心窝漂远方',
+  ]
+  const { restored } = roundTrip(makeProject([track]))
+  const back = restored.tracks[0].officialLyrics
+  assert.deepEqual(back, [
+    '今天我寒夜里看雪飘过',
+    '怀着冷却了的心窝漂远方',
+  ])
+})
+
+test('officialLyrics：形状不对（含非 string 元素）→ 整体丢弃为 null', () => {
+  const malformedJson = JSON.stringify({
+    format: 'webutau-project',
+    version: 2,
+    project: {
+      tracks: [{
+        id: 'track-1',
+        prepState: { status: 'idle', progress: 0, error: null },
+        officialLyrics: ['valid', 123, 'also valid'],
+      }],
+    },
+    assets: {},
+  })
+  const { project } = deserializeProject(malformedJson)
+  assert.equal(project.tracks[0].officialLyrics, null)
+})
+
+test('反序列化：旧的 aiLyricLines / aiLyricPhrases 字段会被清掉（不留遗物）', () => {
+  const oldJson = JSON.stringify({
+    format: 'webutau-project',
+    version: 2,
+    project: {
+      tracks: [{
+        id: 'track-1',
+        prepState: { status: 'idle', progress: 0, error: null },
+        aiLyricLines: ['some old data'],
+        aiLyricPhrases: [{ noteIndices: [0, 1], mergeFlags: [false] }],
+      }],
+    },
+    assets: {},
+  })
+  const { project } = deserializeProject(oldJson)
+  assert.equal('aiLyricLines' in project.tracks[0], false)
+  assert.equal('aiLyricPhrases' in project.tracks[0], false)
+})
+
 test('反序列化容错：voiceConversionState 仍走原有 prune（jobId / draftAsset 等）', () => {
   const track = makeReadyVocalTrack()
   track.voiceConversionState = {

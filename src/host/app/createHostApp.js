@@ -2118,8 +2118,19 @@ export function createHostApp() {
           view.setStatus(t('hostStatus.no_lyric_to_edit'))
           return
         }
+        const project = store.getProject()
+        const songName = project?.fileName?.replace(/\.[^.]+$/, '') || editorTrack.name
+        // 用户上次填的官方歌词——AI 写词的"行结构"权威来源
+        const savedOfficialLyrics = Array.isArray(editorTrack.officialLyrics) ? editorTrack.officialLyrics : null
         view.openQuickLyricPanel(snapshot, {
           languageCode: editorTrack.languageCode,
+          songName,
+          savedOfficialLyrics,
+          onOfficialLyricsChanged: (lines) => {
+            store.updateTrack(editorTrack.id, { officialLyrics: lines })
+            // dirty reason 不在 PRISTINE 白名单，红点会亮、autosave 也会被触发
+            render('official-lyrics-changed')
+          },
           async onSave(edits) {
             if (!edits?.length) return
             const result = await bridge.applyNoteEdits(edits)

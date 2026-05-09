@@ -97,13 +97,15 @@ export function describeMusicForPrompt(structure) {
     lines.push(`- 整体音域：${structure.pitchLow} ~ ${structure.pitchHigh}`)
   }
   lines.push('')
-  lines.push(`## 每句要求`)
+  lines.push(`## 每句要求（字数硬性约束——可视占位框是几个就必须写几个字）`)
   structure.phrases.forEach((phrase) => {
     const rhythmStr = phrase.rhythm.join(' ')
     const pitchPart = (phrase.pitchLow && phrase.pitchHigh)
       ? `音域 ${phrase.pitchLow}-${phrase.pitchHigh}`
       : '音域未知'
-    let line = `- 第 ${phrase.index} 句：${phrase.syllableCount} 个音节，节奏「${rhythmStr}」，${pitchPart}`
+    // 把字数渲染成"□ □ □ □"——LLM 把每个 □ 替换成一个汉字，视觉上一一对应不易数错
+    const slots = '□ '.repeat(phrase.syllableCount).trim()
+    let line = `- 第 ${phrase.index} 句：必须正好 ${phrase.syllableCount} 个字 ${slots}（节奏「${rhythmStr}」，${pitchPart}）`
     if (Array.isArray(phrase.existingLyrics)) {
       // 用 _ 占位空字符，让 LLM 知道哪些字已写、哪些要补
       const filled = phrase.existingLyrics.map((s) => s || '_').join(' ')
@@ -111,5 +113,13 @@ export function describeMusicForPrompt(structure) {
     }
     lines.push(line)
   })
+  // 输出前自检 checklist——逼 LLM 在 JSON 之前先口算一遍字数
+  lines.push('')
+  lines.push(`## 输出前自检（必做）`)
+  lines.push(`在写 JSON 前，请先逐句核对预期字数：`)
+  structure.phrases.forEach((phrase) => {
+    lines.push(`  - 第 ${phrase.index} 句：${phrase.syllableCount} 字`)
+  })
+  lines.push(`核对完毕、字数全部对得上，再输出 JSON。任何一句字数错就视为整次失败。`)
   return lines.join('\n')
 }
