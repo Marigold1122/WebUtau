@@ -853,6 +853,7 @@ export const messages = {
     record_stopped_count: 'Recording stopped, captured {count} notes',
     record_stopped: 'MIDI recording stopped',
     undo_done: 'Undid note edits for {name}',
+    redo_done: 'Redid note edits for {name}',
     backup_discarded: 'Discarded last auto-backup',
     track_created: 'Created track {name}',
     track_removed: 'Removed track {name}',

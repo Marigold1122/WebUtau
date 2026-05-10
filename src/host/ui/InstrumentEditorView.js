@@ -6,11 +6,20 @@ import { createTimelineAxis } from '../../shared/timelineAxis.js'
 import { getTrackColorById } from './tracks/trackColorPalette.js'
 import {
   collectNotesInRect,
+  duplicateSelectedNotes,
+  extractSelectionForClipboard,
   findNoteIndexByTickMidi,
+  pasteClipboardAtTick,
   removeSelectedNotes,
+  selectAllIds,
   toggleIdsInSelection,
   translateSelectedNotes,
 } from './instrumentEditorSelection.js'
+import {
+  getClipboard,
+  hasClipboard,
+  setClipboard,
+} from './instrumentEditorClipboard.js'
 import { t } from '../../i18n/index.js'
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
@@ -192,6 +201,7 @@ export class InstrumentEditorView {
     this.playheadDragClientX = null
     this.playheadDragScroller = null
     this.undoStack = []
+    this.redoStack = []
     this.state = {
       trackId: null,
       trackName: '',
@@ -244,10 +254,50 @@ export class InstrumentEditorView {
     window.addEventListener('mouseup', this._handlePointerUp)
     this._handleToolShortcut = (event) => {
       if (!this.root || this.root.hidden) return
-      if (event.ctrlKey || event.metaKey || event.altKey) return
       const target = event.target
       if (target && target.matches?.('input, textarea, select, [contenteditable="true"]')) return
       const key = event.key?.toLowerCase?.()
+      // ── Cmd/Ctrl + 字母：标准 DAW 编辑动作 ─────────────────
+      // 必须放在"裸键工具切换"之前——避免 Cmd+V 被 V 工具切换抢走
+      if (event.metaKey || event.ctrlKey) {
+        if (event.altKey) return  // 留给 Alt 修饰的更复杂组合（如 Alt+drag 不在此处理）
+        if (key === 'a') {
+          if (this.state.selectedIds.size > 0 && this.state.selectedIds.size === this.state.notes.length) return
+          event.preventDefault()
+          this._handleSelectAll()
+          return
+        }
+        if (key === 'c') {
+          if (this.state.selectedIds.size === 0) return
+          event.preventDefault()
+          this._handleCopy()
+          return
+        }
+        if (key === 'x') {
+          if (this.state.selectedIds.size === 0) return
+          event.preventDefault()
+          this._handleCut()
+          return
+        }
+        if (key === 'v') {
+          if (!hasClipboard()) return
+          event.preventDefault()
+          this._handlePaste()
+          return
+        }
+        if (key === 'd') {
+          if (this.state.selectedIds.size === 0) return
+          event.preventDefault()
+          this._handleDuplicate()
+          return
+        }
+        // Cmd+Z / Cmd+Shift+Z / Ctrl+Y 由 host 级 handleEditorUndoShortcut 统一处理——
+        // 那里已经按编辑器模式分发到 voice runtime / instrument editor，不能在这里
+        // 再调一次 this.undo()，否则同一个 keydown 会被两个监听器都 pop 一下，
+        // 单次 Cmd+Z 等于回退两步（之前用户在 Cmd+D 后 Cmd+Z 看到两个新 note 同时消失就是这个原因）
+        return
+      }
+      if (event.altKey) return  // Alt+drag 等留给鼠标 controller
       // H 按住：临时抓手（押下时进入，keyup 恢复；用 capture 抢在全局空格=播放之前也安全）
       if (key === 'h' && !event.repeat) {
         if (!this.state.panOverride) {
@@ -306,6 +356,69 @@ export class InstrumentEditorView {
     this._applyNotesSnapshot(nextNotes)
   }
 
+  // Cmd+A：全选当前所有 note
+  _handleSelectAll() {
+    if (this.state.notes.length === 0) return
+    this.state.selectedIds = selectAllIds(this.state.notes)
+    // 选区改变后切到 select 工具——和现有"切换工具会清选区"的逻辑保持兼容性
+    if (this.state.tool !== 'select') this.setTool('select')
+    this._renderNotes(true)
+  }
+
+  // Cmd+C：把选中音符存入应用级剪贴板（不动 state，不入 undo）
+  _handleCopy() {
+    const picked = extractSelectionForClipboard(this.state.notes, this.state.selectedIds)
+    if (picked.length === 0) return
+    setClipboard(picked)
+  }
+
+  // Cmd+X：复制 + 删除
+  _handleCut() {
+    const picked = extractSelectionForClipboard(this.state.notes, this.state.selectedIds)
+    if (picked.length === 0) return
+    setClipboard(picked)
+    this._deleteSelectedNotes()
+  }
+
+  // Cmd+V：在播放头位置粘贴；新粘贴的 note 自动选中（用户能立刻二次操作）
+  _handlePaste() {
+    const payload = getClipboard()
+    if (!payload || payload.notes.length === 0) return
+    const atTick = this._snapTick(this._currentPlayheadTick())
+    this._pushUndoSnapshot()
+    const { notes: nextNotes, newIds } = pasteClipboardAtTick(
+      this.state.notes,
+      payload.notes,
+      atTick,
+      () => this._nextNoteId(),
+    )
+    this.state.selectedIds = newIds
+    if (this.state.tool !== 'select') this.setTool('select')
+    this._applyNotesSnapshot(nextNotes, { allowExtendAxis: true })
+  }
+
+  // Cmd+D：选区紧贴右侧复刻；新 note 自动选中
+  _handleDuplicate() {
+    if (this.state.selectedIds.size === 0) return
+    this._pushUndoSnapshot()
+    const { notes: nextNotes, newIds } = duplicateSelectedNotes(
+      this.state.notes,
+      this.state.selectedIds,
+      () => this._nextNoteId(),
+    )
+    if (newIds.size === 0) return
+    this.state.selectedIds = newIds
+    if (this.state.tool !== 'select') this.setTool('select')
+    this._applyNotesSnapshot(nextNotes, { allowExtendAxis: true })
+  }
+
+  // 当前播放头对应的 tick——粘贴落点用
+  _currentPlayheadTick() {
+    if (!this.state.axis) return 0
+    const time = Number.isFinite(this.state.currentTime) ? Math.max(0, this.state.currentTime) : 0
+    return Math.max(0, Math.round(this.state.axis.timeToTick(time)))
+  }
+
   setVisible(visible) {
     if (!this.root) return
     this.root.hidden = !visible
@@ -359,6 +472,7 @@ export class InstrumentEditorView {
       this.state.hoverPreview = null
       this.state.erasing = false
       this.undoStack = []
+      this.redoStack = []
     }
     this.setVisible(true)
     const viewportWidth = this.refs.gridViewport?.clientWidth || this.refs.gridViewport?.getBoundingClientRect?.().width || 0
@@ -424,6 +538,7 @@ export class InstrumentEditorView {
     this.state.hoverPreview = null
     this.state.erasing = false
     this.undoStack = []
+    this.redoStack = []
     this.state.trackColor = getTrackColorById(null, [])
     this.state.trackBorderColor = darkenHexColor(this.state.trackColor)
     this._invalidateAxisRenderState()
@@ -515,10 +630,40 @@ export class InstrumentEditorView {
     return this.undoStack.length > 0
   }
 
+  canRedo() {
+    return this.redoStack.length > 0
+  }
+
   undo() {
     if (!this.state.trackId || !this.canUndo()) return false
     const snapshot = this.undoStack.pop()
     if (!snapshot) return false
+    // 把"当前状态"推进 redoStack，让 Cmd+Shift+Z 能恢复到 undo 之前
+    this.redoStack.push(this._captureSnapshot())
+    if (this.redoStack.length > UNDO_HISTORY_LIMIT) {
+      this.redoStack.splice(0, this.redoStack.length - UNDO_HISTORY_LIMIT)
+    }
+    this.state.drawDraft = null
+    this.state.hoverPreview = null
+    this.state.erasing = false
+    this._hideGhostNote()
+    this._hideHoverGuide()
+    this._applyNotesSnapshot(
+      sortNotes((snapshot.notes || []).map((note) => createDraftNote(note, this._nextNoteId()))),
+      { allowExtendAxis: true },
+    )
+    return true
+  }
+
+  redo() {
+    if (!this.state.trackId || !this.canRedo()) return false
+    const snapshot = this.redoStack.pop()
+    if (!snapshot) return false
+    // 把"当前状态"推回 undoStack——和 undo 对称
+    this.undoStack.push(this._captureSnapshot())
+    if (this.undoStack.length > UNDO_HISTORY_LIMIT) {
+      this.undoStack.splice(0, this.undoStack.length - UNDO_HISTORY_LIMIT)
+    }
     this.state.drawDraft = null
     this.state.hoverPreview = null
     this.state.erasing = false
@@ -1470,6 +1615,16 @@ export class InstrumentEditorView {
     this.undoStack.push(snapshot)
     if (this.undoStack.length > UNDO_HISTORY_LIMIT) {
       this.undoStack.splice(0, this.undoStack.length - UNDO_HISTORY_LIMIT)
+    }
+    // 用户开了新分支后，redoStack 失效——这是 Cmd+Z / Cmd+Shift+Z 的标准约定
+    this.redoStack = []
+  }
+
+  // 当前 state.notes 的快照——undo / redo 互推时用，pushUndoSnapshot 不会清 redoStack
+  _captureSnapshot() {
+    return {
+      signature: buildNoteSignature(this.state.notes),
+      notes: this.state.notes.map(exportDraftNote),
     }
   }
 

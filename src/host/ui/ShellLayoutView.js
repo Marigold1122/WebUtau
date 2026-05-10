@@ -1,5 +1,6 @@
 ﻿import { fetchVoicebanks } from '../../api/VoicebankApi.js'
 import { getLanguageLabel } from '../../config/languageOptions.js'
+import { formatShortcut } from '../../shared/formatShortcut.js'
 import { PLAYHEAD_FOLLOW_MODE_LABELS, PLAYHEAD_FOLLOW_MODES, normalizePlayheadFollowMode } from '../../shared/playheadFollowMode.js'
 import { AboutPanelView } from './AboutPanelView.js'
 import { InspectorVoiceConversionSection } from './InspectorVoiceConversionSection.js'
@@ -364,6 +365,14 @@ export class ShellLayoutView {
 
   undoInstrumentEditorEdit() {
     return this.instrumentEditorView.undo()
+  }
+
+  canRedoInstrumentEditorEdit() {
+    return this.instrumentEditorView.canRedo()
+  }
+
+  redoInstrumentEditorEdit() {
+    return this.instrumentEditorView.redo()
   }
 
   getEditorMode() {
@@ -1068,14 +1077,10 @@ export class ShellLayoutView {
     return divider
   }
 
-  // macOS 用 ⌘，Windows/Linux 用 Ctrl —— 把肌肉记忆呈现给用户
+  // 跨平台快捷键文案——委托给 src/shared/formatShortcut.js 的共用 helper，
+  // 后续 status bar / cheatsheet / tooltip 都走同一份实现，不重复维护。
   _formatShortcut(key, { shift = false } = {}) {
-    const isMac = typeof navigator !== 'undefined'
-      && /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent || '')
-    const meta = isMac ? '⌘' : 'Ctrl'
-    const shiftSymbol = isMac ? '⇧' : 'Shift'
-    const sep = isMac ? '' : '+'
-    return shift ? `${meta}${sep}${shiftSymbol}${sep}${key}` : `${meta}${sep}${key}`
+    return formatShortcut(key, { shift })
   }
 
   _createTrackContextMenu() {

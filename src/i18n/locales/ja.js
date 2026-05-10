@@ -853,6 +853,7 @@ export const messages = {
     record_stopped_count: '録音を停止。{count} ノートを取得',
     record_stopped: 'MIDI 録音を停止',
     undo_done: '{name} のノート編集を元に戻しました',
+    redo_done: '{name} のノート編集をやり直しました',
     backup_discarded: '前回の自動バックアップを破棄',
     track_created: 'トラック {name} を作成',
     track_removed: 'トラック {name} を削除',

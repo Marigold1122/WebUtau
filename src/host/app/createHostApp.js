@@ -127,6 +127,20 @@ function isUndoShortcut(event) {
   return !isKeyboardShortcutTargetEditable(event.target)
 }
 
+// Cmd+Shift+Z（macOS / Linux 主流）以及 Ctrl+Y（Windows 习惯）都识别成 redo
+function isRedoShortcut(event) {
+  if (!event || event.repeat) return false
+  if (event.altKey) return false
+  if (!(event.metaKey || event.ctrlKey)) return false
+  if (event.code === 'KeyZ' && event.shiftKey) {
+    return !isKeyboardShortcutTargetEditable(event.target)
+  }
+  if (event.code === 'KeyY' && !event.shiftKey) {
+    return !isKeyboardShortcutTargetEditable(event.target)
+  }
+  return false
+}
+
 function triggerDownload(file) {
   if (!(file instanceof Blob)) return false
   const url = URL.createObjectURL(file)
@@ -1391,25 +1405,38 @@ export function createHostApp() {
   }
 
   function handleEditorUndoShortcut(event) {
-    if (!isUndoShortcut(event)) return
+    const undo = isUndoShortcut(event)
+    const redo = !undo && isRedoShortcut(event)
+    if (!undo && !redo) return
     const editorTrack = store.getEditorTrack()
     if (!editorTrack || isAudioTrack(editorTrack)) return
     const editorMode = sessionStore.getEditorMode()
 
     if (editorMode === 'note') {
-      if (!view.canUndoInstrumentEditorEdit?.()) return
+      if (undo) {
+        if (!view.canUndoInstrumentEditorEdit?.()) return
+        event.preventDefault()
+        const handled = view.undoInstrumentEditorEdit?.()
+        if (!handled) return
+        render('instrument-editor-undo')
+        view.setStatus(t('hostStatus.undo_done', { name: editorTrack.name }))
+        return
+      }
+      // redo
+      if (!view.canRedoInstrumentEditorEdit?.()) return
       event.preventDefault()
-      const handled = view.undoInstrumentEditorEdit?.()
+      const handled = view.redoInstrumentEditorEdit?.()
       if (!handled) return
-      render('instrument-editor-undo')
-      view.setStatus(t('hostStatus.undo_done', { name: editorTrack.name }))
+      render('instrument-editor-redo')
+      view.setStatus(t('hostStatus.redo_done', { name: editorTrack.name }))
       return
     }
 
     if (!isVoiceRuntimeSource(editorTrack.playbackState?.assignedSourceId)) return
     if (!taskCoordinator.isRuntimeAttachedTo(editorTrack.id)) return
     event.preventDefault()
-    void bridge?.undoEditor?.()
+    // voice runtime 暂时只接 undo，redo 等做 voice runtime 端的 redo 栈再说
+    if (undo) void bridge?.undoEditor?.()
   }
 
   function init() {

@@ -853,6 +853,7 @@ export const messages = {
     record_stopped_count: '已停止录制，捕获 {count} 个音符',
     record_stopped: 'MIDI 录制已停止',
     undo_done: '已撤回 {name} 的音符编辑',
+    redo_done: '已重做 {name} 的音符编辑',
     backup_discarded: '已丢弃上次的自动备份',
     track_created: '已新建轨道 {name}',
     track_removed: '已删除轨道 {name}',

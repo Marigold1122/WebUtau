@@ -64,3 +64,101 @@ export function removeSelectedNotes(notes, selectedIds) {
   if (!selectedIds || selectedIds.size === 0) return notes
   return notes.filter((note) => !selectedIds.has(note.id))
 }
+
+/** Cmd+A：返回当前所有 note 的 id 集合 */
+export function selectAllIds(notes) {
+  const set = new Set()
+  if (!Array.isArray(notes)) return set
+  for (const note of notes) {
+    if (note?.id) set.add(note.id)
+  }
+  return set
+}
+
+/**
+ * Cmd+C / Cmd+X 时把选中的音符提取出来——交给 clipboard.setClipboard 用。
+ * 返回的是普通对象数组（含全字段），未深克隆，clipboard 模块自己再深克隆。
+ */
+export function extractSelectionForClipboard(notes, selectedIds) {
+  if (!selectedIds || selectedIds.size === 0) return []
+  if (!Array.isArray(notes)) return []
+  return notes.filter((note) => selectedIds.has(note.id))
+}
+
+/**
+ * Cmd+V：把 clipboard 里的 note 在 atTick 处粘贴。
+ *
+ * @param {Array<object>} existingNotes - 当前编辑器里已有的 note 数组
+ * @param {Array<object>} clipboardNotes - 剪贴板里的 note（tick 已锚定到 0 起步）
+ * @param {number} atTick - 粘贴的起点 tick（一般是播放头）
+ * @param {function} idAllocator - 调用方提供的 id 生成函数
+ * @returns {{ notes: Array<object>, newIds: Set<string> }} 新的 note 数组 + 新粘贴的 note id 集合
+ */
+export function pasteClipboardAtTick(existingNotes, clipboardNotes, atTick, idAllocator) {
+  if (!Array.isArray(clipboardNotes) || clipboardNotes.length === 0) {
+    return { notes: existingNotes, newIds: new Set() }
+  }
+  if (typeof idAllocator !== 'function') {
+    throw new Error('pasteClipboardAtTick: idAllocator must be a function')
+  }
+  const safeAt = Math.max(0, Math.round(Number.isFinite(atTick) ? atTick : 0))
+  const newIds = new Set()
+  const pasted = clipboardNotes.map((note) => {
+    const id = idAllocator()
+    newIds.add(id)
+    return {
+      ...note,
+      id,
+      tick: Math.max(0, Math.round((note.tick ?? 0) + safeAt)),
+    }
+  })
+  return {
+    notes: [...existingNotes, ...pasted],
+    newIds,
+  }
+}
+
+/**
+ * Cmd+D：把当前选中的 note 紧贴在选区右侧复制一份。
+ *
+ * 偏移量 = 选区里"最右 note 末尾 tick" - "最早 note 起点 tick"
+ *   保证 dup 出来的整体紧挨在原选区右边（不会重叠也不会留空）
+ *
+ * @returns {{ notes: Array<object>, newIds: Set<string> }} 新数组 + 复刻出来的新 id
+ */
+export function duplicateSelectedNotes(existingNotes, selectedIds, idAllocator) {
+  if (!selectedIds || selectedIds.size === 0) {
+    return { notes: existingNotes, newIds: new Set() }
+  }
+  if (typeof idAllocator !== 'function') {
+    throw new Error('duplicateSelectedNotes: idAllocator must be a function')
+  }
+  const selected = existingNotes.filter((note) => selectedIds.has(note.id))
+  if (selected.length === 0) return { notes: existingNotes, newIds: new Set() }
+
+  let minStart = Number.POSITIVE_INFINITY
+  let maxEnd = 0
+  for (const note of selected) {
+    const start = Math.round(note.tick ?? 0)
+    const end = start + Math.max(1, Math.round(note.durationTicks ?? 1))
+    if (start < minStart) minStart = start
+    if (end > maxEnd) maxEnd = end
+  }
+  if (!Number.isFinite(minStart)) return { notes: existingNotes, newIds: new Set() }
+
+  const offset = Math.max(1, maxEnd - minStart)
+  const newIds = new Set()
+  const duplicated = selected.map((note) => {
+    const id = idAllocator()
+    newIds.add(id)
+    return {
+      ...note,
+      id,
+      tick: Math.max(0, Math.round((note.tick ?? 0) + offset)),
+    }
+  })
+  return {
+    notes: [...existingNotes, ...duplicated],
+    newIds,
+  }
+}
