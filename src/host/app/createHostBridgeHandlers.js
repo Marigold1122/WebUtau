@@ -174,5 +174,13 @@ export function createHostBridgeHandlers({
       render('bridge-render-failed')
       view.setStatus(t('hostStatus.render_failed_for', { name: getTrackName(store, payload.trackId), error: payload.error || t('hostStatus.unknown_error') }))
     },
+    // 声部 runtime 的选区摘要 → 喂底栏 status bar 的"选区"字段
+    // 只在用户**确实在声部模式**（lyric / pitch）时接受——避免 iframe 异步 emit 在
+    // 用户已切到乐器编辑器后还把 status bar 写回去（race condition）
+    onVoiceSelectionSummary(summary) {
+      const editorMode = view.getEditorMode?.()
+      if (editorMode !== 'lyric' && editorMode !== 'pitch') return
+      view.setRealtimeSelectionSummary?.(summary)
+    },
   }
 }

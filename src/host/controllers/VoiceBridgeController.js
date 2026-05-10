@@ -140,6 +140,10 @@ export class VoiceBridgeController {
       case VOICE_BRIDGE_EVENTS.RENDER_FAILED:
         this.handlers.onRenderFailed?.(event.data.payload || {})
         break
+      case VOICE_BRIDGE_EVENTS.SELECTION_SUMMARY:
+        // payload.summary 可能是 null（无选区）—— host 据此隐藏 status bar 选区字段
+        this.handlers.onVoiceSelectionSummary?.(event.data.payload?.summary || null)
+        break
       default:
         break
     }

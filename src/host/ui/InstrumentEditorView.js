@@ -2,6 +2,7 @@ import { PIANO_ROLL } from '../../config/constants.js'
 import { createHorizontalDragAutoScroller } from '../../shared/horizontalDragAutoScroll.js'
 import { buildNoteDocumentSignature, createPreviewNoteDocument } from '../../shared/noteDocument.js'
 import { computeFollowScrollLeft, normalizePlayheadFollowMode } from '../../shared/playheadFollowMode.js'
+import { summarizeNotes } from '../../shared/selectionSummary.js'
 import { createTimelineAxis } from '../../shared/timelineAxis.js'
 import { getTrackColorById } from './tracks/trackColorPalette.js'
 import {
@@ -363,6 +364,7 @@ export class InstrumentEditorView {
     // 选区改变后切到 select 工具——和现有"切换工具会清选区"的逻辑保持兼容性
     if (this.state.tool !== 'select') this.setTool('select')
     this._renderNotes(true)
+    this._notifySelectionChanged()
   }
 
   // Cmd+C：把选中音符存入应用级剪贴板（不动 state，不入 undo）
@@ -473,6 +475,12 @@ export class InstrumentEditorView {
       this.state.erasing = false
       this.undoStack = []
       this.redoStack = []
+      // 跨轨选区里的 id 已失效，必须显式清掉——否则旧 id 留在 set 里、
+      // status bar 选区摘要会算到 0 个 note 但 size > 0 的奇怪状态
+      if (this.state.selectedIds.size > 0) {
+        this.state.selectedIds.clear()
+        this._notifySelectionChanged()
+      }
     }
     this.setVisible(true)
     const viewportWidth = this.refs.gridViewport?.clientWidth || this.refs.gridViewport?.getBoundingClientRect?.().width || 0
@@ -541,6 +549,7 @@ export class InstrumentEditorView {
     this.redoStack = []
     this.state.trackColor = getTrackColorById(null, [])
     this.state.trackBorderColor = darkenHexColor(this.state.trackColor)
+    if (this.state.selectedIds.size > 0) this.state.selectedIds.clear()
     this._invalidateAxisRenderState()
     this._touchNotes()
     this._applyTrackColor()
@@ -548,6 +557,8 @@ export class InstrumentEditorView {
     this._hideGhostNote()
     this._hideHoverGuide()
     this.setVisible(false)
+    // 离开乐器编辑器时把 status bar 的选区字段也清掉
+    this._notifySelectionChanged()
   }
 
   setPlaybackTime(time, options = {}) {
@@ -599,6 +610,7 @@ export class InstrumentEditorView {
     if (this.state.selectedIds.size === 0) return
     this.state.selectedIds.clear()
     if (rerender) this._renderNotes(true)
+    this._notifySelectionChanged()
   }
 
   appendRecordedNote(note) {
@@ -1232,12 +1244,14 @@ export class InstrumentEditorView {
         // Shift+点击：切换此音符的选中状态
         this.state.selectedIds = toggleIdsInSelection(this.state.selectedIds, [hitId])
         this._renderNotes(true)
+        this._notifySelectionChanged()
         return
       }
       if (!this.state.selectedIds.has(hitId)) {
         // 点击未选中的音符：独选
         this.state.selectedIds = new Set([hitId])
         this._renderNotes(true)
+        this._notifySelectionChanged()
       }
       // 开始移动（从当前状态快照）
       this._beginMoveDrag(pos)
@@ -1282,9 +1296,12 @@ export class InstrumentEditorView {
     const hits = collectNotesInRect(this.state.notes, marquee)
     const preview = new Set(marquee.baseSelection)
     for (const id of hits) preview.add(id)
+    const sizeChanged = preview.size !== this.state.selectedIds.size
     this.state.selectedIds = preview
     this._renderNotes(true)
     this._renderMarquee()
+    // 框选过程中数量在变 → 实时更新 status bar；同样大小就跳过避免无谓字符串构造
+    if (sizeChanged) this._notifySelectionChanged()
   }
 
   _commitMarquee() {
@@ -1636,6 +1653,20 @@ export class InstrumentEditorView {
       axisChanged: allowExtendAxis ? this._ensureAxisForDraftNotes() : false,
       notesChanged: true,
     })
+    // notes 改了之后选区里的 id 可能有部分已不存在了，summary 必须重算
+    this._notifySelectionChanged()
+  }
+
+  /** 把当前选区的摘要算出来发给 host —— null 表示无选区 */
+  _notifySelectionChanged() {
+    const handler = this.handlers?.onInstrumentEditorSelectionChanged
+    if (typeof handler !== 'function') return
+    let summary = null
+    if (this.state.selectedIds && this.state.selectedIds.size > 0) {
+      const picked = this.state.notes.filter((note) => this.state.selectedIds.has(note.id))
+      summary = summarizeNotes(picked)
+    }
+    handler(summary)
   }
 
   _syncDirtyState() {

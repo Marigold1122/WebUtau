@@ -33,6 +33,8 @@ export const VOICE_BRIDGE_EVENTS = {
   RENDER_PROGRESS: 'render-progress',
   RENDER_COMPLETE: 'render-complete',
   RENDER_FAILED: 'render-failed',
+  // 选区摘要：声部 runtime 的选区一变就推一下，host 接收后写进 status bar
+  SELECTION_SUMMARY: 'selection-summary',
 }
 
 export function createBridgeMessage(type, payload = {}, requestId = null) {

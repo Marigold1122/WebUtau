@@ -80,6 +80,7 @@ export function createShellLayoutRefs() {
     renderBadge: document.getElementById('render-status-badge'),
     statusText: document.getElementById('status-text'),
     statusBar: document.getElementById('status-bar'),
+    statusContext: document.getElementById('status-context'),
     selectedTrackName: document.getElementById('selected-track-name'),
     selectedTrackKind: document.getElementById('selected-track-kind'),
     selectedTrackLanguage: document.getElementById('selected-track-language'),

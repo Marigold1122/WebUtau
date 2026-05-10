@@ -2,6 +2,7 @@
 import { getLanguageLabel } from '../../config/languageOptions.js'
 import { formatShortcut } from '../../shared/formatShortcut.js'
 import { PLAYHEAD_FOLLOW_MODE_LABELS, PLAYHEAD_FOLLOW_MODES, normalizePlayheadFollowMode } from '../../shared/playheadFollowMode.js'
+import { RealtimeStatusController } from './RealtimeStatusController.js'
 import { AboutPanelView } from './AboutPanelView.js'
 import { InspectorVoiceConversionSection } from './InspectorVoiceConversionSection.js'
 import { MenubarTransportView } from './MenubarTransportView.js'
@@ -72,6 +73,8 @@ export class ShellLayoutView {
     this.voiceConversionSection = new InspectorVoiceConversionSection(this.refs.voiceConversionSection, handlers)
     this.trackViewportController = new TrackViewportController(this.refs, handlers)
     this.instrumentEditorView = new InstrumentEditorView(this.refs.instrumentEditorRoot, handlers)
+    this.realtimeStatus = new RealtimeStatusController(this.refs.statusContext)
+    onLocaleChange(() => this.realtimeStatus?.refreshLocale())
     this.reverbDockView = new ReverbDockView(this.refs, handlers)
     this.trackTonePanelView = new TrackTonePanelView(this.refs, handlers)
     this.aboutPanelView = new AboutPanelView({ logger: this.logger })
@@ -109,7 +112,16 @@ export class ShellLayoutView {
     this.handlers = handlers
     this.voiceConversionSection.setHandlers(handlers)
     this.trackViewportController.setHandlers(handlers)
-    this.instrumentEditorView.setHandlers(handlers)
+    // 包一层：乐器编辑器的选区摘要直接路由进底栏；这是 view 内部状态，
+    // 不需要冒泡到 createHostApp。如果上层也注册了同名 handler 也一并 forward
+    const wrappedHandlers = {
+      ...handlers,
+      onInstrumentEditorSelectionChanged: (summary) => {
+        this.realtimeStatus?.setSelection(summary)
+        handlers?.onInstrumentEditorSelectionChanged?.(summary)
+      },
+    }
+    this.instrumentEditorView.setHandlers(wrappedHandlers)
     this.reverbDockView.setHandlers(handlers)
     this.trackTonePanelView.setHandlers(handlers)
   }
@@ -211,6 +223,11 @@ export class ShellLayoutView {
     this.refs.statusBar?.classList.toggle('is-empty', nextText.length === 0)
   }
 
+  /** 声部 runtime 的选区摘要进 status bar；外部接口（host bridge handler 调） */
+  setRealtimeSelectionSummary(summary) {
+    this.realtimeStatus?.setSelection(summary)
+  }
+
   // 把"当前工程名 + 是否未保存"同步到菜单栏铭牌 + 浏览器 tab 标题。
   // 这是用户随时能看到的"工程文件状态总指示"——铭牌上红点 + 标签页 ● 都跟它走
   setProjectFileState({ name = null, dirty = false } = {}) {
@@ -285,6 +302,7 @@ export class ShellLayoutView {
     this.timelinePlayheadTime = Number.isFinite(time) ? Math.max(0, time) : 0
     this.timelinePlayheadView.setTime(this.timelinePlayheadTime)
     this.instrumentEditorView.setPlaybackTime(this.timelinePlayheadTime)
+    this.realtimeStatus?.setPlayhead(this.timelinePlayheadTime)
     if (this.playbackActive) this._syncPlaybackFollow()
     const now = performance.now()
     if (this.logger?.debug && now - this.lastPlayheadTraceAtMs >= 200) {
@@ -666,6 +684,19 @@ export class ShellLayoutView {
   _renderProjectMeta(project, selectedTrack, editorTrack, renderBadgeTrack, viewState) {
     this.setPlayheadFollowMode(viewState?.playheadFollowMode)
     this._selectedTrackId = selectedTrack?.id || null
+    // 底部 status bar 实时上下文：项目名 + tempo（变拍号也读得对）+ 编辑器模式 + 编辑中轨名
+    this.realtimeStatus?.setProject({
+      name: project?.name || project?.fileName || null,
+      tempoData: project?.tempoData || null,
+      ppq: project?.ppq || 480,
+    })
+    const editorMode = (viewState?.editorMode === 'pitch' || viewState?.editorMode === 'lyric')
+      ? viewState.editorMode
+      : (editorTrack ? 'note' : null)
+    this.realtimeStatus?.setEditor({
+      mode: editorMode,
+      trackName: editorTrack?.name || null,
+    })
     const trackSection = this.refs.inspectorSectionTrack
     if (trackSection) {
       const trackColor = selectedTrack

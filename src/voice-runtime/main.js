@@ -43,6 +43,9 @@ const app = createVoiceRuntimeApp({
   onRenderFailed(payload) {
     bridge?.emitRenderFailed(payload)
   },
+  onSelectionSummary(summary) {
+    bridge?.emitSelectionSummary(summary)
+  },
 })
 
 bridge = createRuntimeBridge(app)

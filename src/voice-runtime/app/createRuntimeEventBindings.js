@@ -2,8 +2,10 @@ import eventBus from '../../core/EventBus.js'
 import phraseStore from '../../core/PhraseStore.js'
 import playheadController from '../../modules/PlayheadController.js'
 import { EVENTS } from '../../config/constants.js'
+import noteSelection from '../../ui/NoteSelection.js'
 import phraseRenderStateStore from './phraseRenderStateStore.js'
 import { buildRuntimeSnapshot } from './runtimeSnapshot.js'
+import { summarizeNotes } from '../../shared/selectionSummary.js'
 import { t } from '../../i18n/index.js'
 
 export function createRuntimeEventBindings({
@@ -149,6 +151,15 @@ export function createRuntimeEventBindings({
     scheduleLiveRenderManifestSync('runtime-cache')
   }
 
+  // 选区变化 → 算 summary → 经 callback / bridge 推到 host status bar
+  function handleNoteSelectionChanged() {
+    const entries = noteSelection.getSelected()
+    const summary = entries.length === 0
+      ? null
+      : summarizeNotes(entries.map((e) => e.note))
+    callbacks.onSelectionSummary?.(summary)
+  }
+
   function handlePhraseReady(payload = {}) {
     if (state.trackId == null || !Number.isInteger(payload.phraseIndex)) return
     const phrase = phraseStore.getPhrase(payload.phraseIndex)
@@ -182,5 +193,6 @@ export function createRuntimeEventBindings({
     eventBus.on(EVENTS.JOB_FAILED, handleJobFailed)
     eventBus.on(EVENTS.CACHE_INVALIDATED, handleCacheInvalidated)
     eventBus.on(EVENTS.RENDER_COMPLETE, handlePhraseReady)
+    eventBus.on(EVENTS.NOTE_SELECTION_CHANGED, handleNoteSelectionChanged)
   }
 }

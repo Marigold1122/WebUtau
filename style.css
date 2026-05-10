@@ -4452,10 +4452,23 @@ body {
 .about-links a:hover { text-decoration: underline; }
 
 #status-bar {
-  min-height: 24px; display: flex; align-items: center; padding: 0 12px; background: var(--bg-1); border-top: 1px solid var(--border-light);
-  color: var(--text-muted); font-size: 10px; font-weight: 500; letter-spacing: 0.2px; transition: min-height 0.15s ease, padding 0.15s ease, opacity 0.15s ease;
+  min-height: 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 0 12px; background: var(--bg-1); border-top: 1px solid var(--border-light);
+  color: var(--text-muted); font-size: 10px; font-weight: 500; letter-spacing: 0.2px;
+  transition: min-height 0.15s ease, padding 0.15s ease, opacity 0.15s ease;
 }
-#status-bar.is-empty { min-height: 0; padding-top: 0; padding-bottom: 0; border-top: 0; opacity: 0; overflow: hidden; }
+/* 左侧：瞬时通知文本（已保存 / 正在导出 / ...）—— 没有时不挤占布局 */
+.status-bar-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 右侧：永远在线的实时上下文（项目 · BPM · 播放头 · 编辑器 · 轨）—— 按字段间隔对齐 */
+.status-bar-context { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 12px; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+.status-bar-context:empty { display: none; }
+.status-bar-context-item { display: inline-flex; align-items: center; gap: 4px; }
+.status-bar-context-item-label { color: var(--text-muted); opacity: 0.65; font-weight: 400; }
+.status-bar-context-item-value { color: var(--text-default, var(--text-muted)); font-weight: 600; letter-spacing: 0.15px; }
+.status-bar-context-item-divider { color: var(--text-muted); opacity: 0.4; }
+.status-bar-context-item.is-hidden, .status-bar-context-item-divider.is-hidden { display: none; }
+/* 仅在左侧 + 右侧都空时折叠（理论上右侧永远在线，所以基本不会触发；保留兼容老逻辑） */
+#status-bar.is-empty:has(.status-bar-context:empty) { min-height: 0; padding-top: 0; padding-bottom: 0; border-top: 0; opacity: 0; overflow: hidden; }
 
 /* 经典五金风格滚动条 */
 ::-webkit-scrollbar { width: 12px; height: 12px; }

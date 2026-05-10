@@ -137,6 +137,11 @@ export function createRuntimeBridge(app) {
     postToHost(VOICE_BRIDGE_EVENTS.RENDER_FAILED, payload)
   }
 
+  // 选区摘要：summary 为 null 表示无选区——host 会据此隐藏底栏的"选区"字段
+  function emitSelectionSummary(summary) {
+    postToHost(VOICE_BRIDGE_EVENTS.SELECTION_SUMMARY, { summary })
+  }
+
   window.addEventListener('message', handleMessage)
 
   return {
@@ -153,5 +158,6 @@ export function createRuntimeBridge(app) {
     emitRenderProgress,
     emitRenderComplete,
     emitRenderFailed,
+    emitSelectionSummary,
   }
 }
