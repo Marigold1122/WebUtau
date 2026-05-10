@@ -68,9 +68,13 @@ export class ReverbDockView {
     const toggleButton = this.refs.btnToggleReverbDock
     if (!dock) return false
 
-    const visible = Boolean(project && viewState?.reverbDockOpen)
+    // dock 现在是 tab 容器：只有当 dock 开 + 当前 tab 是 reverb 时，reverb 内容才显
+    const dockOpen = Boolean(project && viewState?.reverbDockOpen)
+    const activeTab = viewState?.activeDockTab === 'reverb' ? 'reverb' : 'mixer'
+    const visible = dockOpen && activeTab === 'reverb'
     if (toggleButton) {
       toggleButton.disabled = !project
+      // 按钮的"激活态"反映两件事：dock 开着 + 当前在 reverb tab
       toggleButton.classList.toggle('accent', visible)
       toggleButton.setAttribute('aria-pressed', String(visible))
     }

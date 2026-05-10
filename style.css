@@ -82,6 +82,39 @@
   animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* ===== 顶栏 dock 切换按钮（Mixer / Reverb）：和主题切换按钮共用视觉语言 ===== */
+.menubar-dock-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  margin-right: 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-3);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  flex-shrink: 0;
+  user-select: none;
+  transition: background 200ms ease, border-color 200ms ease, color 200ms ease, transform 140ms ease;
+}
+.menubar-dock-btn:hover:not(:disabled) {
+  background: var(--bg-1);
+  border-color: var(--border-light);
+  color: var(--text-default);
+  transform: translateY(-0.5px);
+}
+.menubar-dock-btn:active:not(:disabled) { transform: translateY(0.5px); }
+.menubar-dock-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.menubar-dock-btn.accent {
+  background: var(--accent-color, #5BC0DE);
+  border-color: var(--accent-color, #5BC0DE);
+  color: #fff;
+}
+
 /* ===== 顶栏明暗切换按钮：太阳 ⇄ 月亮 ===== */
 .theme-toggle {
   display: inline-flex;
@@ -856,49 +889,6 @@ body {
   gap: 10px;
   margin-left: 0;
   pointer-events: auto;
-}
-
-.pro-display {
-  background-color: #2b2c2a;
-  border: 2px solid #b5b2a5;
-  border-top-color: #9c998d;
-  border-bottom-color: #d1cfc5;
-  border-radius: 3px;
-  padding: 4px 16px;
-  display: inline-flex;
-  gap: 24px;
-  align-items: center;
-  box-shadow: inset 0 2px 6px rgba(0,0,0,0.4), 0 1px 1px rgba(255,255,255,0.8);
-}
-
-.display-block {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.display-label {
-  font-family: Arial, sans-serif;
-  font-size: 9px;
-  font-weight: 700;
-  color: #7b8072;
-  letter-spacing: 0.5px;
-}
-
-.display-value {
-  font-family: 'Consolas', 'Courier New', monospace;
-  font-size: 15px;
-  font-weight: 700;
-  color: #a4cfa9;
-  letter-spacing: 1px;
-}
-
-.bpm-display {
-  min-width: 32px;
-}
-
-.time-display {
-  min-width: 106px;
 }
 
 .render-status {
@@ -2101,6 +2091,115 @@ body {
   box-shadow: inset 0 5px 10px rgba(0,0,0,0.03);
 }
 .bottom-fx-panel.hidden { display: none !important; }
+
+/* ─── 底部 dock tabbar：Mixer / Reverb 切换（紧贴 dock 上方） ─────────────── */
+.bottom-dock-tabbar {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  padding: 4px 10px 0 10px;
+  background: var(--bg-fx-panel);
+  border-top: 1px solid var(--border-light);
+  flex: 0 0 auto;
+  user-select: none;
+}
+.bottom-dock-tabbar.hidden { display: none !important; }
+.bottom-dock-tab {
+  appearance: none;
+  border: 1px solid transparent;
+  border-bottom: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 14px 6px 14px;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.bottom-dock-tab:hover { color: var(--text-default); background-color: rgba(255, 255, 255, 0.04); }
+.bottom-dock-tab.is-active {
+  color: var(--text-default);
+  background-color: var(--bg-fx-panel-active, var(--bg-fx-panel));
+  border-color: var(--border-light);
+  box-shadow: inset 0 2px 0 var(--accent-color, #5BC0DE);
+}
+
+/* ─── Mixer Dock 骨架 ──────────────────────────────────────────────────── */
+.mixer-dock {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  padding: 12px 16px;
+}
+.mixer-dock-empty {
+  margin: auto;
+  color: var(--text-muted);
+  font-size: 13px;
+  opacity: 0.6;
+}
+.mixer-dock-strips {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.mixer-channel-strip {
+  flex: 0 0 80px;
+  min-width: 80px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  background: var(--bg-1);
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  padding: 8px 6px;
+  position: relative;
+}
+.mixer-channel-strip-name {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+.mixer-channel-strip--placeholder {
+  /* P1 占位状态：用淡入对角线条纹标识"未来这里有真控件" */
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent 0,
+    transparent 8px,
+    rgba(255, 255, 255, 0.025) 8px,
+    rgba(255, 255, 255, 0.025) 16px
+  );
+  min-height: 240px;
+}
+/* Master strip 视觉强区分：稍宽 + 不同色 + 与上一条之间一条垂直分割线 */
+.mixer-channel-strip--master {
+  flex: 0 0 100px;
+  min-width: 100px;
+  margin-left: 18px;
+  background: linear-gradient(180deg, var(--bg-1) 0%, var(--bg-0) 100%);
+  border-color: var(--accent-color, #5BC0DE);
+  box-shadow: inset 0 0 0 1px rgba(91, 192, 222, 0.18);
+}
+.mixer-channel-strip--master::before {
+  /* 与左侧普通 strip 间的视觉分隔线 */
+  content: '';
+  position: absolute;
+  left: -10px; top: 4px; bottom: 4px;
+  width: 1px;
+  background: var(--border-light);
+}
+.mixer-channel-strip-name--master {
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: var(--accent-color, #5BC0DE);
+}
 
 /* dock 闭→开 时整面 slide-up + fade-in，让"刚打开"成为一个明显的视觉事件，
    避免用户点电平表 / 按 fx 后无反馈感。.is-opening 由 ReverbDockView 在

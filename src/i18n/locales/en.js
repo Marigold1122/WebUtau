@@ -358,9 +358,16 @@ export const messages = {
     save: 'Save',
     cancel: 'Cancel',
   },
+  mixer: {
+    panel_button: 'Mixer',
+    panel_aria: 'Mixer panel',
+    tab_label: 'Mixer',
+    empty_hint: 'Open a project to see channel strips',
+  },
   reverb: {
     panel_button: 'Reverb',
     panel_aria: 'Reverb panel',
+    tab_label: 'Reverb',
     style: {
       all: 'All styles',
       vocal: 'Vocal',

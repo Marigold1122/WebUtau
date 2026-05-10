@@ -13,6 +13,7 @@ import { isAudioTrack } from '../project/trackContentType.js'
 import { getTrackSourceInspectorText } from '../project/trackSourceAssignment.js'
 import { isVoiceRuntimeSource } from '../project/trackSourceAssignment.js'
 import { InstrumentEditorView } from './InstrumentEditorView.js'
+import { MixerDockView } from './MixerDockView.js'
 import { ProjectTimingImportModal } from './ProjectTimingImportModal.js'
 import { QuickLyricPanel } from './QuickLyricPanel.js'
 import { TrackLanguageModal } from './TrackLanguageModal.js'
@@ -73,6 +74,7 @@ export class ShellLayoutView {
     this.voiceConversionSection = new InspectorVoiceConversionSection(this.refs.voiceConversionSection, handlers)
     this.trackViewportController = new TrackViewportController(this.refs, handlers)
     this.instrumentEditorView = new InstrumentEditorView(this.refs.instrumentEditorRoot, handlers)
+    this.mixerDockView = new MixerDockView(this.refs, handlers)
     this.realtimeStatus = new RealtimeStatusController(this.refs.statusContext)
     onLocaleChange(() => this.realtimeStatus?.refreshLocale())
     this.reverbDockView = new ReverbDockView(this.refs, handlers)
@@ -123,6 +125,7 @@ export class ShellLayoutView {
     }
     this.instrumentEditorView.setHandlers(wrappedHandlers)
     this.reverbDockView.setHandlers(handlers)
+    this.mixerDockView.setHandlers(handlers)
     this.trackTonePanelView.setHandlers(handlers)
   }
 
@@ -134,6 +137,8 @@ export class ShellLayoutView {
     this.voiceConversionSection.init()
     this.instrumentEditorView.init()
     this.reverbDockView.init()
+    this.mixerDockView.init()
+    this._bindBottomDockTabbar()
     this.trackTonePanelView.init()
     this.aboutPanelView.init()
     this._bindEvents()
@@ -199,22 +204,50 @@ export class ShellLayoutView {
     this._setEditorVisible(Boolean(editorTrack))
     this._renderEditorModeControls(editorTrack, viewState)
     this._syncEditorSurface(project, editorTrack, viewState)
-    const reverbDockVisible = this.reverbDockView.render({
-      project,
-      tracks,
-      viewState,
-    })
-    if (this.reverbDockVisible !== reverbDockVisible) {
-      this.reverbDockVisible = reverbDockVisible
-      this.workspaceSplitController.setReverbDockVisible(reverbDockVisible)
+    // 底部 dock 现在是 tab 容器：tab=reverb 时 ReverbDockView 渲染 + mixer 隐藏；
+    // tab=mixer 时反之。两个 view 各自看 viewState.activeDockTab 决定是否真的渲染。
+    const reverbDockVisible = this.reverbDockView.render({ project, tracks, viewState })
+    const mixerDockVisible = this.mixerDockView.render({ project, tracks, viewState })
+    const dockVisible = reverbDockVisible || mixerDockVisible
+    if (this.reverbDockVisible !== dockVisible) {
+      this.reverbDockVisible = dockVisible
+      this.workspaceSplitController.setReverbDockVisible(dockVisible)
       this.notifyRuntimeLayoutChanged()
     }
+    this._renderBottomDockTabbar(viewState, Boolean(project))
     this.setMidiRecordingEnabled(Boolean(editorTrack) && !isAudioTrack(editorTrack) && viewState?.editorMode === 'note')
   }
 
   syncProjectMeta(project, viewState = {}) {
     const { selectedTrack, editorTrack, renderBadgeTrack } = this._resolveProjectViewTracks(project)
     this._renderProjectMeta(project, selectedTrack, editorTrack, renderBadgeTrack, viewState)
+  }
+
+  /** 给底部 dock tabbar 的两个按钮挂 click（一次性，init 时调） */
+  _bindBottomDockTabbar() {
+    const tabbar = this.refs.bottomDockTabbar
+    if (!tabbar) return
+    tabbar.addEventListener('click', (event) => {
+      const target = event.target.closest('[data-tab]')
+      if (!target) return
+      const nextTab = target.dataset.tab === 'reverb' ? 'reverb' : 'mixer'
+      this.handlers.onActiveDockTabChanged?.(nextTab)
+    })
+  }
+
+  /** 每帧 render 时同步 tabbar 显隐 + active 状态 */
+  _renderBottomDockTabbar(viewState, hasProject) {
+    const tabbar = this.refs.bottomDockTabbar
+    if (!tabbar) return
+    const dockOpen = Boolean(hasProject && viewState?.reverbDockOpen)
+    tabbar.classList.toggle('hidden', !dockOpen)
+    if (!dockOpen) return
+    const activeTab = viewState?.activeDockTab === 'reverb' ? 'reverb' : 'mixer'
+    tabbar.querySelectorAll('[data-tab]').forEach((btn) => {
+      const isActive = btn.dataset.tab === activeTab
+      btn.classList.toggle('is-active', isActive)
+      btn.setAttribute('aria-selected', String(isActive))
+    })
   }
 
   setStatus(text) {
@@ -293,10 +326,9 @@ export class ShellLayoutView {
     })
   }
 
-  setTransportTime(text) {
-    if (!this.refs.timeDisplay) return
-    this.refs.timeDisplay.textContent = typeof text === 'string' && text ? text : '00:00.000'
-  }
+  // 顶栏大字号 TIME 显示已移除——底栏 status bar 接替了同等信息。
+  // 此方法保留以兼容 ProjectTransportCoordinator 的每帧调用，但不再写任何 DOM
+  setTransportTime(_text) {}
 
   setTimelinePlayheadTime(time) {
     this.timelinePlayheadTime = Number.isFinite(time) ? Math.max(0, time) : 0
@@ -731,8 +763,7 @@ export class ShellLayoutView {
     this.refs.renderBadge.textContent = renderBadgeTrack ? getTrackStatusText(renderBadgeTrack) : ''
     this.refs.renderBadge.className = `render-status ${renderBadgeTrack ? getTrackRenderClass(renderBadgeTrack) : 'idle'}`
     this.refs.editorTrackName.textContent = editorTrack?.name || '—'
-    const bpm = project?.tempoData?.tempos?.[0]?.bpm || 120
-    this.refs.bpmDisplay.textContent = String(Math.round(bpm))
+    // 顶栏 BPM 大字号显示已移除——底栏 status bar 接替（realtimeStatus.setProject 已在前面写过）
   }
 
   _resolveProjectViewTracks(project) {

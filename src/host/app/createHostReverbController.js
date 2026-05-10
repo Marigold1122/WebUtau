@@ -69,12 +69,46 @@ export function createHostReverbController({
       return false
     }
 
-    const nextOpen = sessionStore.toggleReverbDock()
+    // dock 是 tab 容器：点击"混响"按钮的语义是
+    //   - 已在 reverb tab 且 dock 开 → 关闭 dock
+    //   - 否则 → 打开 dock + 切到 reverb tab
+    const dockOpen = sessionStore.isReverbDockOpen()
+    const currentTab = sessionStore.getActiveDockTab()
+    const alreadyShowingReverb = dockOpen && currentTab === 'reverb'
+    const nextOpen = !alreadyShowingReverb
+    sessionStore.setReverbDockOpen(nextOpen)
+    sessionStore.setActiveDockTab('reverb')
     // 打开 dock 时关闭编辑器——两个面板互斥，避免高度争抢
     if (nextOpen) closeEditorPanel?.()
     render(nextOpen ? 'reverb-dock-opened' : 'reverb-dock-closed')
     view.setStatus(buildDockStatusText(nextOpen))
     return nextOpen
+  }
+
+  function toggleMixerDock() {
+    if (!store.getProject()) {
+      sessionStore.setReverbDockOpen(false)
+      render('mixer-dock-unavailable')
+      view.setStatus(t('hostStatus.import_project_first'))
+      return false
+    }
+    const dockOpen = sessionStore.isReverbDockOpen()
+    const currentTab = sessionStore.getActiveDockTab()
+    const alreadyShowingMixer = dockOpen && currentTab === 'mixer'
+    const nextOpen = !alreadyShowingMixer
+    sessionStore.setReverbDockOpen(nextOpen)
+    sessionStore.setActiveDockTab('mixer')
+    if (nextOpen) closeEditorPanel?.()
+    render(nextOpen ? 'mixer-dock-opened' : 'mixer-dock-closed')
+    view.setStatus(buildDockStatusText(nextOpen))
+    return nextOpen
+  }
+
+  // tab 切换：dock 不关，只切内部活动 tab
+  function setActiveDockTab(tab) {
+    const next = sessionStore.setActiveDockTab(tab)
+    render(`active-dock-tab-${next}`)
+    return next
   }
 
   function toggleTrackFxPanel(trackId) {
@@ -86,6 +120,9 @@ export function createHostReverbController({
     const nextDockOpen = sessionStore.getOpenReverbTrackIds().length > 0
       ? sessionStore.setReverbDockOpen(true)
       : sessionStore.setReverbDockOpen(false)
+    // 点击单轨 fx 按钮的语义是"打开混响并调参"——强制切到 reverb tab，
+    // 否则用户从 mixer tab 点 fx 后 dock 没变化、混响参数也没出来，体验断裂
+    if (nextDockOpen) sessionStore.setActiveDockTab('reverb')
     // 单轨 fx 让 dock 打开时也走互斥——编辑器若开着会被收回
     if (nextDockOpen) closeEditorPanel?.()
     render(trackModuleOpen ? 'track-fx-opened' : 'track-fx-closed')
@@ -142,6 +179,8 @@ export function createHostReverbController({
     handleTrackReverbConfigChanged,
     handleTrackReverbPresetSelected,
     toggleReverbDock,
+    toggleMixerDock,
+    setActiveDockTab,
     toggleTrackFxPanel,
     toggleProjectReverbEnabled,
     toggleTrackReverbEnabled,

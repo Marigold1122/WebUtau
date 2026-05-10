@@ -7,7 +7,10 @@ export class HostSessionStore {
     this._openSourcePickerTrackId = null
     this._editorMode = 'note'
     this._playheadFollowMode = normalizePlayheadFollowMode(null)
+    // _reverbDockOpen 现在表示"底部 dock 是否打开"——可能展示 mixer 也可能展示 reverb；
+    // 名字暂时保留以减少调用方改动，新加 _activeDockTab 区分实际展示的内容
     this._reverbDockOpen = false
+    this._activeDockTab = 'mixer'
     this._openReverbTrackIds = []
   }
 
@@ -19,6 +22,7 @@ export class HostSessionStore {
       editorMode: this._editorMode,
       playheadFollowMode: this._playheadFollowMode,
       reverbDockOpen: this._reverbDockOpen,
+      activeDockTab: this._activeDockTab,
       openReverbTrackIds: [...this._openReverbTrackIds],
     }
   }
@@ -100,6 +104,16 @@ export class HostSessionStore {
   toggleReverbDock() {
     this._reverbDockOpen = !this._reverbDockOpen
     return this._reverbDockOpen
+  }
+
+  getActiveDockTab() {
+    return this._activeDockTab
+  }
+
+  /** @param {'mixer' | 'reverb'} tab */
+  setActiveDockTab(tab) {
+    this._activeDockTab = (tab === 'reverb') ? 'reverb' : 'mixer'
+    return this._activeDockTab
   }
 
   getOpenReverbTrackIds() {

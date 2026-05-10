@@ -358,9 +358,16 @@ export const messages = {
     save: '保存',
     cancel: '取消',
   },
+  mixer: {
+    panel_button: '混音器',
+    panel_aria: '混音器面板',
+    tab_label: '混音器',
+    empty_hint: '导入一个工程后会显示通道条',
+  },
   reverb: {
     panel_button: '混响 Reverb',
     panel_aria: '混响面板 Reverb panel',
+    tab_label: '混响',
     style: {
       all: '全部风格',
       vocal: '人声',

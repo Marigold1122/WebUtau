@@ -358,9 +358,16 @@ export const messages = {
     save: '保存',
     cancel: 'キャンセル',
   },
+  mixer: {
+    panel_button: 'ミキサー',
+    panel_aria: 'ミキサーパネル',
+    tab_label: 'ミキサー',
+    empty_hint: 'プロジェクトを開くとチャンネルストリップが表示されます',
+  },
   reverb: {
     panel_button: 'リバーブ',
     panel_aria: 'リバーブパネル',
+    tab_label: 'リバーブ',
     style: {
       all: 'すべて',
       vocal: 'ボーカル',

@@ -1957,6 +1957,8 @@ export function createHostApp() {
     getProjectReverbPresets: reverbController.getProjectReverbPresets,
     getProjectReverbPresetTags: reverbController.getProjectReverbPresetTags,
     onToggleReverbDock: reverbController.toggleReverbDock,
+    onToggleMixerDock: reverbController.toggleMixerDock,
+    onActiveDockTabChanged: reverbController.setActiveDockTab,
     onToggleProjectReverbEnabled: reverbController.toggleProjectReverbEnabled,
     onProjectReverbPresetSelected: reverbController.handleProjectReverbPresetSelected,
     onProjectReverbConfigChanged: reverbController.handleProjectReverbConfigChanged,
