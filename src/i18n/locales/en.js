@@ -363,6 +363,12 @@ export const messages = {
     panel_aria: 'Mixer panel',
     tab_label: 'Mixer',
     empty_hint: 'Open a project to see channel strips',
+    master_label: 'Master Out',
+    slot_send: 'Send',
+    slot_insert: 'Insert',
+    pan_aria: '{name} pan',
+    volume_aria: '{name} volume',
+    master_volume_aria: 'Master volume',
   },
   reverb: {
     panel_button: 'Reverb',

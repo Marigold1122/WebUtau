@@ -363,6 +363,12 @@ export const messages = {
     panel_aria: 'ミキサーパネル',
     tab_label: 'ミキサー',
     empty_hint: 'プロジェクトを開くとチャンネルストリップが表示されます',
+    master_label: 'マスター',
+    slot_send: 'Send',
+    slot_insert: 'Insert',
+    pan_aria: '{name} パン',
+    volume_aria: '{name} 音量',
+    master_volume_aria: 'マスター音量',
   },
   reverb: {
     panel_button: 'リバーブ',

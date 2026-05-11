@@ -363,6 +363,12 @@ export const messages = {
     panel_aria: '混音器面板',
     tab_label: '混音器',
     empty_hint: '导入一个工程后会显示通道条',
+    master_label: '主输出',
+    slot_send: '发送',
+    slot_insert: '插入',
+    pan_aria: '{name} 声像',
+    volume_aria: '{name} 音量',
+    master_volume_aria: '主输出音量',
   },
   reverb: {
     panel_button: '混响 Reverb',

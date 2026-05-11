@@ -2144,61 +2144,218 @@ body {
   gap: 6px;
   flex: 1 1 auto;
   min-width: 0;
+  /* 通道条多了横向滚 */
+  overflow-x: auto;
+  overflow-y: hidden;
 }
-.mixer-channel-strip {
-  flex: 0 0 80px;
-  min-width: 80px;
+
+/* ─── 通道条本体（普通轨 / master 共用基本骨架） ────────────────────────── */
+.mixer-strip {
+  --mixer-strip-color: var(--accent-color, #5BC0DE);
+  flex: 0 0 76px;
+  min-width: 76px;
   display: flex;
   flex-direction: column;
   align-items: stretch;
   background: var(--bg-1);
   border: 1px solid var(--border-light);
   border-radius: 6px;
-  padding: 8px 6px;
+  padding: 6px 6px 8px 6px;
+  gap: 6px;
   position: relative;
+  user-select: none;
 }
-.mixer-channel-strip-name {
+.mixer-strip-head {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+.mixer-strip-stripe {
+  height: 4px;
+  background: var(--mixer-strip-color);
+  border-radius: 2px;
+  flex: 0 0 4px;
+}
+.mixer-strip-name {
   font-size: 11px;
-  font-weight: 500;
-  color: var(--text-muted);
+  font-weight: 600;
+  color: var(--text-default);
+  text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.4;
+}
+
+/* ─── Slot 占位（send / insert，P3/P4 接真控件） ────────────────────────── */
+.mixer-strip-slot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 6px;
+  background: var(--bg-0);
+  border: 1px dashed var(--border-light);
+  border-radius: 4px;
+  min-height: 22px;
+  font-size: 9px;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+.mixer-strip-slot.is-blank {
+  background: transparent;
+  border-color: transparent;
+  opacity: 0;
+}
+.mixer-strip-slot-label { font-weight: 600; letter-spacing: 0.4px; }
+.mixer-strip-slot-hint { opacity: 0.55; }
+
+/* ─── Pan knob：圆形旋钮 + 指针 ──────────────────────────────────────── */
+.mixer-strip-pan-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.mixer-strip-pan-knob {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, var(--bg-1), var(--bg-0));
+  border: 1px solid var(--border-light);
+  cursor: ns-resize;
+  flex: 0 0 28px;
+}
+.mixer-strip-pan-knob:focus-visible { outline: 1px solid var(--accent-color, #5BC0DE); outline-offset: 2px; }
+.mixer-strip-pan-needle {
+  position: absolute;
+  left: 50%; top: 6px;
+  width: 2px;
+  height: 10px;
+  background: var(--text-default);
+  transform-origin: bottom center;
+  transform: rotate(0deg);
+  border-radius: 1px;
+  margin-left: -1px;
+  transition: transform 60ms linear;
+}
+.mixer-strip-pan-value {
+  font-size: 9px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Fader 区：纵向轨道槽 + 把手 + 双声道 meter 占位 ──────────────────── */
+.mixer-strip-fader-row {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 4px;
+  height: var(--fader-track-height, 96px);
+  justify-content: center;
+}
+.mixer-strip-meter {
+  display: flex;
+  flex-direction: row;
+  gap: 1px;
+  width: 8px;
+  background: var(--bg-0);
+  border-radius: 2px;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+.mixer-strip-meter-channel {
+  flex: 1 1 auto;
+  background: linear-gradient(to top, #2EA952 0%, #2EA952 60%, #D6A435 85%, #C8423A 100%);
+  opacity: 0;  /* P5 接真 AnalyserNode 时再点亮 */
+}
+.mixer-strip-fader-track {
+  position: relative;
+  width: 24px;
+  background: var(--bg-0);
+  border: 1px solid var(--border-light);
+  border-radius: 3px;
+  flex: 0 0 24px;
+}
+.mixer-strip-fader-handle {
+  position: absolute;
+  left: -3px; right: -3px;
+  bottom: 0%;
+  height: 14px;
+  background: linear-gradient(180deg, var(--bg-1) 0%, var(--bg-0) 100%);
+  border: 1px solid var(--mixer-strip-color);
+  border-radius: 3px;
+  cursor: grab;
+  padding: 0;
+  transform: translateY(50%);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+.mixer-strip-fader-handle:focus-visible { outline: 1px solid var(--accent-color, #5BC0DE); outline-offset: 2px; }
+.mixer-strip-fader-handle:active { cursor: grabbing; }
+.mixer-strip-fader-handle::before {
+  /* 把手中间一道横线，专业感 */
+  content: '';
+  position: absolute;
+  left: 4px; right: 4px;
+  top: 50%; height: 1px;
+  background: var(--text-muted);
+  opacity: 0.4;
+}
+.mixer-strip-db {
   text-align: center;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  letter-spacing: 0.2px;
 }
-.mixer-channel-strip--placeholder {
-  /* P1 占位状态：用淡入对角线条纹标识"未来这里有真控件" */
-  background-image: repeating-linear-gradient(
-    45deg,
-    transparent 0,
-    transparent 8px,
-    rgba(255, 255, 255, 0.025) 8px,
-    rgba(255, 255, 255, 0.025) 16px
-  );
-  min-height: 240px;
+
+/* ─── Mute / Solo 按钮组 ──────────────────────────────────────────────── */
+.mixer-strip-btn-row {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
 }
-/* Master strip 视觉强区分：稍宽 + 不同色 + 与上一条之间一条垂直分割线 */
-.mixer-channel-strip--master {
-  flex: 0 0 100px;
-  min-width: 100px;
-  margin-left: 18px;
+.mixer-strip-btn {
+  flex: 1 1 auto;
+  appearance: none;
+  border: 1px solid var(--border-light);
+  background: var(--bg-0);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  height: 20px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+.mixer-strip-btn:hover:not(:disabled) { color: var(--text-default); border-color: var(--text-muted); }
+.mixer-strip-btn--mute.is-active { background: var(--red, #C8423A); border-color: var(--red, #C8423A); color: #fff; }
+.mixer-strip-btn--solo.is-active { background: var(--orange, #D6A435); border-color: var(--orange, #D6A435); color: #111; }
+
+/* ─── Master strip 视觉强区分 ────────────────────────────────────────── */
+.mixer-strip--master {
+  flex: 0 0 96px;
+  min-width: 96px;
+  margin-left: 16px;
   background: linear-gradient(180deg, var(--bg-1) 0%, var(--bg-0) 100%);
   border-color: var(--accent-color, #5BC0DE);
   box-shadow: inset 0 0 0 1px rgba(91, 192, 222, 0.18);
 }
-.mixer-channel-strip--master::before {
-  /* 与左侧普通 strip 间的视觉分隔线 */
+.mixer-strip--master::before {
+  /* 与左侧普通 strip 间的视觉分隔 */
   content: '';
   position: absolute;
-  left: -10px; top: 4px; bottom: 4px;
+  left: -9px; top: 4px; bottom: 4px;
   width: 1px;
   background: var(--border-light);
 }
-.mixer-channel-strip-name--master {
+.mixer-strip-master-label {
+  font-size: 9px;
   font-weight: 700;
-  font-size: 10px;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.22em;
   color: var(--accent-color, #5BC0DE);
+  text-align: center;
 }
 
 /* dock 闭→开 时整面 slide-up + fade-in，让"刚打开"成为一个明显的视觉事件，
