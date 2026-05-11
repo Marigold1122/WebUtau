@@ -24,6 +24,9 @@ export class MixerDockView {
     this._stripsByTrackId = new Map()
     this._masterStrip = null
     this._stripsContainer = null
+    // LUFS 订阅：只在 mixer tab 可见时活跃，隐藏时撤回；renderer 每帧 < 10Hz 不重订
+    this._lufsUnsubscribe = null
+    this._currentLufsTarget = -14
   }
 
   setHandlers(handlers = {}) {
@@ -63,8 +66,17 @@ export class MixerDockView {
 
     if (!visible) {
       this._wasVisible = false
+      this._teardownLufsSubscription()
       return false
     }
+
+    // LUFS target 从工程的 master chain state 读
+    this._currentLufsTarget = Number.isFinite(project?.mixState?.masterChain?.loudnessTarget)
+      ? project.mixState.masterChain.loudnessTarget
+      : -14
+
+    // 第一次可见时建立 LUFS 订阅；不可见时撤回（性能保护）
+    this._ensureLufsSubscription()
 
     // 第一次打开 mixer tab 的"slide-up"动画——和 reverb dock 行为一致，
     // 让用户感知到 dock 切到 mixer 模式
@@ -167,6 +179,24 @@ export class MixerDockView {
     this._masterStrip?.root.remove()
     this._masterStrip = null
     this._stripsContainer = null
+  }
+
+  // ── LUFS 订阅生命周期 ────────────────────────────────────────
+  // mixer tab 可见时订阅 ProjectMixController.subscribeLufs，每 100ms 一帧 snapshot
+  // 推到 master strip 显示。不可见时撤回，避免每秒 10 次 DOM 写入空跑
+  _ensureLufsSubscription() {
+    if (this._lufsUnsubscribe) return
+    const subscribe = this.handlers?.subscribeLufs
+    if (typeof subscribe !== 'function') return
+    this._lufsUnsubscribe = subscribe((snapshot) => {
+      this._masterStrip?.setLufsSnapshot?.(snapshot, this._currentLufsTarget)
+    }) || null
+  }
+  _teardownLufsSubscription() {
+    if (this._lufsUnsubscribe) {
+      try { this._lufsUnsubscribe() } catch (_e) {}
+      this._lufsUnsubscribe = null
+    }
   }
 
   // strip 期望的 handler 接口 vs createHostApp 暴露的接口 —— 这里做一层桥接

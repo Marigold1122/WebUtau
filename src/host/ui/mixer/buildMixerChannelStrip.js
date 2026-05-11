@@ -95,6 +95,52 @@ export function buildMixerChannelStrip({ track, trackColor, isMaster = false, ha
   head.appendChild(name)
   root.appendChild(head)
 
+  // 1.5  Master strip 专属：紧凑 LUFS 面板（I 大字号 + M / S 副 + delta bar）
+  // 普通轨没有 LUFS（LUFS 是 master 输出层的概念）
+  let lufsRefs = null
+  if (isMaster) {
+    const lufsPanel = document.createElement('div')
+    lufsPanel.className = 'mixer-strip-lufs'
+
+    const integratedRow = document.createElement('div')
+    integratedRow.className = 'mixer-strip-lufs-integrated'
+    const integratedLabel = document.createElement('span')
+    integratedLabel.className = 'mixer-strip-lufs-integrated-label'
+    integratedLabel.textContent = 'I'
+    const integratedValue = document.createElement('span')
+    integratedValue.className = 'mixer-strip-lufs-integrated-value'
+    integratedValue.textContent = '—'
+    integratedRow.append(integratedLabel, integratedValue)
+
+    const subRow = document.createElement('div')
+    subRow.className = 'mixer-strip-lufs-sub'
+    const momentaryCell = document.createElement('span')
+    momentaryCell.className = 'mixer-strip-lufs-cell'
+    momentaryCell.innerHTML = '<span class="mixer-strip-lufs-cell-label">M</span><span class="mixer-strip-lufs-cell-value">—</span>'
+    const shortTermCell = document.createElement('span')
+    shortTermCell.className = 'mixer-strip-lufs-cell'
+    shortTermCell.innerHTML = '<span class="mixer-strip-lufs-cell-label">S</span><span class="mixer-strip-lufs-cell-value">—</span>'
+    subRow.append(momentaryCell, shortTermCell)
+
+    // delta 条：±10 LU 映射 0..100%；中点 50% = 达标；居中绿、外圈黄→红/蓝
+    const deltaRow = document.createElement('div')
+    deltaRow.className = 'mixer-strip-lufs-delta'
+    const deltaFill = document.createElement('div')
+    deltaFill.className = 'mixer-strip-lufs-delta-fill'
+    deltaRow.appendChild(deltaFill)
+
+    lufsPanel.append(integratedRow, subRow, deltaRow)
+    root.appendChild(lufsPanel)
+
+    lufsRefs = {
+      integratedValue,
+      momentaryValue: momentaryCell.querySelector('.mixer-strip-lufs-cell-value'),
+      shortTermValue: shortTermCell.querySelector('.mixer-strip-lufs-cell-value'),
+      deltaFill,
+      panel: lufsPanel,
+    }
+  }
+
   // 2. Send 槽位（占位，P3 实现）
   const sendSlot = document.createElement('div')
   sendSlot.className = 'mixer-strip-slot mixer-strip-slot--send'
@@ -198,6 +244,7 @@ export function buildMixerChannelStrip({ track, trackColor, isMaster = false, ha
     panKnob, panValue, panNeedle: panKnob?.querySelector('.mixer-strip-pan-needle') || null,
     faderTrack, faderHandle, dbValue, meterL, meterR,
     btnMute, btnSolo,
+    lufs: lufsRefs,   // master strip 独有；非 master 为 null
   }
 
   // 公开一个 update —— 让 dock 复用 DOM，只写 textContent / 位置
@@ -471,6 +518,49 @@ export function buildMixerChannelStrip({ track, trackColor, isMaster = false, ha
   const faderWire = isMaster ? null : wireFader()
   const panWire = isMaster ? null : wirePan()
   if (!isMaster) wireMuteSolo()
+
+  // ── LUFS 实时显示（master strip 专属） ─────────────────────────
+  // 把 LufsMeter 推过来的 snapshot 写到 DOM；非 master 时是 no-op
+  // 着色规则与 master chain 面板里那一套同源：
+  //   |Δ| ≤ 1 LU = good（绿）；≤ 3 LU = warn（橙）；外圈 = too-loud（红）/ too-quiet（蓝）
+  function setLufsSnapshot(snapshot, target = -14) {
+    if (!isMaster || !lufsRefs) return
+    const safeTarget = Number.isFinite(target) ? target : -14
+    const toneOf = (v) => {
+      if (!Number.isFinite(v)) return 'idle'
+      const d = v - safeTarget
+      const a = Math.abs(d)
+      if (a <= 1) return 'good'
+      if (a <= 3) return 'warn'
+      return d > 0 ? 'too-loud' : 'too-quiet'
+    }
+    const fmt = (v) => Number.isFinite(v) ? v.toFixed(1) : '—'
+
+    const integrated = snapshot?.integrated
+    const momentary = snapshot?.momentary
+    const shortTerm = snapshot?.shortTerm
+
+    lufsRefs.integratedValue.textContent = fmt(integrated)
+    lufsRefs.integratedValue.dataset.tone = toneOf(integrated)
+    lufsRefs.momentaryValue.textContent = fmt(momentary)
+    lufsRefs.momentaryValue.dataset.tone = toneOf(momentary)
+    lufsRefs.shortTermValue.textContent = fmt(shortTerm)
+    lufsRefs.shortTermValue.dataset.tone = toneOf(shortTerm)
+
+    // delta 条按 integrated（成品响度）决定；±10 LU 范围
+    if (Number.isFinite(integrated)) {
+      const d = integrated - safeTarget
+      const clamped = Math.max(-10, Math.min(10, d))
+      const halfPct = Math.abs(clamped) / 10 * 50  // 0..50%
+      // 居中 + 单向延伸：超出右侧（响）就向右延、左侧（轻）就向左延
+      lufsRefs.deltaFill.style.left = clamped >= 0 ? '50%' : `${50 - halfPct}%`
+      lufsRefs.deltaFill.style.width = `${halfPct}%`
+      lufsRefs.deltaFill.dataset.tone = toneOf(integrated)
+    } else {
+      lufsRefs.deltaFill.style.width = '0'
+      lufsRefs.deltaFill.dataset.tone = 'idle'
+    }
+  }
   // 重写 update 让它在 sync volume / pan 时分别走 wire 的 syncFromState
   // 拖拽中的控件不被外部 render 覆盖（dataset.dragging 标记）
   const originalUpdate = update
@@ -483,5 +573,5 @@ export function buildMixerChannelStrip({ track, trackColor, isMaster = false, ha
     originalUpdate(nextTrack)
   }
 
-  return { root, refs, update: wrappedUpdate, setHandlers }
+  return { root, refs, update: wrappedUpdate, setHandlers, setLufsSnapshot }
 }

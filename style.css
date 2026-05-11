@@ -2561,6 +2561,97 @@ body {
   padding-top: 4px;
 }
 
+/* ─── Master strip 紧凑 LUFS 面板（I 大字 + M / S 小字 + delta 条） ───── */
+.mixer-strip-lufs {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 4px 6px;
+  background: var(--mixer-db-bg);
+  border: 1px solid var(--mixer-db-border);
+  border-radius: 3px;
+  box-shadow: inset 0 1px 2px var(--mixer-db-shadow);
+}
+.mixer-strip-lufs-integrated {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px;
+}
+.mixer-strip-lufs-integrated-label {
+  font-size: 8px;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.6px;
+}
+.mixer-strip-lufs-integrated-value {
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-main);
+  letter-spacing: 0.2px;
+  transition: color 200ms ease, text-shadow 200ms ease;
+}
+.mixer-strip-lufs-sub {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  font-size: 8px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+.mixer-strip-lufs-cell {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+}
+.mixer-strip-lufs-cell-label { opacity: 0.6; font-weight: 700; }
+.mixer-strip-lufs-cell-value {
+  font-weight: 600;
+  color: var(--text-main);
+  transition: color 200ms ease;
+}
+.mixer-strip-lufs-delta {
+  position: relative;
+  height: 4px;
+  background: var(--bg-0);
+  border: 1px solid var(--mixer-recess-border);
+  border-radius: 2px;
+  box-shadow: inset 0 1px 1px var(--mixer-recess-shadow);
+  overflow: hidden;
+}
+.mixer-strip-lufs-delta::before {
+  /* 中线 = 达标位置 */
+  content: '';
+  position: absolute;
+  left: 50%; top: 0; bottom: 0;
+  width: 1px;
+  margin-left: -0.5px;
+  background: var(--mixer-control-highlight);
+  z-index: 1;
+}
+.mixer-strip-lufs-delta-fill {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 0;
+  transition: left 120ms ease, width 120ms ease, background 200ms ease;
+  background: var(--green);
+}
+
+/* LUFS 着色：good / warn / too-loud / too-quiet —— 与 master chain 面板同源约定 */
+.mixer-strip-lufs-integrated-value[data-tone='good']     { color: var(--green); text-shadow: 0 0 6px color-mix(in srgb, var(--green), transparent 60%); }
+.mixer-strip-lufs-integrated-value[data-tone='warn']     { color: var(--orange); text-shadow: 0 0 6px color-mix(in srgb, var(--orange), transparent 60%); }
+.mixer-strip-lufs-integrated-value[data-tone='too-loud'] { color: var(--red); text-shadow: 0 0 6px color-mix(in srgb, var(--red), transparent 60%); }
+.mixer-strip-lufs-integrated-value[data-tone='too-quiet']{ color: var(--accent-color); text-shadow: 0 0 6px var(--accent-mid); }
+.mixer-strip-lufs-cell-value[data-tone='good']     { color: var(--green); }
+.mixer-strip-lufs-cell-value[data-tone='warn']     { color: var(--orange); }
+.mixer-strip-lufs-cell-value[data-tone='too-loud'] { color: var(--red); }
+.mixer-strip-lufs-cell-value[data-tone='too-quiet']{ color: var(--accent-color); }
+.mixer-strip-lufs-delta-fill[data-tone='good']     { background: var(--green); }
+.mixer-strip-lufs-delta-fill[data-tone='warn']     { background: var(--orange); }
+.mixer-strip-lufs-delta-fill[data-tone='too-loud'] { background: var(--red); }
+.mixer-strip-lufs-delta-fill[data-tone='too-quiet']{ background: var(--accent-color); }
+
 /* dock 闭→开 时整面 slide-up + fade-in，让"刚打开"成为一个明显的视觉事件，
    避免用户点电平表 / 按 fx 后无反馈感。.is-opening 由 ReverbDockView 在
    visible 边沿翻转时加上，animationend 后自动撤掉。
