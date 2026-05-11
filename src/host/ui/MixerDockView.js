@@ -209,6 +209,7 @@ export class MixerDockView {
     return {
       onVolumeChanged: (volume, opts) => h.onTrackVolumeChanged?.(trackId, volume, opts),
       onPanChanged: (pan, opts) => h.onTrackPanChanged?.(trackId, pan, opts),
+      onSendChanged: (send, opts) => h.onTrackReverbSendChanged?.(trackId, send, opts),
       onToggleMute: () => h.onTrackMuteToggled?.(trackId),
       onToggleSolo: () => h.onTrackSoloToggled?.(trackId),
     }

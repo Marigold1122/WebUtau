@@ -368,6 +368,7 @@ export const messages = {
     slot_insert: '插入',
     pan_aria: '{name} 声像',
     volume_aria: '{name} 音量',
+    send_aria: '{name} 混响发送量',
     master_volume_aria: '主输出音量',
   },
   reverb: {

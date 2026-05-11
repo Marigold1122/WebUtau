@@ -66,6 +66,10 @@ export async function pickOpenFileHandle() {
 
 export async function writeJsonToHandle(handle, jsonString) {
   if (!handle?.createWritable) throw new Error(t('hostStatus.fs_no_write'))
+  // 入口防御：永远不允许写空字符串/非字符串——这是"0 字节文件"灾难的最后兜底
+  if (typeof jsonString !== 'string' || jsonString.length === 0) {
+    throw new Error('writeJsonToHandle: 拒绝写入空/非字符串内容（防止把工程文件清零）')
+  }
   // 写入前再确认一次权限（句柄可能在长时间持有后失效）
   if (typeof handle.queryPermission === 'function') {
     const permission = await handle.queryPermission({ mode: 'readwrite' })
@@ -74,11 +78,31 @@ export async function writeJsonToHandle(handle, jsonString) {
       if (requested !== 'granted') throw new UserCancelledError()
     }
   }
+  // FSA 写入语义：createWritable 开一个空的 swap 文件，write() 填内容、close() 提交。
+  // **关键坑**：如果 write() 抛错但 finally 仍 close() —— 空 swap 被 commit、原文件变 0 字节。
+  // 正确流程：write 失败 → abort()（丢弃 swap）→ 重抛错，原文件保持不变
   const writable = await handle.createWritable()
+  let writeOk = false
   try {
     await writable.write(jsonString)
-  } finally {
+    writeOk = true
+  } catch (error) {
+    // 丢弃 swap，原文件不动；abort 自己失败不影响重抛原错
+    try { await writable.abort?.() } catch (_e) { /* swallow */ }
+    throw error
+  }
+  if (writeOk) {
     await writable.close()
+    // 事后校验：close 后读一次 file.size 确认真的写了内容。
+    // 某些浏览器在 quota 边界等极端情况下 close 会"静默成功但 0 字节"——这一步抓住
+    let actualSize = null
+    try {
+      const file = await handle.getFile?.()
+      actualSize = file?.size
+    } catch (_e) { /* getFile 偶尔会因句柄 race 抛错；这一步抓不到不阻塞主流程 */ }
+    if (actualSize === 0 && jsonString.length > 0) {
+      throw new Error('写入后磁盘文件为 0 字节（疑似浏览器静默失败）—— 请检查磁盘空间 / 重试保存')
+    }
   }
 }
 

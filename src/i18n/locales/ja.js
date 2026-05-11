@@ -368,6 +368,7 @@ export const messages = {
     slot_insert: 'Insert',
     pan_aria: '{name} パン',
     volume_aria: '{name} 音量',
+    send_aria: '{name} リバーブセンド',
     master_volume_aria: 'マスター音量',
   },
   reverb: {

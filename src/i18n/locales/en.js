@@ -368,6 +368,7 @@ export const messages = {
     slot_insert: 'Insert',
     pan_aria: '{name} pan',
     volume_aria: '{name} volume',
+    send_aria: '{name} reverb send',
     master_volume_aria: 'Master volume',
   },
   reverb: {

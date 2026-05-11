@@ -18,7 +18,7 @@
  *   8. Mute / Solo 按钮组
  */
 
-import { normalizeTrackPan, normalizeTrackVolume } from '../../project/trackPlaybackState.js'
+import { normalizeTrackPan, normalizeTrackReverbSend, normalizeTrackVolume } from '../../project/trackPlaybackState.js'
 import { t } from '../../../i18n/index.js'
 
 const FADER_TRACK_HEIGHT = 96   // px；vertical fader 高度
@@ -49,6 +49,14 @@ function quantizeTrackPanLocal(value) {
 function snapTrackPanLocal(value) {
   const q = quantizeTrackPanLocal(value)
   return Math.abs(q) < PAN_SNAP_THRESHOLD ? 0 : q
+}
+
+function quantizeReverbSendLocal(value) {
+  return Math.round(normalizeTrackReverbSend(value) * 100) / 100
+}
+function sendToText(value) {
+  const v = quantizeReverbSendLocal(value)
+  return `${Math.round(v * 100)}`
 }
 
 /**
@@ -141,13 +149,34 @@ export function buildMixerChannelStrip({ track, trackColor, isMaster = false, ha
     }
   }
 
-  // 2. Send 槽位（占位，P3 实现）
+  // 2. Send 旋钮：reverb send，范围 [0, 1]，0 = 干（不送）
+  // master strip 没 send（master 是终点），保留同高空白维持视觉对齐
+  let sendKnob = null
+  let sendValue = null
+  let sendNeedle = null
   const sendSlot = document.createElement('div')
   sendSlot.className = 'mixer-strip-slot mixer-strip-slot--send'
   if (!isMaster) {
-    sendSlot.innerHTML = `<span class="mixer-strip-slot-label">${t('mixer.slot_send')}</span><span class="mixer-strip-slot-hint">—</span>`
+    sendSlot.classList.add('mixer-strip-slot--knob')
+    const sendLabel = document.createElement('span')
+    sendLabel.className = 'mixer-strip-slot-label'
+    sendLabel.textContent = t('mixer.slot_send')
+    sendKnob = document.createElement('div')
+    sendKnob.className = 'mixer-strip-send-knob'
+    sendKnob.setAttribute('role', 'slider')
+    sendKnob.setAttribute('aria-label', t('mixer.send_aria', { name: track?.name || '' }))
+    sendKnob.setAttribute('aria-valuemin', '0')
+    sendKnob.setAttribute('aria-valuemax', '100')
+    sendKnob.setAttribute('aria-valuenow', '0')
+    sendKnob.tabIndex = 0
+    sendNeedle = document.createElement('span')
+    sendNeedle.className = 'mixer-strip-send-needle'
+    sendKnob.appendChild(sendNeedle)
+    sendValue = document.createElement('span')
+    sendValue.className = 'mixer-strip-slot-hint mixer-strip-send-value'
+    sendValue.textContent = '0'
+    sendSlot.append(sendLabel, sendKnob, sendValue)
   } else {
-    // master 没 send 槽，留一个等高空白保持视觉对齐
     sendSlot.classList.add('is-blank')
   }
   root.appendChild(sendSlot)
@@ -242,6 +271,7 @@ export function buildMixerChannelStrip({ track, trackColor, isMaster = false, ha
   const refs = {
     head, name, sendSlot, insertSlot,
     panKnob, panValue, panNeedle: panKnob?.querySelector('.mixer-strip-pan-needle') || null,
+    sendKnob, sendValue, sendNeedle,
     faderTrack, faderHandle, dbValue, meterL, meterR,
     btnMute, btnSolo,
     lufs: lufsRefs,   // master strip 独有；非 master 为 null
@@ -271,6 +301,15 @@ export function buildMixerChannelStrip({ track, trackColor, isMaster = false, ha
       if (refs.panNeedle) refs.panNeedle.style.transform = `rotate(${pan * 45}deg)`
       refs.panKnob.setAttribute('aria-valuenow', String(Math.round(pan * 100)))
       if (refs.panValue) refs.panValue.textContent = panToText(pan)
+    }
+    // send 旋钮：[0,1] → 角度 [-135°, +135°]（270° sweep，标准旋钮范围）
+    // 同 fader / pan：拖拽中不接受外部 update
+    if (refs.sendKnob && !refs.sendKnob.dataset.dragging) {
+      const send = quantizeReverbSendLocal(tr.playbackState?.reverbSend)
+      const angle = -135 + send * 270
+      if (refs.sendNeedle) refs.sendNeedle.style.transform = `rotate(${angle}deg)`
+      refs.sendKnob.setAttribute('aria-valuenow', String(Math.round(send * 100)))
+      if (refs.sendValue) refs.sendValue.textContent = sendToText(send)
     }
     // mute / solo 视觉 active
     refs.btnMute?.classList.toggle('is-active', Boolean(tr.playbackState?.mute))
@@ -514,10 +553,95 @@ export function buildMixerChannelStrip({ track, trackColor, isMaster = false, ha
     }
   }
 
-  // 非 master：fader / pan / mute / solo 全套接
-  // master：只接 fader（pan / mute / solo 都无意义）
+  // ── Send 旋钮（reverb send）拖拽 / 双击归零 / 滚轮 / 键盘 ──────────
+  const wireSend = () => {
+    const { sendKnob, sendNeedle, sendValue } = refs
+    if (!sendKnob) return null
+
+    const SEND_DRAG_PIXELS_PER_RANGE = 120
+    const DRAG_THRESHOLD = 2
+
+    let currentSend = quantizeReverbSendLocal(track?.playbackState?.reverbSend)
+
+    const updateCurrentSend = (v) => {
+      currentSend = quantizeReverbSendLocal(v)
+      const angle = -135 + currentSend * 270
+      if (sendNeedle) sendNeedle.style.transform = `rotate(${angle}deg)`
+      sendKnob.setAttribute('aria-valuenow', String(Math.round(currentSend * 100)))
+      if (sendValue) sendValue.textContent = sendToText(currentSend)
+    }
+    const commit = (v, { commit: isCommit }) => {
+      updateCurrentSend(v)
+      currentHandlers.onSendChanged?.(currentSend, { commit: isCommit })
+    }
+
+    sendKnob.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0) return
+      event.preventDefault()
+      event.stopPropagation()
+      sendKnob.focus({ preventScroll: true })
+      sendKnob.dataset.dragging = '1'
+      const startY = event.clientY
+      const startSend = currentSend
+      let entered = false
+
+      const onMove = (moveEvent) => {
+        const dy = moveEvent.clientY - startY
+        if (!entered) {
+          if (Math.abs(dy) < DRAG_THRESHOLD) return
+          entered = true
+        }
+        // 拖上 = 送增；拖下 = 送减
+        commit(startSend - dy / SEND_DRAG_PIXELS_PER_RANGE, { commit: false })
+      }
+      const onUp = () => {
+        window.removeEventListener('pointermove', onMove)
+        window.removeEventListener('pointerup', onUp)
+        delete sendKnob.dataset.dragging
+        if (entered) commit(currentSend, { commit: true })
+      }
+      window.addEventListener('pointermove', onMove)
+      window.addEventListener('pointerup', onUp, { once: true })
+    })
+
+    sendKnob.addEventListener('dblclick', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      commit(0, { commit: true })  // 双击归零（干 / 不送）
+    })
+
+    sendKnob.addEventListener('wheel', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const delta = event.deltaY < 0 ? 0.04 : -0.04
+      commit(currentSend + delta, { commit: true })
+    }, { passive: false })
+
+    sendKnob.addEventListener('keydown', (event) => {
+      let next = currentSend
+      if (event.key === 'ArrowUp' || event.key === 'ArrowRight') next += 0.02
+      else if (event.key === 'ArrowDown' || event.key === 'ArrowLeft') next -= 0.02
+      else if (event.key === 'PageUp') next += 0.1
+      else if (event.key === 'PageDown') next -= 0.1
+      else if (event.key === 'Home') next = 0
+      else if (event.key === 'End') next = 1
+      else return
+      event.preventDefault()
+      commit(next, { commit: true })
+    })
+
+    const syncFromState = (v) => {
+      if (sendKnob.dataset.dragging) return
+      updateCurrentSend(v)
+    }
+    return { syncFromState }
+  }
+
+  // 非 master：fader / pan / send / mute / solo 全套接
+  // master：只接 fader（其他都无意义）
   const faderWire = wireFader()
   const panWire = isMaster ? null : wirePan()
+  const sendWire = isMaster ? null : wireSend()
   if (!isMaster) wireMuteSolo()
 
   // ── LUFS 实时显示（master strip 专属） ─────────────────────────
@@ -562,7 +686,7 @@ export function buildMixerChannelStrip({ track, trackColor, isMaster = false, ha
       lufsRefs.deltaFill.dataset.tone = 'idle'
     }
   }
-  // 重写 update 让它在 sync volume / pan 时分别走 wire 的 syncFromState
+  // 重写 update 让它在 sync volume / pan / send 时分别走 wire 的 syncFromState
   // 拖拽中的控件不被外部 render 覆盖（dataset.dragging 标记）
   const originalUpdate = update
   function wrappedUpdate(nextTrack) {
@@ -570,6 +694,7 @@ export function buildMixerChannelStrip({ track, trackColor, isMaster = false, ha
     if (tr && !isMaster) {
       if (faderWire) faderWire.syncFromState(normalizeTrackVolume(tr.playbackState?.volume))
       if (panWire) panWire.syncFromState(normalizeTrackPan(tr.playbackState?.pan))
+      if (sendWire) sendWire.syncFromState(normalizeTrackReverbSend(tr.playbackState?.reverbSend))
     }
     originalUpdate(nextTrack)
   }
