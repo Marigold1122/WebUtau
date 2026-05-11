@@ -212,6 +212,8 @@ export class MixerDockView {
       onSendChanged: (send, opts) => h.onTrackReverbSendChanged?.(trackId, send, opts),
       onToggleMute: () => h.onTrackMuteToggled?.(trackId),
       onToggleSolo: () => h.onTrackSoloToggled?.(trackId),
+      // insert 槽 EQ4 / Comp 切换 bypass —— 走统一的 onTrackInsertChanged 通道
+      onInsertToggled: (slotKey, enabled) => h.onTrackInsertChanged?.(trackId, slotKey, { enabled }, { commit: true }),
     }
   }
 

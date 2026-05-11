@@ -370,6 +370,8 @@ export const messages = {
     volume_aria: '{name} 音量',
     send_aria: '{name} リバーブセンド',
     master_volume_aria: 'マスター音量',
+    insert_eq4: 'EQ',
+    insert_comp: 'COMP',
   },
   reverb: {
     panel_button: 'リバーブ',

@@ -370,6 +370,8 @@ export const messages = {
     volume_aria: '{name} 音量',
     send_aria: '{name} 混响发送量',
     master_volume_aria: '主输出音量',
+    insert_eq4: 'EQ',
+    insert_comp: 'COMP',
   },
   reverb: {
     panel_button: '混响 Reverb',

@@ -181,10 +181,34 @@ export function buildMixerChannelStrip({ track, trackColor, isMaster = false, ha
   }
   root.appendChild(sendSlot)
 
-  // 3. Insert 槽位（占位，P4 实现）
+  // 3. Insert 槽位：非 master 显示 EQ / Comp 两个按钮（点击切换 bypass + 4.6 弹浮窗调参）
+  // master 留空白保持视觉对齐（master 的 EQ+Comp+Limiter 在反混响 dock 的母带链里）
+  let btnInsertEq4 = null
+  let btnInsertComp = null
   const insertSlot = document.createElement('div')
   insertSlot.className = 'mixer-strip-slot mixer-strip-slot--insert'
-  insertSlot.innerHTML = `<span class="mixer-strip-slot-label">${t('mixer.slot_insert')}</span><span class="mixer-strip-slot-hint">—</span>`
+  if (isMaster) {
+    insertSlot.classList.add('is-blank')
+  } else {
+    insertSlot.classList.add('mixer-strip-slot--inserts')
+    const makeInsertBtn = (slotKey, labelKey) => {
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'mixer-strip-insert-btn'
+      btn.dataset.slot = slotKey
+      btn.setAttribute('aria-pressed', 'false')
+      const dot = document.createElement('span')
+      dot.className = 'mixer-strip-insert-btn-dot'
+      const lbl = document.createElement('span')
+      lbl.className = 'mixer-strip-insert-btn-label'
+      lbl.textContent = t(labelKey)
+      btn.append(dot, lbl)
+      return btn
+    }
+    btnInsertEq4 = makeInsertBtn('eq4', 'mixer.insert_eq4')
+    btnInsertComp = makeInsertBtn('comp', 'mixer.insert_comp')
+    insertSlot.append(btnInsertEq4, btnInsertComp)
+  }
   root.appendChild(insertSlot)
 
   // 4. Pan 旋钮（master 无 pan）
@@ -274,6 +298,7 @@ export function buildMixerChannelStrip({ track, trackColor, isMaster = false, ha
     sendKnob, sendValue, sendNeedle,
     faderTrack, faderHandle, dbValue, meterL, meterR,
     btnMute, btnSolo,
+    btnInsertEq4, btnInsertComp,
     lufs: lufsRefs,   // master strip 独有；非 master 为 null
   }
 
@@ -314,6 +339,18 @@ export function buildMixerChannelStrip({ track, trackColor, isMaster = false, ha
     // mute / solo 视觉 active
     refs.btnMute?.classList.toggle('is-active', Boolean(tr.playbackState?.mute))
     refs.btnSolo?.classList.toggle('is-active', Boolean(tr.playbackState?.solo))
+    // insert 槽 EQ4 / Comp 按钮的 enabled 视觉状态
+    const inserts = tr.playbackState?.inserts || {}
+    if (refs.btnInsertEq4) {
+      const on = Boolean(inserts.eq4?.enabled)
+      refs.btnInsertEq4.classList.toggle('is-active', on)
+      refs.btnInsertEq4.setAttribute('aria-pressed', String(on))
+    }
+    if (refs.btnInsertComp) {
+      const on = Boolean(inserts.comp?.enabled)
+      refs.btnInsertComp.classList.toggle('is-active', on)
+      refs.btnInsertComp.setAttribute('aria-pressed', String(on))
+    }
   }
 
   update(track)
@@ -637,12 +674,41 @@ export function buildMixerChannelStrip({ track, trackColor, isMaster = false, ha
     return { syncFromState }
   }
 
-  // 非 master：fader / pan / send / mute / solo 全套接
+  // ── Insert 槽按钮：点击 = 切换 enabled（bypass 开/关）──────────────
+  // 注意：本步只做"开关"——点击按钮即 patch { enabled: !current }。
+  // 参数调节（EQ band gain / Comp threshold 等）是 4.6 的浮窗
+  const wireInsertButtons = () => {
+    const handleClick = (slotKey, button) => () => {
+      // 读 button 当前 visual state 作 single source of truth：
+      //   aria-pressed='true' = 当前 enabled → 切到 disable，反之亦然
+      const currentlyOn = button.getAttribute('aria-pressed') === 'true'
+      currentHandlers.onInsertToggled?.(slotKey, !currentlyOn)
+    }
+    if (refs.btnInsertEq4) {
+      refs.btnInsertEq4.addEventListener('click', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        handleClick('eq4', refs.btnInsertEq4)()
+      })
+    }
+    if (refs.btnInsertComp) {
+      refs.btnInsertComp.addEventListener('click', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        handleClick('comp', refs.btnInsertComp)()
+      })
+    }
+  }
+
+  // 非 master：fader / pan / send / mute / solo / inserts 全套接
   // master：只接 fader（其他都无意义）
   const faderWire = wireFader()
   const panWire = isMaster ? null : wirePan()
   const sendWire = isMaster ? null : wireSend()
-  if (!isMaster) wireMuteSolo()
+  if (!isMaster) {
+    wireMuteSolo()
+    wireInsertButtons()
+  }
 
   // ── LUFS 实时显示（master strip 专属） ─────────────────────────
   // 把 LufsMeter 推过来的 snapshot 写到 DOM；非 master 时是 no-op
