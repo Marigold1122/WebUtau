@@ -443,9 +443,34 @@ export function buildMixerChannelStrip({ track, trackColor, isMaster = false, ha
     return { syncFromState }
   }
 
-  // 非 master 才接 fader 交互 —— master 由调用方在 Step 2.6 单独 wire 至 masterVolume
+  // ── Mute / Solo 按钮 ──────────────────────────────────────────
+  // 行为：点击 → 调既有 onToggleMute/Solo handler → ProjectMixController.toggleTrackMute/Solo
+  //       → 改 store.playbackState.{mute,solo} → 重启播放（TrackMonitorController 内部
+  //       走 refreshProjectPlayback 让新 audibility set 生效）
+  // 视觉的 .is-active 由 update() 在每次 render 时根据 playbackState 同步 —— 这里不动 class
+  // 注意：mixer 上的 M/S 和 trackShell 左侧的 M/S 都是同一份 store 的视图，
+  //      点哪边都会同步反映另一边（render 流过两个视图）
+  const wireMuteSolo = () => {
+    if (refs.btnMute) {
+      refs.btnMute.addEventListener('click', (event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        currentHandlers.onToggleMute?.()
+      })
+    }
+    if (refs.btnSolo) {
+      refs.btnSolo.addEventListener('click', (event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        currentHandlers.onToggleSolo?.()
+      })
+    }
+  }
+
+  // 非 master 才接 fader / pan / mute / solo 交互 —— master 走另一套（Step 2.6 起）
   const faderWire = isMaster ? null : wireFader()
   const panWire = isMaster ? null : wirePan()
+  if (!isMaster) wireMuteSolo()
   // 重写 update 让它在 sync volume / pan 时分别走 wire 的 syncFromState
   // 拖拽中的控件不被外部 render 覆盖（dataset.dragging 标记）
   const originalUpdate = update
