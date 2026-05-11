@@ -25,6 +25,22 @@ export const normalizeProjectReverbConfig = normalizeReverbConfig
 
 export { DEFAULT_MASTER_CHAIN, normalizeMasterChain, mergeMasterChain }
 
+// Master fader：volume ∈ [0, 1]、gain = volume × MAX_MASTER_GAIN
+// 默认 0.5 → gain 1.0（与原硬编码 masterGain=1 等价，老工程加载零行为变化）
+// MAX_MASTER_GAIN = 2 → 50% fader 是 unity，与轨道 fader 的 unity 位置一致
+export const DEFAULT_MASTER_VOLUME = 0.5
+export const MAX_MASTER_GAIN = 2
+
+export function normalizeMasterVolume(value, fallback = DEFAULT_MASTER_VOLUME) {
+  const resolvedFallback = Number.isFinite(fallback) ? fallback : DEFAULT_MASTER_VOLUME
+  const v = Number.isFinite(value) ? value : resolvedFallback
+  return Math.max(0, Math.min(1, v))
+}
+
+export function resolveMasterGain(volume) {
+  return normalizeMasterVolume(volume) * MAX_MASTER_GAIN
+}
+
 export function createProjectMixState(state = {}) {
   const reverbPresetId = normalizeProjectReverbPresetId(state?.reverbPresetId ?? state?.presetId)
   const preset = getProjectReverbPreset(reverbPresetId)
@@ -32,6 +48,7 @@ export function createProjectMixState(state = {}) {
     reverbPresetId,
     reverb: normalizeProjectReverbConfig(state?.reverb, preset?.config),
     masterChain: normalizeMasterChain(state?.masterChain),
+    masterVolume: normalizeMasterVolume(state?.masterVolume),
   }
 }
 
@@ -62,6 +79,11 @@ export function mergeProjectMixState(currentState, changes = {}) {
     nextState.masterChain = mergeMasterChain(current.masterChain, changes.masterChain || {})
   } else {
     nextState.masterChain = current.masterChain
+  }
+  if (Object.prototype.hasOwnProperty.call(changes, 'masterVolume')) {
+    nextState.masterVolume = normalizeMasterVolume(changes.masterVolume, current.masterVolume)
+  } else {
+    nextState.masterVolume = current.masterVolume
   }
   delete nextState.presetId
   return nextState

@@ -112,6 +112,8 @@ export class ProjectMixController {
     // master chain 同样要在加载/重建工程时同步，否则 store 配置 vs audioGraph
     // 节点参数会脱节（pan 漏同步那个 bug 的同款问题）
     this.audioGraph?.setMasterChainConfig?.(mixState.masterChain)
+    // master volume 同步：跟 master chain 同样的 pattern，工程加载 / 重建时必须同步
+    this.audioGraph?.setMasterVolume?.(mixState.masterVolume)
     ;(Array.isArray(resolvedProject?.tracks) ? resolvedProject.tracks : []).forEach((track) => {
       if (!track?.id) return
       this.audioGraph?.syncTrackState?.(track.id, {
@@ -126,6 +128,23 @@ export class ProjectMixController {
       })
     })
     return mixState
+  }
+
+  // ===== Master Volume =====
+  // 单独的字段（不属于 masterChain），跟 track volume 同款 commit/realtime 语义：
+  //   commit:false 实时拖动（写 store + audioGraph，不 render、不存盘）
+  //   commit:true 落定（render + saveProject）
+  setMasterVolume(volume, { commit = true } = {}) {
+    if (!this.store) return null
+    this.store.ensureProject?.()
+    const mixState = this.store.updateProjectMixState?.({ masterVolume: volume })
+      || createProjectMixState({ masterVolume: volume })
+    this.audioGraph?.setMasterVolume?.(mixState.masterVolume)
+    if (commit) {
+      this.persistence?.saveProject?.(this.store.getProject?.())
+      this.logger?.info?.('Master volume updated', { volume: mixState.masterVolume })
+    }
+    return mixState.masterVolume
   }
 
   // ===== Master Chain =====

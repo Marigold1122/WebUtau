@@ -118,8 +118,19 @@ export class MixerDockView {
       dock.replaceChildren(this._stripsContainer)
     }
     if (!this._masterStrip) {
-      this._masterStrip = buildMixerChannelStrip({ track: null, isMaster: true })
+      this._masterStrip = buildMixerChannelStrip({
+        track: null,
+        isMaster: true,
+        // master 的 fader handler 接 onMasterVolumeChanged（不是 onTrackVolumeChanged）
+        handlers: this._buildMasterStripHandlers(),
+      })
     }
+    // master 每次 render 同步 setHandlers + setVolume（持久化值 → fader 位置）
+    this._masterStrip.setHandlers?.(this._buildMasterStripHandlers())
+    const masterVolume = Number.isFinite(project?.mixState?.masterVolume)
+      ? project.mixState.masterVolume
+      : 0.5
+    this._masterStrip.setVolume?.(masterVolume)
     // Reconcile 轨条：按当前 tracks 顺序构造缺失的、移除多余的、复用 update 已存在的
     const nextIds = new Set()
     tracks.forEach((track) => {
@@ -148,21 +159,14 @@ export class MixerDockView {
         this._stripsByTrackId.delete(id)
       }
     })
-    // 重新挂载：先按 tracks 顺序追加，最后追加 master——保证顺序正确（即使 reorder）
+    // 重新挂载顺序：master 在最左、然后按 tracks 顺序排列
+    // appendChild 同 parent 会"移动到末尾"，所以先把 master append 然后再 append tracks，
+    // 整体序列就是 [master, track1, track2, ...]
+    this._stripsContainer.appendChild(this._masterStrip.root)
     tracks.forEach((track) => {
       const strip = this._stripsByTrackId.get(track.id)
-      if (strip && strip.root.parentNode !== this._stripsContainer) {
-        this._stripsContainer.appendChild(strip.root)
-      } else if (strip) {
-        // 已挂载——但顺序可能错；append 同 parent 会移动节点位置，确保最终顺序对
-        this._stripsContainer.appendChild(strip.root)
-      }
+      if (strip) this._stripsContainer.appendChild(strip.root)
     })
-    if (this._masterStrip.root.parentNode !== this._stripsContainer) {
-      this._stripsContainer.appendChild(this._masterStrip.root)
-    } else {
-      this._stripsContainer.appendChild(this._masterStrip.root) // 永远置于最右
-    }
     // master 名（i18n 可能切换语言）每帧检查刷
     const masterName = this._masterStrip.refs?.name
     if (masterName) {
@@ -203,12 +207,18 @@ export class MixerDockView {
   _buildStripHandlers(trackId) {
     const h = this.handlers || {}
     return {
-      // Step 2.2: fader → trackMonitorController.setTrackVolume（commit:false 实时、commit:true 落定）
       onVolumeChanged: (volume, opts) => h.onTrackVolumeChanged?.(trackId, volume, opts),
-      // 占位 —— Step 2.3 / 2.4 接上
       onPanChanged: (pan, opts) => h.onTrackPanChanged?.(trackId, pan, opts),
       onToggleMute: () => h.onTrackMuteToggled?.(trackId),
       onToggleSolo: () => h.onTrackSoloToggled?.(trackId),
+    }
+  }
+
+  // Master strip 专属 handler 桥：fader 写 master volume，没有 pan/mute/solo
+  _buildMasterStripHandlers() {
+    const h = this.handlers || {}
+    return {
+      onVolumeChanged: (volume, opts) => h.onMasterVolumeChanged?.(volume, opts),
     }
   }
 }

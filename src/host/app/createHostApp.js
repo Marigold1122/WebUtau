@@ -2186,6 +2186,8 @@ export function createHostApp() {
     onTrackMuteToggled: (trackId) => trackMonitorController.toggleTrackMute(trackId),
     onTrackVolumeChanged: (trackId, volume, options) => trackMonitorController.setTrackVolume(trackId, volume, options),
     onTrackPanChanged: (trackId, pan, options) => trackMonitorController.setTrackPan(trackId, pan, options),
+    // Master fader：与 trackVolume 同款 commit:false（实时）/ commit:true（落定 + 存盘）
+    onMasterVolumeChanged: (volume, options) => projectMixController.setMasterVolume(volume, options),
     onTrackGuitarToneChanged: (trackId, patch, options) => trackMonitorController.setTrackGuitarTone(trackId, patch, options),
     onVoicebankChanged: async (singerId) => {
       const selectedTrack = store.getSelectedTrack()

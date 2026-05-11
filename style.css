@@ -2526,11 +2526,12 @@ body {
     0 0 8px rgba(240,196,71,0.45);
 }
 
-/* ─── Master strip 视觉强区分 ────────────────────────────────────────── */
+/* ─── Master strip 视觉强区分（位于最左侧） ────────────────────────────── */
 .mixer-strip--master {
   flex: 0 0 96px;
   min-width: 96px;
-  margin-left: 18px;
+  /* master 在最左，所以分隔留在**右**侧 */
+  margin-right: 18px;
   /* 比普通 strip 更突出——用 accent 色 inner glow + 加深底色 */
   background:
     linear-gradient(180deg, var(--accent-dim) 0%, transparent 30%, transparent 70%, var(--mixer-control-shadow) 100%),
@@ -2543,13 +2544,13 @@ body {
     0 0 16px var(--accent-dim);
 }
 .mixer-strip--master::before {
-  /* 与左侧普通 strip 间的视觉分隔（双线效果）*/
+  /* 与右侧普通 strip 间的视觉分隔线 */
   content: '';
   position: absolute;
-  left: -10px; top: 4px; bottom: 4px;
+  right: -10px; top: 4px; bottom: 4px;
   width: 1px;
   background: var(--border-light);
-  box-shadow: 1px 0 0 var(--mixer-control-shadow);
+  box-shadow: -1px 0 0 var(--mixer-control-shadow);
 }
 .mixer-strip-master-label {
   font-size: 9px;

@@ -8,6 +8,7 @@
 } from '../project/trackPlaybackState.js'
 import { isSameReverbConfig } from './reverb/ReverbConfigDiff.js'
 import { LEGACY_REVERB_ENGINE_ID } from './reverb/ReverbParameterSchema.js'
+import { resolveMasterGain } from '../project/projectMixState.js'
 import { startToneAudio } from './instruments/toneRuntime.js'
 import { LufsMeter } from './master/LufsMeter.js'
 import { MasterChainBus } from './master/MasterChainBus.js'
@@ -39,6 +40,8 @@ export class ProjectAudioGraph {
     // 早于这个时机调 subscribeLufs（比如顶栏电平表在 createHostApp 启动时就订阅）
     // 的回调先入队，等 meter 起来再一并接进去
     this._pendingLufsSubscribers = new Set()
+    // setMasterVolume 在 audioGraph 起来之前调时，先缓在这里
+    this._pendingMasterVolume = null
     this.defaultReverbConfig = normalizeTrackReverbConfig()
     this.trackStates = new Map()
     this.trackChannels = new Map()
@@ -51,7 +54,11 @@ export class ProjectAudioGraph {
         const rawContext = await startToneAudio()
         this.rawContext = rawContext
         this.masterGain = rawContext.createGain()
-        this.masterGain.gain.value = 1
+        // 初始化 master gain：如果有 pending 的 setMasterVolume，应用它；否则默认 unity (1.0)
+        // 后续 ProjectAudioMixPersistence.apply() 会把 mixState.masterVolume 写进来
+        this.masterGain.gain.value = Number.isFinite(this._pendingMasterVolume)
+          ? resolveMasterGain(this._pendingMasterVolume)
+          : 1
         // master chain 接在 masterGain 与 destination 之间——
         // 所有轨道的混音和 → masterGain → MasterChainBus → destination。
         // 电平表通过 getMasterTapNode() 拿到 chain 输出节点，读到的是"用户实际听到的"信号
@@ -102,6 +109,18 @@ export class ProjectAudioGraph {
 
   setMasterChainConfig(config) {
     this.masterChainBus?.applyConfig?.(config)
+  }
+
+  /** 写入主输出音量。volume ∈ [0,1] → masterGain.gain = volume × MAX_MASTER_GAIN。
+   *  audioGraph 未初始化时存到 _pendingMasterVolume，等 ensureReady 时再应用 */
+  setMasterVolume(volume) {
+    const gain = resolveMasterGain(volume)
+    if (this.masterGain) {
+      this.masterGain.gain.value = gain
+      return true
+    }
+    this._pendingMasterVolume = volume
+    return false
   }
 
   // LUFS 表订阅——返回退订函数。订阅时立即推一帧当前快照，便于 UI 启动期就有内容

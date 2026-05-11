@@ -514,8 +514,9 @@ export function buildMixerChannelStrip({ track, trackColor, isMaster = false, ha
     }
   }
 
-  // 非 master 才接 fader / pan / mute / solo 交互 —— master 走另一套（Step 2.6 起）
-  const faderWire = isMaster ? null : wireFader()
+  // 非 master：fader / pan / mute / solo 全套接
+  // master：只接 fader（pan / mute / solo 都无意义）
+  const faderWire = wireFader()
   const panWire = isMaster ? null : wirePan()
   if (!isMaster) wireMuteSolo()
 
@@ -573,5 +574,12 @@ export function buildMixerChannelStrip({ track, trackColor, isMaster = false, ha
     originalUpdate(nextTrack)
   }
 
-  return { root, refs, update: wrappedUpdate, setHandlers, setLufsSnapshot }
+  // 让外部（master strip 调用方）能直接 sync fader 位置 —— 非 master 通过
+  // wrappedUpdate(tr) 自动跟随 track.playbackState.volume；master 没 track，
+  // 走 setVolume(mixState.masterVolume)
+  function setVolume(value) {
+    if (faderWire) faderWire.syncFromState(normalizeTrackVolume(value))
+  }
+
+  return { root, refs, update: wrappedUpdate, setHandlers, setLufsSnapshot, setVolume }
 }
