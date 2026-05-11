@@ -46,6 +46,14 @@ const EQ_GAIN_MAX = 18
 const EQ_Q_MIN = 0.1
 const EQ_Q_MAX = 10
 
+// 给单轨 insert（trackInsertChainState）复用
+export const TRACK_INSERT_EQ_RANGES = EQ_BAND_RANGES
+export const TRACK_INSERT_EQ_GAIN_MIN = EQ_GAIN_MIN
+export const TRACK_INSERT_EQ_GAIN_MAX = EQ_GAIN_MAX
+export const TRACK_INSERT_EQ_Q_MIN = EQ_Q_MIN
+export const TRACK_INSERT_EQ_Q_MAX = EQ_Q_MAX
+export { normalizeEqBand as normalizeEqBandShared }
+
 function normalizeEqBand(band, fallback, range) {
   const baseline = fallback || DEFAULT_EQ_BANDS[0]
   const type = baseline.type // 类型固定不让用户改，避免 UI 复杂化
@@ -86,6 +94,9 @@ const COMPRESSOR_RANGES = {
   knee:       { min: 0,    max: 40   },
   makeupGain: { min: -12,  max: 24   },
 }
+
+export const TRACK_INSERT_COMPRESSOR_RANGES = COMPRESSOR_RANGES
+export { normalizeCompressor as normalizeCompressorShared }
 
 function normalizeCompressor(input, fallback) {
   const baseline = fallback || DEFAULT_COMPRESSOR
