@@ -9,6 +9,8 @@
 import { isSameReverbConfig } from './reverb/ReverbConfigDiff.js'
 import { LEGACY_REVERB_ENGINE_ID } from './reverb/ReverbParameterSchema.js'
 import { resolveMasterGain } from '../project/projectMixState.js'
+import { TrackInsertChainBus } from './insert/TrackInsertChainBus.js'
+import { normalizeTrackInsertChain } from '../project/trackInsertChainState.js'
 import { startToneAudio } from './instruments/toneRuntime.js'
 import { LufsMeter } from './master/LufsMeter.js'
 import { MasterChainBus } from './master/MasterChainBus.js'
@@ -213,6 +215,7 @@ export class ProjectAudioGraph {
 
     this.trackChannels.delete(trackId)
     channel.insertEffect?.dispose?.()
+    channel.insertChainBus?.dispose?.()
     channel.reverbBus?.dispose?.()
     disconnectNode(channel.input)
     disconnectNode(channel.postInsert)
@@ -234,6 +237,8 @@ export class ProjectAudioGraph {
       reverbConfig: normalizeTrackReverbConfig({}, this.defaultReverbConfig),
       reverbEngineId: LEGACY_REVERB_ENGINE_ID,
       guitarTone: normalizeTrackGuitarToneConfig(),
+      // 单轨 insert 效果链（EQ4 + Comp），默认两槽 disabled = 透明
+      inserts: normalizeTrackInsertChain(),
     }
     const hasReverbConfigChange = (
       hasOwn(reverbSource || {}, 'config')
@@ -280,6 +285,10 @@ export class ProjectAudioGraph {
       guitarTone: hasOwn(changes, 'guitarTone')
         ? normalizeTrackGuitarToneConfig(changes.guitarTone, previous.guitarTone)
         : previous.guitarTone,
+      // inserts：传入 = 用 normalize 接受并填默认；未传 = 保留
+      inserts: hasOwn(changes, 'inserts')
+        ? normalizeTrackInsertChain(changes.inserts, previous.inserts)
+        : previous.inserts,
     }
     this.trackStates.set(trackId, nextState)
     return nextState
@@ -305,7 +314,14 @@ export class ProjectAudioGraph {
       engineId: state.reverbEngineId,
     })
 
-    postInsert.connect(pan)
+    // 单轨混音 insert 链：postInsert → [EQ4 → Comp] → pan
+    // 默认两槽 disabled，节点存在但参数透明，行为等同于 postInsert 直连 pan
+    // **不能**根据 enabled 状态动态连/断节点——参数透明化才是唯一无咔哒方案
+    const insertChainBus = new TrackInsertChainBus({ logger: this.logger }).attach(this.rawContext)
+    insertChainBus.applyConfig(state.inserts)
+
+    postInsert.connect(insertChainBus.input)
+    insertChainBus.output.connect(pan)
     pan.connect(volume)
     volume.connect(this.masterGain)
     pan.connect(send)
@@ -319,6 +335,7 @@ export class ProjectAudioGraph {
     channel = {
       input,
       postInsert,
+      insertChainBus,
       pan,
       volume,
       send,
@@ -343,6 +360,8 @@ export class ProjectAudioGraph {
     if (!channel || !nextState) return false
 
     this._syncTrackInsert(channel, nextState)
+    // 单轨 insert 链（EQ4 + Comp）—— bus 自己负责参数透明化的 bypass 实现
+    channel.insertChainBus?.applyConfig?.(nextState.inserts)
     channel.volume.gain.value = resolveTrackPlaybackGain(nextState.volume)
     if (channel.pan?.pan) channel.pan.pan.value = normalizeTrackPan(nextState.pan)
     channel.send.gain.value = nextState.reverbSend

@@ -125,6 +125,8 @@ export class ProjectMixController {
         reverb: track?.playbackState?.reverb,
         reverbConfig: track?.playbackState?.reverbConfig,
         guitarTone: track?.playbackState?.guitarTone,
+        // 单轨 insert 链（EQ4 + Comp）—— 与上面字段同款：工程加载 / 重建时必须同步
+        inserts: track?.playbackState?.inserts,
       })
     })
     return mixState
