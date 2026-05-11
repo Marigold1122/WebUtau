@@ -46,13 +46,24 @@ function panToText(pan) {
  * @param {object} options.track 轨道对象（含 id / name / playbackState）
  * @param {string} options.trackColor 主题色（用于色条）
  * @param {boolean} [options.isMaster=false] master strip 时为 true
- * @returns {{ root: HTMLElement, refs: object, update: (track) => void }}
+ * @param {object} [options.handlers={}] 事件回调（onVolumeChanged 等）
+ * @returns {{ root: HTMLElement, refs: object, update: (track) => void, setHandlers: (h) => void }}
  */
-export function buildMixerChannelStrip({ track, trackColor, isMaster = false } = {}) {
+export function buildMixerChannelStrip({ track, trackColor, isMaster = false, handlers: initialHandlers = {} } = {}) {
   const root = document.createElement('div')
   root.className = isMaster ? 'mixer-strip mixer-strip--master' : 'mixer-strip'
-  root.dataset.trackId = track?.id || ''
+  // 用 dataset.mixerTrackId 而不是 trackId —— trackShell 那边或其他地方可能有
+  // `[data-track-id]` 的 CSS / 全局监听，重名会让点击 mixer strip 时触发它们
+  if (track?.id) root.dataset.mixerTrackId = track.id
   if (trackColor) root.style.setProperty('--mixer-strip-color', trackColor)
+
+  // 整条 strip 上的 pointer / click / mousedown / dblclick 全部止冒 ——
+  // 防御性：保证 strip 内任何点击都不会渗出去触发 trackShell / workspace 层的逻辑
+  // （比如轨道选中、播放头跳转、面板关闭等）
+  const swallowEvent = (event) => event.stopPropagation()
+  ;['pointerdown', 'mousedown', 'click', 'dblclick'].forEach((evt) => {
+    root.addEventListener(evt, swallowEvent)
+  })
 
   // 1. 色条 + 名（master 没有色条，但有 "MASTER" 标）
   const head = document.createElement('div')
@@ -189,10 +200,13 @@ export function buildMixerChannelStrip({ track, trackColor, isMaster = false } =
     }
     const volume = normalizeTrackVolume(tr.playbackState?.volume)
     const pan = normalizeTrackPan(tr.playbackState?.pan)
-    // fader 把手 y 位置：0(底) ~ FADER_TRACK_HEIGHT(顶)；CSS 用 bottom 定位
-    const faderPct = Math.max(0, Math.min(1, volume / 1.5)) * 100
-    refs.faderHandle.style.bottom = `${faderPct}%`
-    refs.faderHandle.setAttribute('aria-valuenow', String(Math.round(faderPct)))
+    // fader 把手 y 位置：volume ∈ [0,1] 直接映射到 [0%,100%]；用 bottom 定位
+    // 拖拽过程中不接受外部 update —— 由调用方设置 _isDragging 控制
+    if (!refs.faderHandle.dataset.dragging) {
+      const faderPct = Math.max(0, Math.min(1, volume)) * 100
+      refs.faderHandle.style.bottom = `${faderPct}%`
+      refs.faderHandle.setAttribute('aria-valuenow', String(Math.round(volume * 100)))
+    }
     refs.dbValue.textContent = volumeToDbText(volume)
     // pan needle 角度：-1 → -45°；0 → 0°；+1 → +45°
     if (refs.panNeedle) {
@@ -207,5 +221,137 @@ export function buildMixerChannelStrip({ track, trackColor, isMaster = false } =
 
   update(track)
 
-  return { root, refs, update }
+  // ── fader 拖拽 / 滚轮 / 键盘 ────────────────────────────────────
+  let currentHandlers = initialHandlers
+  const setHandlers = (next) => { currentHandlers = next || {} }
+
+  // 当前的 trackId / volume / pan 由闭包获取 —— update 时已 sync 到 DOM
+  // 拖拽路径：所有 commit 都走 currentHandlers.onVolumeChanged，
+  // 这是个 callback：mixer dock 把它 wire 到 onTrackVolumeChanged 或 master 的 onMasterVolumeChanged
+  const wireFader = () => {
+    const { faderTrack, faderHandle } = refs
+    if (!faderTrack || !faderHandle) return
+
+    const DRAG_THRESHOLD = 2
+    let currentVolume = normalizeTrackVolume(track?.playbackState?.volume)
+
+    const updateCurrentVolume = (v) => {
+      currentVolume = Math.max(0, Math.min(1, v))
+      const pct = currentVolume * 100
+      faderHandle.style.bottom = `${pct}%`
+      faderHandle.setAttribute('aria-valuenow', String(Math.round(currentVolume * 100)))
+      refs.dbValue.textContent = volumeToDbText(currentVolume)
+    }
+
+    const resolveVolumeFromY = (clientY) => {
+      const rect = faderTrack.getBoundingClientRect()
+      if (!Number.isFinite(rect.height) || rect.height <= 0) return currentVolume
+      // 上 = 大；y 越小 volume 越大 —— 把鼠标 y 距离顶端的比例反过来
+      const fromTop = (clientY - rect.top) / rect.height
+      return 1 - Math.max(0, Math.min(1, fromTop))
+    }
+
+    const commit = (v, { commit: isCommit }) => {
+      updateCurrentVolume(v)
+      currentHandlers.onVolumeChanged?.(currentVolume, { commit: isCommit })
+    }
+
+    // pointerdown 在 track 或 handle 都接 —— 鼠标按下立刻把推子拖到光标处
+    const onPointerDown = (event) => {
+      if (event.button !== 0) return
+      event.preventDefault()
+      event.stopPropagation()
+      // pointerdown 自带 preventDefault 会阻止浏览器默认 focus 行为 ——
+      // 必须显式 focus，否则键盘箭头 / Home / End 没法用
+      faderHandle.focus({ preventScroll: true })
+      faderHandle.dataset.dragging = '1'   // 防止 update() 在拖拽中重写位置
+      const startY = event.clientY
+      let entered = false
+
+      const enterDrag = (clientY) => {
+        entered = true
+        commit(resolveVolumeFromY(clientY), { commit: false })
+      }
+
+      const onMove = (moveEvent) => {
+        if (!entered) {
+          if (Math.abs(moveEvent.clientY - startY) < DRAG_THRESHOLD) return
+          enterDrag(moveEvent.clientY)
+          return
+        }
+        commit(resolveVolumeFromY(moveEvent.clientY), { commit: false })
+      }
+      const onUp = () => {
+        window.removeEventListener('pointermove', onMove)
+        window.removeEventListener('pointerup', onUp)
+        delete faderHandle.dataset.dragging
+        if (entered) {
+          commit(currentVolume, { commit: true })
+        } else {
+          // 没有移动 —— 视作"点击轨道某处直接跳到那个位置"，commit 一次
+          commit(resolveVolumeFromY(event.clientY), { commit: true })
+        }
+      }
+      window.addEventListener('pointermove', onMove)
+      window.addEventListener('pointerup', onUp, { once: true })
+    }
+    faderTrack.addEventListener('pointerdown', onPointerDown)
+    faderHandle.addEventListener('pointerdown', onPointerDown)
+
+    // click / mousedown / dblclick 都拦下 —— 避免冒泡到 track-shell 的"选中轨道"逻辑
+    // trackShell 监听这些事件做选中态切换，不拦就会让点 fader 也选轨
+    const swallow = (event) => event.stopPropagation()
+    faderTrack.addEventListener('click', swallow)
+    faderTrack.addEventListener('mousedown', swallow)
+    faderTrack.addEventListener('dblclick', swallow)
+    faderHandle.addEventListener('click', swallow)
+    faderHandle.addEventListener('mousedown', swallow)
+    faderHandle.addEventListener('dblclick', swallow)
+
+    // 滚轮：上 = 增 / 下 = 减；±0.04 每次
+    const onWheel = (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const delta = event.deltaY < 0 ? 0.04 : -0.04
+      commit(currentVolume + delta, { commit: true })
+    }
+    faderHandle.addEventListener('wheel', onWheel, { passive: false })
+    faderTrack.addEventListener('wheel', onWheel, { passive: false })
+
+    // 键盘：Up/Right=+0.02、Down/Left=-0.02、PageUp/Down=±0.1、Home=0、End=1
+    const onKeyDown = (event) => {
+      let next = currentVolume
+      if (event.key === 'ArrowUp' || event.key === 'ArrowRight') next += 0.02
+      else if (event.key === 'ArrowDown' || event.key === 'ArrowLeft') next -= 0.02
+      else if (event.key === 'PageUp') next += 0.1
+      else if (event.key === 'PageDown') next -= 0.1
+      else if (event.key === 'Home') next = 0
+      else if (event.key === 'End') next = 1
+      else return
+      event.preventDefault()
+      commit(next, { commit: true })
+    }
+    faderHandle.addEventListener('keydown', onKeyDown)
+
+    // update() 路径同步外部新值（不拖拽中时）
+    const syncFromState = (v) => {
+      if (faderHandle.dataset.dragging) return
+      updateCurrentVolume(v)
+    }
+    return { syncFromState }
+  }
+
+  // 非 master 才接 fader 交互 —— master 由调用方在 Step 2.6 单独 wire 至 masterVolume
+  const faderWire = isMaster ? null : wireFader()
+  // 重写 update 让它在 sync volume 时调 faderWire.syncFromState（拖拽中不被覆盖）
+  const originalUpdate = update
+  function wrappedUpdate(nextTrack) {
+    const tr = nextTrack || track
+    if (tr && !isMaster && faderWire) {
+      faderWire.syncFromState(normalizeTrackVolume(tr.playbackState?.volume))
+    }
+    originalUpdate(nextTrack)
+  }
+
+  return { root, refs, update: wrappedUpdate, setHandlers }
 }

@@ -115,10 +115,14 @@ export class MixerDockView {
       nextIds.add(track.id)
       let strip = this._stripsByTrackId.get(track.id)
       const trackColor = getTrackColorById(track.id, tracks)
+      // 每条 strip 的 fader / pan / mute / solo 回调都通过 setHandlers 注入；
+      // trackId 在 closure 里冻结 —— 避免 strip 被复用、handler 引用旧 id
+      const stripHandlers = this._buildStripHandlers(track.id)
       if (!strip) {
-        strip = buildMixerChannelStrip({ track, trackColor })
+        strip = buildMixerChannelStrip({ track, trackColor, handlers: stripHandlers })
         this._stripsByTrackId.set(track.id, strip)
       } else {
+        strip.setHandlers?.(stripHandlers)
         strip.update(track)
         if (trackColor && strip.root.style.getPropertyValue('--mixer-strip-color') !== trackColor) {
           strip.root.style.setProperty('--mixer-strip-color', trackColor)
@@ -163,5 +167,18 @@ export class MixerDockView {
     this._masterStrip?.root.remove()
     this._masterStrip = null
     this._stripsContainer = null
+  }
+
+  // strip 期望的 handler 接口 vs createHostApp 暴露的接口 —— 这里做一层桥接
+  _buildStripHandlers(trackId) {
+    const h = this.handlers || {}
+    return {
+      // Step 2.2: fader → trackMonitorController.setTrackVolume（commit:false 实时、commit:true 落定）
+      onVolumeChanged: (volume, opts) => h.onTrackVolumeChanged?.(trackId, volume, opts),
+      // 占位 —— Step 2.3 / 2.4 接上
+      onPanChanged: (pan, opts) => h.onTrackPanChanged?.(trackId, pan, opts),
+      onToggleMute: () => h.onTrackMuteToggled?.(trackId),
+      onToggleSolo: () => h.onTrackSoloToggled?.(trackId),
+    }
   }
 }
