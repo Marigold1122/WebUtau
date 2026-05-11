@@ -41,6 +41,16 @@ function panToText(pan) {
   return p < 0 ? `L${pct}` : `R${pct}`
 }
 
+// pan 在 0 附近自动吸附到正中——和 trackShell 同样的约定（±0.05）
+const PAN_SNAP_THRESHOLD = 0.05
+function quantizeTrackPanLocal(value) {
+  return Math.round(normalizeTrackPan(value) * 100) / 100
+}
+function snapTrackPanLocal(value) {
+  const q = quantizeTrackPanLocal(value)
+  return Math.abs(q) < PAN_SNAP_THRESHOLD ? 0 : q
+}
+
 /**
  * @param {object} options
  * @param {object} options.track 轨道对象（含 id / name / playbackState）
@@ -209,11 +219,12 @@ export function buildMixerChannelStrip({ track, trackColor, isMaster = false, ha
     }
     refs.dbValue.textContent = volumeToDbText(volume)
     // pan needle 角度：-1 → -45°；0 → 0°；+1 → +45°
-    if (refs.panNeedle) {
-      refs.panNeedle.style.transform = `rotate(${pan * 45}deg)`
+    // 同 fader：拖拽中不接受外部 update —— panKnob.dataset.dragging 控制
+    if (refs.panKnob && !refs.panKnob.dataset.dragging) {
+      if (refs.panNeedle) refs.panNeedle.style.transform = `rotate(${pan * 45}deg)`
+      refs.panKnob.setAttribute('aria-valuenow', String(Math.round(pan * 100)))
+      if (refs.panValue) refs.panValue.textContent = panToText(pan)
     }
-    if (refs.panKnob) refs.panKnob.setAttribute('aria-valuenow', String(Math.round(pan * 100)))
-    if (refs.panValue) refs.panValue.textContent = panToText(pan)
     // mute / solo 视觉 active
     refs.btnMute?.classList.toggle('is-active', Boolean(tr.playbackState?.mute))
     refs.btnSolo?.classList.toggle('is-active', Boolean(tr.playbackState?.solo))
@@ -341,14 +352,108 @@ export function buildMixerChannelStrip({ track, trackColor, isMaster = false, ha
     return { syncFromState }
   }
 
+  // ── pan knob 拖拽 / 双击居中 / 滚轮 / 键盘 ───────────────────────
+  const wirePan = () => {
+    const { panKnob, panNeedle, panValue } = refs
+    if (!panKnob) return null
+
+    // 旋钮垂直拖：120px 鼠标位移覆盖全 pan 范围 [-1, 1]
+    const PAN_DRAG_PIXELS_PER_RANGE = 120
+    const DRAG_THRESHOLD = 2
+
+    let currentPan = quantizeTrackPanLocal(track?.playbackState?.pan)
+
+    const updateCurrentPan = (v, { snap = true } = {}) => {
+      currentPan = snap ? snapTrackPanLocal(v) : quantizeTrackPanLocal(v)
+      if (panNeedle) panNeedle.style.transform = `rotate(${currentPan * 45}deg)`
+      panKnob.setAttribute('aria-valuenow', String(Math.round(currentPan * 100)))
+      if (panValue) panValue.textContent = panToText(currentPan)
+    }
+
+    const commit = (v, { commit: isCommit, snap = true } = {}) => {
+      updateCurrentPan(v, { snap })
+      currentHandlers.onPanChanged?.(currentPan, { commit: isCommit })
+    }
+
+    // 拖拽
+    const onPointerDown = (event) => {
+      if (event.button !== 0) return
+      event.preventDefault()
+      event.stopPropagation()
+      panKnob.focus({ preventScroll: true })
+      panKnob.dataset.dragging = '1'
+      const startY = event.clientY
+      const startPan = currentPan
+      let entered = false
+
+      const onMove = (moveEvent) => {
+        const dy = moveEvent.clientY - startY
+        if (!entered) {
+          if (Math.abs(dy) < DRAG_THRESHOLD) return
+          entered = true
+        }
+        // 拖上 = pan 增；拖下 = pan 减
+        const deltaPan = -dy / PAN_DRAG_PIXELS_PER_RANGE
+        commit(startPan + deltaPan, { commit: false })
+      }
+      const onUp = () => {
+        window.removeEventListener('pointermove', onMove)
+        window.removeEventListener('pointerup', onUp)
+        delete panKnob.dataset.dragging
+        if (entered) commit(currentPan, { commit: true })
+      }
+      window.addEventListener('pointermove', onMove)
+      window.addEventListener('pointerup', onUp, { once: true })
+    }
+    panKnob.addEventListener('pointerdown', onPointerDown)
+
+    // 双击居中（标准 DAW 习惯）
+    panKnob.addEventListener('dblclick', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      commit(0, { commit: true })
+    })
+
+    // 滚轮：±0.04
+    panKnob.addEventListener('wheel', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const delta = event.deltaY < 0 ? 0.04 : -0.04
+      commit(currentPan + delta, { commit: true })
+    }, { passive: false })
+
+    // 键盘
+    panKnob.addEventListener('keydown', (event) => {
+      let next = currentPan
+      if (event.key === 'ArrowUp' || event.key === 'ArrowRight') next += 0.02
+      else if (event.key === 'ArrowDown' || event.key === 'ArrowLeft') next -= 0.02
+      else if (event.key === 'PageUp') next += 0.1
+      else if (event.key === 'PageDown') next -= 0.1
+      else if (event.key === 'Home') next = -1
+      else if (event.key === 'End') next = 1
+      else return
+      event.preventDefault()
+      commit(next, { commit: true })
+    })
+
+    const syncFromState = (v) => {
+      if (panKnob.dataset.dragging) return
+      updateCurrentPan(v)
+    }
+    return { syncFromState }
+  }
+
   // 非 master 才接 fader 交互 —— master 由调用方在 Step 2.6 单独 wire 至 masterVolume
   const faderWire = isMaster ? null : wireFader()
-  // 重写 update 让它在 sync volume 时调 faderWire.syncFromState（拖拽中不被覆盖）
+  const panWire = isMaster ? null : wirePan()
+  // 重写 update 让它在 sync volume / pan 时分别走 wire 的 syncFromState
+  // 拖拽中的控件不被外部 render 覆盖（dataset.dragging 标记）
   const originalUpdate = update
   function wrappedUpdate(nextTrack) {
     const tr = nextTrack || track
-    if (tr && !isMaster && faderWire) {
-      faderWire.syncFromState(normalizeTrackVolume(tr.playbackState?.volume))
+    if (tr && !isMaster) {
+      if (faderWire) faderWire.syncFromState(normalizeTrackVolume(tr.playbackState?.volume))
+      if (panWire) panWire.syncFromState(normalizeTrackPan(tr.playbackState?.pan))
     }
     originalUpdate(nextTrack)
   }

@@ -33,6 +33,27 @@
   --track-header-width: 240px;
   --radius: 4px;    /* 收敛的专业硬件圆角 */
   --radius-sm: 2px;
+
+  /* ─── 混音器控件主题变量（亮模式：奶油拉丝铝拟物） ─────────────────────
+     旋钮 / 推子 / 按钮的"金属面"颜色专门一套——既要和 bg-1 ~ bg-4 协调，
+     又要呈现"控制台饰板"的拉丝质感。把所有视觉硬编码都收敛到这里，方便
+     [data-theme='dark'] 一处覆盖 */
+  --mixer-strip-bg-top: #EFE9DD;
+  --mixer-strip-bg-bottom: #D4CCBE;
+  --mixer-control-base-top: #D9D3C6;      /* 旋钮 / fader 把手"亮面" */
+  --mixer-control-base-bottom: #A8A192;   /* 旋钮 / fader 把手"暗面" */
+  --mixer-control-border: #888377;
+  --mixer-control-highlight: rgba(255,255,255,0.5);  /* inset 高光 */
+  --mixer-control-shadow: rgba(0,0,0,0.22);          /* inset 阴影 */
+  --mixer-recess-bg-top: rgba(0,0,0,0.10);            /* slot / 凹槽底色 */
+  --mixer-recess-bg-bottom: rgba(0,0,0,0.04);
+  --mixer-recess-border: rgba(0,0,0,0.22);
+  --mixer-recess-shadow: rgba(0,0,0,0.18);
+  --mixer-fader-handle-mid: #BFB6A3;
+  --mixer-fader-handle-deep: #9C9482;
+  --mixer-db-bg: rgba(255,255,255,0.45);
+  --mixer-db-border: rgba(0,0,0,0.18);
+  --mixer-db-shadow: rgba(0,0,0,0.18);
 }
 
 /* 暗色模式：保留同一套语义变量名，只重定义颜色值——绝大多数选择器无需改写。
@@ -69,6 +90,24 @@
   --fx-module-bg: #2B2D31;
   --fx-module-header: #353740;
   --fx-knob-track: #3F4248;
+
+  /* 混音器：深色金属拉丝 */
+  --mixer-strip-bg-top: #2A2D32;
+  --mixer-strip-bg-bottom: #1E2125;
+  --mixer-control-base-top: #555;
+  --mixer-control-base-bottom: #2A2C30;
+  --mixer-control-border: rgba(0,0,0,0.6);
+  --mixer-control-highlight: rgba(255,255,255,0.16);
+  --mixer-control-shadow: rgba(0,0,0,0.5);
+  --mixer-recess-bg-top: rgba(0,0,0,0.32);
+  --mixer-recess-bg-bottom: rgba(0,0,0,0.12);
+  --mixer-recess-border: rgba(0,0,0,0.55);
+  --mixer-recess-shadow: rgba(0,0,0,0.55);
+  --mixer-fader-handle-mid: #383B40;
+  --mixer-fader-handle-deep: #2A2C30;
+  --mixer-db-bg: rgba(0,0,0,0.28);
+  --mixer-db-border: rgba(0,0,0,0.45);
+  --mixer-db-shadow: rgba(0,0,0,0.55);
 }
 
 /* 主题过渡：用 View Transitions API（document.startViewTransition）做合成器层
@@ -2117,12 +2156,12 @@ body {
   cursor: pointer;
   transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
-.bottom-dock-tab:hover { color: var(--text-default); background-color: rgba(255, 255, 255, 0.04); }
+.bottom-dock-tab:hover { color: var(--text-main); background-color: var(--bg-3); }
 .bottom-dock-tab.is-active {
-  color: var(--text-default);
+  color: var(--text-main);
   background-color: var(--bg-fx-panel-active, var(--bg-fx-panel));
   border-color: var(--border-light);
-  box-shadow: inset 0 2px 0 var(--accent-color, #5BC0DE);
+  box-shadow: inset 0 2px 0 var(--accent-color);
 }
 
 /* ─── Mixer Dock 骨架 ──────────────────────────────────────────────────── */
@@ -2149,121 +2188,182 @@ body {
   overflow-y: hidden;
 }
 
-/* ─── 通道条本体（普通轨 / master 共用基本骨架） ────────────────────────── */
+/* ─── 通道条本体（普通轨 / master 共用基本骨架）—— 模仿 Studio One Console 的拟物感 ── */
 .mixer-strip {
   --mixer-strip-color: var(--accent-color, #5BC0DE);
-  flex: 0 0 76px;
-  min-width: 76px;
+  flex: 0 0 82px;
+  min-width: 82px;
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  background: var(--bg-1);
+  /* 顶部高光、底部阴影 —— 营造"嵌入面板"的金属饰板感 */
+  background:
+    linear-gradient(180deg, var(--mixer-control-highlight) 0%, transparent 12%, transparent 88%, var(--mixer-control-shadow) 100%),
+    linear-gradient(180deg, var(--mixer-strip-bg-top) 0%, var(--mixer-strip-bg-bottom) 100%);
   border: 1px solid var(--border-light);
-  border-radius: 6px;
-  padding: 6px 6px 8px 6px;
-  gap: 6px;
+  border-radius: 5px;
+  padding: 0 6px 8px 6px;
+  gap: 7px;
   position: relative;
   user-select: none;
+  box-shadow:
+    inset 0 1px 0 var(--mixer-control-highlight),
+    inset 0 -1px 0 var(--mixer-control-shadow);
 }
 .mixer-strip-head {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 4px;
+  gap: 5px;
+  padding-top: 0;
 }
+/* 顶部色条：贴到 strip 顶边（无 padding 隔开），更像"轨道色饰条"——专业 DAW 的标志性视觉 */
 .mixer-strip-stripe {
-  height: 4px;
-  background: var(--mixer-strip-color);
-  border-radius: 2px;
-  flex: 0 0 4px;
+  height: 5px;
+  margin: 0 -6px 4px -6px;   /* 抵消 padding 让色条贴顶 */
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--mixer-strip-color), white 18%) 0%,
+    var(--mixer-strip-color) 100%);
+  border-radius: 4px 4px 0 0;
+  flex: 0 0 5px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.3);
 }
 .mixer-strip-name {
   font-size: 11px;
   font-weight: 600;
-  color: var(--text-default);
+  color: var(--text-main);
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.4;
+  padding-top: 2px;
 }
 
-/* ─── Slot 占位（send / insert，P3/P4 接真控件） ────────────────────────── */
+/* ─── Slot 占位（send / insert） ─────────────────────────────────────── */
 .mixer-strip-slot {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 6px;
-  background: var(--bg-0);
-  border: 1px dashed var(--border-light);
-  border-radius: 4px;
+  padding: 4px 7px;
+  background:
+    linear-gradient(180deg, var(--mixer-recess-bg-top) 0%, var(--mixer-recess-bg-bottom) 100%),
+    var(--bg-0);
+  border: 1px solid var(--mixer-recess-border);
+  border-radius: 3px;
   min-height: 22px;
   font-size: 9px;
   color: var(--text-muted);
-  opacity: 0.7;
+  opacity: 0.85;
+  box-shadow: inset 0 1px 1px var(--mixer-recess-shadow);
 }
 .mixer-strip-slot.is-blank {
   background: transparent;
   border-color: transparent;
   opacity: 0;
+  box-shadow: none;
 }
 .mixer-strip-slot-label { font-weight: 600; letter-spacing: 0.4px; }
-.mixer-strip-slot-hint { opacity: 0.55; }
+.mixer-strip-slot-hint { opacity: 0.55; font-variant-numeric: tabular-nums; }
 
-/* ─── Pan knob：圆形旋钮 + 指针 ──────────────────────────────────────── */
+/* ─── Pan knob：拟物旋钮（Studio One / Cubase 风） ─────────────────────── */
 .mixer-strip-pan-row {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
 }
 .mixer-strip-pan-knob {
   position: relative;
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
-  background: radial-gradient(circle at 30% 30%, var(--bg-1), var(--bg-0));
-  border: 1px solid var(--border-light);
+  /* 4 层叠加：左上高光 / 右下阴影 / 主体金属渐变 / inset 凹凸 / 外浮 */
+  background:
+    radial-gradient(circle at 32% 28%, var(--mixer-control-highlight) 0%, transparent 45%),
+    radial-gradient(circle at 70% 78%, var(--mixer-control-shadow) 0%, transparent 55%),
+    linear-gradient(155deg, var(--mixer-control-base-top) 0%, var(--mixer-control-base-bottom) 100%);
+  border: 1px solid var(--mixer-control-border);
   cursor: ns-resize;
-  flex: 0 0 28px;
+  flex: 0 0 36px;
+  box-shadow:
+    inset 0 1px 1px var(--mixer-control-highlight),
+    inset 0 -1px 2px var(--mixer-control-shadow),
+    0 1px 2px var(--mixer-control-shadow);
+  transition: box-shadow 120ms ease;
 }
-.mixer-strip-pan-knob:focus-visible { outline: 1px solid var(--accent-color, #5BC0DE); outline-offset: 2px; }
+.mixer-strip-pan-knob:hover {
+  box-shadow:
+    inset 0 1px 1px var(--mixer-control-highlight),
+    inset 0 -1px 2px var(--mixer-control-shadow),
+    0 2px 4px var(--mixer-control-shadow),
+    0 0 0 1px var(--mixer-control-highlight);
+}
+.mixer-strip-pan-knob:focus-visible {
+  outline: 1px solid var(--mixer-strip-color);
+  outline-offset: 3px;
+}
+/* 旋钮内圈：让中心稍微凹一点（戳的感觉）—— 通过 ::before 圈一个浅色环 */
+.mixer-strip-pan-knob::before {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 40%, var(--mixer-control-highlight) 0%, transparent 60%);
+  pointer-events: none;
+}
+/* 指针：从圆心向外的细长指示棒 + 微 glow */
 .mixer-strip-pan-needle {
   position: absolute;
-  left: 50%; top: 6px;
-  width: 2px;
-  height: 10px;
-  background: var(--text-default);
-  transform-origin: bottom center;
+  left: 50%;
+  top: 4px;
+  width: 2.5px;
+  height: 13px;
+  background: linear-gradient(180deg, var(--mixer-strip-color) 0%, color-mix(in srgb, var(--mixer-strip-color), white 30%) 100%);
+  /* 旋钮 36px、needle top=4px height=13px → 旋钮中心 y=18，相当于 needle 内 y=14
+     （needle 自身坐标，100% 对应 13px；100% + 1px = 14px） */
+  transform-origin: 50% calc(100% + 1px);
   transform: rotate(0deg);
-  border-radius: 1px;
-  margin-left: -1px;
+  border-radius: 1.5px;
+  margin-left: -1.25px;
+  box-shadow:
+    0 0 4px color-mix(in srgb, var(--mixer-strip-color), transparent 50%),
+    0 0 1px rgba(255,255,255,0.4);
   transition: transform 60ms linear;
+  pointer-events: none;
 }
 .mixer-strip-pan-value {
   font-size: 9px;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
+  letter-spacing: 0.5px;
+  font-weight: 600;
 }
 
-/* ─── Fader 区：纵向轨道槽 + 把手 + 双声道 meter 占位 ──────────────────── */
+/* ─── Fader 区：纵向凹槽 + 拟物把手 ──────────────────────────────────── */
 .mixer-strip-fader-row {
   display: flex;
   flex-direction: row;
   align-items: stretch;
   gap: 4px;
-  height: var(--fader-track-height, 96px);
+  height: var(--fader-track-height, 110px);
   justify-content: center;
+  padding: 4px 0;
 }
 .mixer-strip-meter {
   display: flex;
   flex-direction: row;
   gap: 1px;
   width: 8px;
-  background: var(--bg-0);
+  /* 表槽：明显凹陷 */
+  background:
+    linear-gradient(90deg, var(--mixer-recess-shadow), var(--mixer-recess-bg-top)),
+    var(--bg-0);
+  border: 1px solid var(--mixer-recess-border);
   border-radius: 2px;
   overflow: hidden;
   flex: 0 0 auto;
+  box-shadow: inset 0 1px 2px var(--mixer-recess-shadow);
 }
 .mixer-strip-meter-channel {
   flex: 1 1 auto;
@@ -2272,90 +2372,193 @@ body {
 }
 .mixer-strip-fader-track {
   position: relative;
-  width: 24px;
-  background: var(--bg-0);
-  border: 1px solid var(--border-light);
+  width: 26px;
+  /* 推子凹槽：明显凹下去的金属/塑料感 */
+  background:
+    linear-gradient(90deg, var(--mixer-recess-shadow) 0%, var(--mixer-recess-bg-bottom) 30%, var(--mixer-recess-bg-bottom) 70%, var(--mixer-recess-shadow) 100%),
+    var(--bg-0);
+  border: 1px solid var(--mixer-recess-border);
   border-radius: 3px;
-  flex: 0 0 24px;
+  flex: 0 0 26px;
+  box-shadow:
+    inset 0 1px 2px var(--mixer-recess-shadow),
+    inset 0 -1px 0 var(--mixer-control-highlight);
+}
+/* 推子凹槽中线 —— 通过 ::before 画一条贯穿的微亮线，模拟金属导轨 */
+.mixer-strip-fader-track::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 4px; bottom: 4px;
+  width: 1px;
+  margin-left: -0.5px;
+  background: linear-gradient(180deg, var(--mixer-control-highlight), var(--mixer-control-shadow), var(--mixer-control-highlight));
+  pointer-events: none;
 }
 .mixer-strip-fader-handle {
   position: absolute;
-  left: -3px; right: -3px;
+  left: -5px; right: -5px;
   bottom: 0%;
-  height: 14px;
-  background: linear-gradient(180deg, var(--bg-1) 0%, var(--bg-0) 100%);
-  border: 1px solid var(--mixer-strip-color);
+  height: 20px;
+  /* 把手：上下双色叠 + 颜色 tag —— 拉丝铝/塑料感 */
+  background:
+    linear-gradient(180deg,
+      var(--mixer-control-base-top) 0%,
+      var(--mixer-fader-handle-mid) 48%,
+      var(--mixer-fader-handle-deep) 52%,
+      var(--mixer-control-base-top) 100%);
+  border: 1px solid var(--mixer-control-border);
+  border-top-color: var(--mixer-control-highlight);
   border-radius: 3px;
   cursor: grab;
   padding: 0;
   transform: translateY(50%);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  box-shadow:
+    inset 0 1px 0 var(--mixer-control-highlight),
+    inset 0 -1px 1px var(--mixer-control-shadow),
+    0 2px 3px var(--mixer-control-shadow);
+  transition: box-shadow 120ms ease;
 }
-.mixer-strip-fader-handle:focus-visible { outline: 1px solid var(--accent-color, #5BC0DE); outline-offset: 2px; }
+.mixer-strip-fader-handle:hover {
+  box-shadow:
+    inset 0 1px 0 var(--mixer-control-highlight),
+    inset 0 -1px 1px var(--mixer-control-shadow),
+    0 3px 5px var(--mixer-control-shadow);
+}
+.mixer-strip-fader-handle:focus-visible {
+  outline: 1px solid var(--mixer-strip-color);
+  outline-offset: 3px;
+}
 .mixer-strip-fader-handle:active { cursor: grabbing; }
+/* 把手中间：四道横纹（防滑纹路）+ 一条彩色 tag 线 */
 .mixer-strip-fader-handle::before {
-  /* 把手中间一道横线，专业感 */
   content: '';
   position: absolute;
-  left: 4px; right: 4px;
-  top: 50%; height: 1px;
-  background: var(--text-muted);
-  opacity: 0.4;
+  left: 5px; right: 5px;
+  top: 50%;
+  height: 1px;
+  margin-top: -0.5px;
+  background: var(--mixer-strip-color);
+  box-shadow: 0 0 3px color-mix(in srgb, var(--mixer-strip-color), transparent 40%);
+}
+.mixer-strip-fader-handle::after {
+  /* 三道防滑纹 */
+  content: '';
+  position: absolute;
+  left: 5px; right: 5px;
+  top: 25%;
+  height: 1px;
+  background: var(--mixer-control-shadow);
+  box-shadow:
+    0 -2px 0 var(--mixer-control-shadow),
+    0 6px 0 var(--mixer-control-shadow),
+    0 8px 0 var(--mixer-control-shadow);
+  pointer-events: none;
 }
 .mixer-strip-db {
   text-align: center;
   font-size: 10px;
   font-variant-numeric: tabular-nums;
-  color: var(--text-muted);
-  letter-spacing: 0.2px;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--text-main), transparent 25%);
+  letter-spacing: 0.3px;
+  /* 数字管效果 —— accent 色微 glow */
+  text-shadow: 0 0 6px color-mix(in srgb, var(--mixer-strip-color), transparent 75%);
+  padding: 2px 4px;
+  background: var(--mixer-db-bg);
+  border: 1px solid var(--mixer-db-border);
+  border-radius: 2px;
+  box-shadow: inset 0 1px 2px var(--mixer-db-shadow);
 }
 
 /* ─── Mute / Solo 按钮组 ──────────────────────────────────────────────── */
 .mixer-strip-btn-row {
   display: flex;
-  gap: 4px;
+  gap: 5px;
   justify-content: center;
+  padding: 0 2px;
 }
 .mixer-strip-btn {
   flex: 1 1 auto;
   appearance: none;
-  border: 1px solid var(--border-light);
-  background: var(--bg-0);
-  color: var(--text-muted);
+  border: 1px solid var(--mixer-control-border);
+  background: linear-gradient(180deg, var(--mixer-control-base-top) 0%, var(--mixer-control-base-bottom) 100%);
+  color: color-mix(in srgb, var(--text-main), transparent 35%);
   font-size: 10px;
   font-weight: 700;
-  height: 20px;
+  height: 22px;
   border-radius: 3px;
   cursor: pointer;
-  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+  letter-spacing: 0.5px;
+  box-shadow:
+    inset 0 1px 0 var(--mixer-control-highlight),
+    inset 0 -1px 1px var(--mixer-control-shadow),
+    0 1px 1px var(--mixer-control-shadow);
+  transition: background 120ms ease, color 120ms ease, box-shadow 120ms ease;
 }
-.mixer-strip-btn:hover:not(:disabled) { color: var(--text-default); border-color: var(--text-muted); }
-.mixer-strip-btn--mute.is-active { background: var(--red, #C8423A); border-color: var(--red, #C8423A); color: #fff; }
-.mixer-strip-btn--solo.is-active { background: var(--orange, #D6A435); border-color: var(--orange, #D6A435); color: #111; }
+.mixer-strip-btn:hover:not(:disabled) {
+  filter: brightness(1.05);
+  color: var(--text-main);
+}
+.mixer-strip-btn:active:not(:disabled) {
+  box-shadow:
+    inset 0 1px 2px var(--mixer-control-shadow),
+    inset 0 -1px 0 var(--mixer-control-highlight);
+}
+/* 激活状态：mute / solo 用功能色（红 / 黄）—— 这两种亮 / 暗都用同一组颜色，
+   因为是"警告 / 信号"语义、颜色需要稳定识别 */
+.mixer-strip-btn--mute.is-active {
+  background: linear-gradient(180deg, #E85A4F 0%, #B8392F 100%);
+  border-color: #862922;
+  color: #fff;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.25),
+    inset 0 -1px 1px rgba(0,0,0,0.3),
+    0 0 8px rgba(232,90,79,0.45);
+}
+.mixer-strip-btn--solo.is-active {
+  background: linear-gradient(180deg, #F0C447 0%, #C39725 100%);
+  border-color: #8C6A23;
+  color: #1a1a1a;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.35),
+    inset 0 -1px 1px rgba(0,0,0,0.3),
+    0 0 8px rgba(240,196,71,0.45);
+}
 
 /* ─── Master strip 视觉强区分 ────────────────────────────────────────── */
 .mixer-strip--master {
   flex: 0 0 96px;
   min-width: 96px;
-  margin-left: 16px;
-  background: linear-gradient(180deg, var(--bg-1) 0%, var(--bg-0) 100%);
-  border-color: var(--accent-color, #5BC0DE);
-  box-shadow: inset 0 0 0 1px rgba(91, 192, 222, 0.18);
+  margin-left: 18px;
+  /* 比普通 strip 更突出——用 accent 色 inner glow + 加深底色 */
+  background:
+    linear-gradient(180deg, var(--accent-dim) 0%, transparent 30%, transparent 70%, var(--mixer-control-shadow) 100%),
+    linear-gradient(180deg, var(--mixer-strip-bg-top) 0%, var(--mixer-strip-bg-bottom) 100%);
+  border-color: var(--accent-color);
+  box-shadow:
+    inset 0 0 0 1px var(--accent-dim),
+    inset 0 1px 0 var(--accent-dim),
+    inset 0 -1px 0 var(--mixer-control-shadow),
+    0 0 16px var(--accent-dim);
 }
 .mixer-strip--master::before {
-  /* 与左侧普通 strip 间的视觉分隔 */
+  /* 与左侧普通 strip 间的视觉分隔（双线效果）*/
   content: '';
   position: absolute;
-  left: -9px; top: 4px; bottom: 4px;
+  left: -10px; top: 4px; bottom: 4px;
   width: 1px;
   background: var(--border-light);
+  box-shadow: 1px 0 0 var(--mixer-control-shadow);
 }
 .mixer-strip-master-label {
   font-size: 9px;
   font-weight: 700;
-  letter-spacing: 0.22em;
-  color: var(--accent-color, #5BC0DE);
+  letter-spacing: 0.28em;
+  color: var(--accent-color);
   text-align: center;
+  text-shadow: 0 0 6px var(--accent-mid);
+  padding-top: 4px;
 }
 
 /* dock 闭→开 时整面 slide-up + fade-in，让"刚打开"成为一个明显的视觉事件，
