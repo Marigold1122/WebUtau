@@ -158,6 +158,12 @@ export class ProjectTransportCoordinator {
     return this.trackFxDispatchRouter.dispatch(trackId, 'setTrackGuitarTone', guitarTone)
   }
 
+  // 单轨 insert 链：跟 pan 一样不走 scheduler——纯粹是 audioGraph channel 上的
+  // 路由层节点参数（EQ band gain / Comp threshold 等），直接调 audioGraph 即可
+  setTrackInserts(trackId, inserts) {
+    return Boolean(this.audioGraph?.setTrackInserts?.(trackId, inserts))
+  }
+
   pause() {
     const snapshot = this.transportStore.getSnapshot()
     this._logTrace('pause:entry')

@@ -190,6 +190,11 @@ export class ProjectAudioGraph {
     return Boolean(this.syncTrackState(trackId, { reverbConfig }))
   }
 
+  // 单轨 insert 链整体替换（拖单段 EQ 旋钮时上层先 merge 出整链再调这个）
+  setTrackInserts(trackId, inserts) {
+    return Boolean(this.syncTrackState(trackId, { inserts }))
+  }
+
   setTrackGuitarTone(trackId, guitarTone) {
     return Boolean(this.syncTrackState(trackId, { guitarTone }))
   }

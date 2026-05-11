@@ -2217,6 +2217,8 @@ export function createHostApp() {
     },
     onPlayheadFollowModeSelected: handlePlayheadFollowModeSelected,
     onTrackReverbSendChanged: (trackId, sendAmount, options) => trackMonitorController.setTrackReverbSend(trackId, sendAmount, options),
+    // 单轨 insert 链 patch（EQ band 调参 / Comp 调参 / 开关单槽）—— UI 拖旋钮调
+    onTrackInsertChanged: (trackId, slotKey, patch, options) => trackMonitorController.setTrackInsert(trackId, slotKey, patch, options),
     onTrackReverbConfigChanged: (trackId, config, options) => reverbController.handleTrackReverbConfigChanged(trackId, config, options),
     onTrackReverbPresetSelected: (trackId, presetId) => reverbController.handleTrackReverbPresetSelected(trackId, presetId),
     onToggleTrackReverbEnabled: reverbController.toggleTrackReverbEnabled,

@@ -15,6 +15,7 @@ import {
   normalizeTrackReverbSend,
   normalizeTrackVolume,
 } from '../project/trackPlaybackState.js'
+import { mergeTrackInsertChainSlot } from '../project/trackInsertChainState.js'
 
 export class TrackMonitorController {
   constructor({
@@ -194,6 +195,43 @@ export class TrackMonitorController {
       this._trackReverbSendPendingDirty.add(track.id)
     }
 
+    return true
+  }
+
+  /**
+   * 单轨 insert 链单槽 patch —— UI 拖某个 EQ band gain / Comp threshold 时调这条。
+   *
+   * @param trackId
+   * @param slotKey 'eq4' | 'comp'
+   * @param patch   形如 { enabled }, { bandIndex, band: { gain } }, { threshold } 等
+   * @param options { commit }: 同 pan/volume —— commit:false 拖动实时（写 store + audioGraph 不 render）；
+   *                 commit:true 落定（render + saveProject + status）
+   *
+   * 决策：跟 pan 一样直连 audioGraph，不走 coalescer——insert 链单槽 patch 多数都是
+   * "拖一个旋钮" 的小变化，不存在像 reverb 那种"同时调多个参数需合并"的场景
+   */
+  async setTrackInsert(trackId, slotKey, patch = {}, { commit = true } = {}) {
+    const track = this.store.getTrack(trackId)
+    if (!track) return false
+    if (slotKey !== 'eq4' && slotKey !== 'comp') return false
+
+    const currentInserts = track.playbackState?.inserts
+    const nextInserts = mergeTrackInsertChainSlot(currentInserts, slotKey, patch)
+    // 防御：值没真的变 + 非 commit → 跳过（同 pan 套路）
+    if (!commit && JSON.stringify(nextInserts) === JSON.stringify(currentInserts)) return false
+
+    this.store.updateTrackPlaybackState(track.id, {
+      inserts: { slot: slotKey, patch },
+    })
+    await this.transportCoordinator.setTrackInserts(track.id, nextInserts)
+
+    if (commit) {
+      this.persistence?.saveProject?.(this.store?.getProject?.())
+      this.render('track-insert-changed')
+      this.logger?.info?.('Track insert updated', {
+        trackId: track.id, trackName: track.name, slotKey, patch,
+      })
+    }
     return true
   }
 
