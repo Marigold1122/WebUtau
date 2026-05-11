@@ -674,28 +674,21 @@ export function buildMixerChannelStrip({ track, trackColor, isMaster = false, ha
     return { syncFromState }
   }
 
-  // ── Insert 槽按钮：点击 = 切换 enabled（bypass 开/关）──────────────
-  // 注意：本步只做"开关"——点击按钮即 patch { enabled: !current }。
-  // 参数调节（EQ band gain / Comp threshold 等）是 4.6 的浮窗
+  // ── Insert 槽按钮：点击 = 打开参数浮窗（bypass 开关在浮窗里）─────────
+  // 这是标准 DAW 行为（Studio One / Logic）：单击展开调参面板、不直接切 bypass
   const wireInsertButtons = () => {
-    const handleClick = (slotKey, button) => () => {
-      // 读 button 当前 visual state 作 single source of truth：
-      //   aria-pressed='true' = 当前 enabled → 切到 disable，反之亦然
-      const currentlyOn = button.getAttribute('aria-pressed') === 'true'
-      currentHandlers.onInsertToggled?.(slotKey, !currentlyOn)
-    }
     if (refs.btnInsertEq4) {
       refs.btnInsertEq4.addEventListener('click', (e) => {
         e.preventDefault()
         e.stopPropagation()
-        handleClick('eq4', refs.btnInsertEq4)()
+        currentHandlers.onInsertOpenRequested?.('eq4', refs.btnInsertEq4)
       })
     }
     if (refs.btnInsertComp) {
       refs.btnInsertComp.addEventListener('click', (e) => {
         e.preventDefault()
         e.stopPropagation()
-        handleClick('comp', refs.btnInsertComp)()
+        currentHandlers.onInsertOpenRequested?.('comp', refs.btnInsertComp)
       })
     }
   }

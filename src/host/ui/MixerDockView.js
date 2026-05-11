@@ -13,6 +13,7 @@
 
 import { t } from '../../i18n/index.js'
 import { buildMixerChannelStrip } from './mixer/buildMixerChannelStrip.js'
+import { closeMixerInsertPopover, openInsertPopover } from './mixer/MixerInsertPopover.js'
 import { getTrackColorById } from './tracks/trackColorPalette.js'
 
 export class MixerDockView {
@@ -67,8 +68,13 @@ export class MixerDockView {
     if (!visible) {
       this._wasVisible = false
       this._teardownLufsSubscription()
+      // mixer 不可见时强制关浮窗，避免悬浮在空界面上
+      closeMixerInsertPopover()
       return false
     }
+
+    // 缓存 project 引用 —— 浮窗打开时通过 trackId 找回最新 track 状态
+    this._lastProject = project
 
     // LUFS target 从工程的 master chain state 读
     this._currentLufsTarget = Number.isFinite(project?.mixState?.masterChain?.loudnessTarget)
@@ -212,9 +218,21 @@ export class MixerDockView {
       onSendChanged: (send, opts) => h.onTrackReverbSendChanged?.(trackId, send, opts),
       onToggleMute: () => h.onTrackMuteToggled?.(trackId),
       onToggleSolo: () => h.onTrackSoloToggled?.(trackId),
-      // insert 槽 EQ4 / Comp 切换 bypass —— 走统一的 onTrackInsertChanged 通道
-      onInsertToggled: (slotKey, enabled) => h.onTrackInsertChanged?.(trackId, slotKey, { enabled }, { commit: true }),
+      // insert 按钮点击 = 打开参数浮窗（浮窗内含 bypass 开关 + 参数旋钮）
+      onInsertOpenRequested: (slotKey, anchorEl) => this._openInsertPopover(trackId, slotKey, anchorEl),
     }
+  }
+
+  _openInsertPopover(trackId, slotKey, anchor) {
+    const project = this._lastProject
+    const track = (project?.tracks || []).find?.((tr) => tr?.id === trackId)
+    if (!track) return
+    openInsertPopover({
+      slotKey, track, anchor,
+      onPatch: (slot, patch, opts) => {
+        this.handlers?.onTrackInsertChanged?.(trackId, slot, patch, opts)
+      },
+    })
   }
 
   // Master strip 专属 handler 桥：fader 写 master volume，没有 pan/mute/solo
