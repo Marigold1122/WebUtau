@@ -13,6 +13,7 @@ import { createTransportStepHandler } from './createTransportStepHandler.js'
 import { createVoiceConversionViewHandlers } from './createVoiceConversionViewHandlers.js'
 import { createWaiterRegistry } from './createWaiterRegistry.js'
 import { createTimelineAxis } from '../../shared/timelineAxis.js'
+import { installGlobalEscape } from './installGlobalEscape.js'
 import { isKeyboardShortcutTargetEditable } from '../../shared/isKeyboardShortcutTargetEditable.js'
 import { ImportedAudioAssetRegistry } from '../audio/ImportedAudioAssetRegistry.js'
 import { ImportedAudioTrackScheduler } from '../audio/ImportedAudioTrackScheduler.js'
@@ -1536,6 +1537,8 @@ export function createHostApp() {
     void bridge.setPlayheadFollowMode(sessionStore.getPlayheadFollowMode())
     transportCoordinator.init()
     shortcutRouter.init()
+    // 全局 ESC：关闭最顶层的浮层（modal / 快速填词 / 上下文菜单 / 底部 dock / 钢琴卷帘）
+    installGlobalEscape()
     document.addEventListener('keydown', handleEditorUndoShortcut)
     initMidiInput()
     // 后台每 30s 把当前 store snapshot 写进 IndexedDB——浏览器异常关闭时的最后一道保险

@@ -243,7 +243,7 @@ function createField(label, type, value, placeholder) {
   input.spellcheck = false
   input.autocomplete = type === 'password' ? 'new-password' : 'off'
   // 屏蔽全局快捷键拦截（空格 / S 等会被 host 抢去做播放控制）
-  input.addEventListener('keydown', (e) => e.stopPropagation())
+  input.addEventListener('keydown', (e) => { if (e.key !== 'Escape') e.stopPropagation() })
   wrap.append(labelEl, input)
   return { wrap, input }
 }

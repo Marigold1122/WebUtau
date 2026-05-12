@@ -557,14 +557,18 @@ class PianoRollInputController {
     }
 
     if (e.key === 'Escape') {
+      // preventDefault 用作"本层已消费 ESC"的信号——外层全局 ESC 调度看到
+      // defaultPrevented 就让步，避免一次 ESC 把卷帘也关掉
       if (contextMenu.isVisible()) {
         contextMenu.hide()
         this._state = STATE.READY
+        e.preventDefault()
         return
       }
       if (pitchEditor.hasSelectedPoint()) {
         pitchEditor.clearSelection()
         pianoRollNotes.requestDraw()
+        e.preventDefault()
       }
     }
   }

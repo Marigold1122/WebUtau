@@ -49,7 +49,7 @@ export function openOfficialLyricsDialog({ initialLines = [], onConfirm = null, 
     textarea.spellcheck = false
     textarea.placeholder = t('officialLyrics.placeholder')
     textarea.value = (Array.isArray(initialLines) ? initialLines : []).join('\n')
-    textarea.addEventListener('keydown', (e) => e.stopPropagation())
+    textarea.addEventListener('keydown', (e) => { if (e.key !== 'Escape') e.stopPropagation() })
 
     // 按钮
     const actions = document.createElement('div')

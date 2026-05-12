@@ -159,7 +159,8 @@ export class QuickLyricPanel {
       this._hideFix()
       this._setStatus('')
     })
-    this._textarea.addEventListener('keydown', (e) => e.stopPropagation())
+    // 阻断字母键 / Space 等冒泡触发全局快捷键；但放行 ESC，让外层全局 ESC 调度能关掉本浮窗
+    this._textarea.addEventListener('keydown', (e) => { if (e.key !== 'Escape') e.stopPropagation() })
 
     this._statusEl = document.createElement('div')
     this._statusEl.className = 'quick-lyric-status'
@@ -248,7 +249,7 @@ export class QuickLyricPanel {
     themeInput.className = 'quick-lyric-ai-theme'
     themeInput.placeholder = t('quickLyric.ai.theme_placeholder')
     themeInput.rows = 2
-    themeInput.addEventListener('keydown', (e) => e.stopPropagation())
+    themeInput.addEventListener('keydown', (e) => { if (e.key !== 'Escape') e.stopPropagation() })
     this._aiThemeInput = themeInput
 
     const styleLabel = document.createElement('div')
@@ -258,7 +259,7 @@ export class QuickLyricPanel {
     styleInput.type = 'text'
     styleInput.className = 'quick-lyric-ai-style'
     styleInput.placeholder = t('quickLyric.ai.style_placeholder')
-    styleInput.addEventListener('keydown', (e) => e.stopPropagation())
+    styleInput.addEventListener('keydown', (e) => { if (e.key !== 'Escape') e.stopPropagation() })
     this._aiStyleInput = styleInput
 
     // 配额 + 配置 + 生成
