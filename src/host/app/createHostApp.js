@@ -1064,6 +1064,95 @@ export function createHostApp() {
     return true
   }
 
+  // 工程被持久化（autosave snapshot / .webutau）时，pruneTrack 会把 server-side 的
+  // jobRef / vocalManifest / renderState 删掉——这些是当前会话的 server 任务引用，跨
+  // 会话失效。但 prepState='ready' + voiceSnapshot.pitchData 是"前端可复算的内容"会
+  // 留下来。所以恢复回来的人声轨长这样：pitch 预测过、却没有 server 任务、phrase
+  // 音频也没了——HostVocalScheduler 看不到 manifest.phraseStates，整条轨直接静音。
+  // 这里在恢复后逐条把它们的渲染任务重新跑起来；runtime 是单例，只能串行，发现用户
+  // 已经开了别的任务就停手让用户优先。
+  async function resumeVoiceRendersAfterRestore() {
+    const candidates = (store.getProject()?.tracks || []).filter((track) => {
+      if (!isVoiceRuntimeSource(track?.playbackState?.assignedSourceId)) return false
+      if (track.prepState?.status !== 'ready') return false
+      if (track.jobRef?.jobId) return false
+      if (!track.languageCode || !track.singerId) return false
+      return Boolean(track.voiceSnapshot?.pitchData?.pitchCurve?.length)
+    })
+    if (candidates.length === 0) return
+    logger.info('恢复工程：自动重启人声渲染', { trackCount: candidates.length })
+
+    for (const candidate of candidates) {
+      // 用 intent 区分自家任务和用户接管：getActiveTrack 不区分意图，连我们上一轮
+      // 留下的"timeout 还没归零"状态也会被当成阻塞。这里只在出现"非 resume 意图
+      // 的 active 任务"时停手。
+      const userTask = (store.getProject()?.tracks || []).find((t) => (
+        t.jobRef?.status === 'active' && t.jobRef?.intent !== 'resume'
+      ))
+      if (userTask) {
+        logger.info('恢复工程：用户已发起其它任务，停止后续自动恢复', { blockingTrackId: userTask.id })
+        return
+      }
+      const fresh = store.getTrack(candidate.id)
+      if (!fresh || fresh.jobRef?.jobId) continue
+      try {
+        await resumeOneVoiceRender(fresh)
+      } catch (error) {
+        logger.warn('恢复工程：单条轨道渲染失败', {
+          trackId: fresh.id,
+          error: error?.message || String(error),
+        })
+      }
+    }
+  }
+
+  async function resumeOneVoiceRender(track) {
+    // 复用 predictionGateController.run('resume')——它会把 TrackSynthesisOverlay
+    // 顶上去盖住 runtime 那边的 PrepareOverlay，并复用 onRenderProgress → 进度条
+    // 的现成链路。intent='resume' 跳过语言对话框、不切编辑器、不起播放，仅把渲染
+    // 流程跑起来。
+    const ok = await predictionGateController.run(track.id, 'resume')
+    if (!ok) {
+      cleanupHalfResumedTrack(track.id)
+      return
+    }
+    // run() 只 await 到 prediction ready；后续音频渲染走 runtime 的轮询。必须等
+    // 这条轨"渲染完成"才能切下一条：runtime resetRuntime() 会把上一条的轮询/下载
+    // 链路掐掉，没下完的 phrase 音频就永远进不了 host vocalAssetRegistry。
+    const completed = await waitForVoiceRenderCompleted(track.id)
+    if (!completed) cleanupHalfResumedTrack(track.id)
+  }
+
+  // 把我们半截留下的"queued / active 但永不完工"状态归零，避免 UI 永远显示在排队，
+  // 也避免下一轮循环被自家残留误判成"用户任务"。
+  function cleanupHalfResumedTrack(trackId) {
+    const fresh = store.getTrack(trackId)
+    if (!fresh) return
+    if (fresh.jobRef?.intent !== 'resume') return
+    if (fresh.jobRef?.status !== 'active') return
+    taskCoordinator.resetTrackTask(trackId)
+    store.updateTrackPrepState(trackId, { status: 'ready', progress: 100, error: null })
+    store.updateTrackRenderState(trackId, { status: 'idle', completed: 0, total: 0, error: null })
+  }
+
+  function waitForVoiceRenderCompleted(trackId, timeoutMs = 180_000) {
+    return new Promise((resolve) => {
+      const start = Date.now()
+      const tick = () => {
+        if (Date.now() - start >= timeoutMs) return resolve(false)
+        const fresh = store.getTrack(trackId)
+        if (!fresh) return resolve(false)
+        // 用户在中途接管（cancelConflictingTask 会把我们的 task 置 idle）就让出
+        if (!taskCoordinator.matchesActiveTask(trackId)) return resolve(false)
+        const status = fresh.renderState?.status
+        if (status === 'completed') return resolve(true)
+        if (status === 'failed') return resolve(false)
+        setTimeout(tick, 500)
+      }
+      tick()
+    })
+  }
+
   async function persistInstrumentEditorDraft({ trackId = null, silent = false, reason = 'instrument-editor-save' } = {}) {
     const track = getOpenInstrumentEditorTrack(trackId)
     if (!track) return false
@@ -1509,7 +1598,12 @@ export function createHostApp() {
     }
     if (choice === 'restore') {
       const ok = await projectFileHandlers.restoreFromSnapshot(snapshot.json)
-      if (!ok) await projectAutoSave.clearSnapshot()
+      if (!ok) {
+        await projectAutoSave.clearSnapshot()
+      } else {
+        // 后台跑，不阻塞 UI；用户立刻动手会让我们 matchesActiveTask 失败、自行让步
+        void resumeVoiceRendersAfterRestore()
+      }
     } else {
       await projectAutoSave.clearSnapshot()
       view.setStatus(t('hostStatus.backup_discarded'))

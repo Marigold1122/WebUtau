@@ -53,17 +53,29 @@ export class TrackPredictionGateController {
     const track = this.store.getTrack(trackId)
     if (!track || !isVoiceRuntimeSource(track.playbackState?.assignedSourceId)) return false
 
-    const gateResult = await this._promptTrackLanguage(track, intent)
-    if (!gateResult) {
-      this.view.setStatus(intent === 'play'
-        ? t('predictionGate.canceled_play')
-        : t('predictionGate.canceled_open', { name: track.name }))
-      this.render('prediction-gate-cancelled')
-      return false
+    // intent='resume'：恢复工程后由 host 自动调用，已经有 language/singer，不再弹
+    // 语言对话框；流程其余部分（overlay、进度更新、prepWaiters）一律复用，避免
+    // runtime 那边孤零零的 PrepareOverlay 长时间占屏。
+    const isResume = intent === 'resume'
+
+    let gateResult
+    if (isResume) {
+      const languageCode = normalizeOptionalLanguageCode(track.languageCode)
+      if (!languageCode || !track.singerId) return false
+      gateResult = { languageCode, singerId: track.singerId }
+    } else {
+      gateResult = await this._promptTrackLanguage(track, intent)
+      if (!gateResult) {
+        this.view.setStatus(intent === 'play'
+          ? t('predictionGate.canceled_play')
+          : t('predictionGate.canceled_open', { name: track.name }))
+        this.render('prediction-gate-cancelled')
+        return false
+      }
     }
     const { languageCode, singerId } = gateResult
 
-    await this._prepareRuntime(track.id, intent)
+    if (!isResume) await this._prepareRuntime(track.id, intent)
     const preparedTrack = this.store.getTrack(track.id)
     const snapshot = this.importService.buildVoiceSnapshot(preparedTrack, this.store.getProject()?.tempoData)
     const prepPromise = this.prepWaiters.wait(track.id)
@@ -92,6 +104,12 @@ export class TrackPredictionGateController {
         this.render('editor-opened-after-prediction')
         this.view.notifyRuntimeLayoutChanged()
         this.view.setStatus(t('predictionGate.open_done', { name: preparedTrack.name }))
+        return true
+      }
+
+      if (isResume) {
+        // 不切编辑器、不起播放——只把渲染链路跑起来，让 host vocalAssetRegistry 拿到音频
+        this.render('prediction-gate-resume-ready')
         return true
       }
 
