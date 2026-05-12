@@ -28,6 +28,10 @@ export class MixerDockView {
     // LUFS 订阅：只在 mixer tab 可见时活跃，隐藏时撤回；renderer 每帧 < 10Hz 不重订
     this._lufsUnsubscribe = null
     this._currentLufsTarget = -14
+    // peak meter RAF 循环：仅在 mixer 可见时跑
+    this._meterRafHandle = 0
+    // peak hold 衰减状态：每条 strip 一份，跨帧维持"下落"动画
+    this._meterDecayState = new Map()  // trackId → { displayL, displayR, peakHoldL, peakHoldR, peakHoldTimerL, peakHoldTimerR }
   }
 
   setHandlers(handlers = {}) {
@@ -68,6 +72,7 @@ export class MixerDockView {
     if (!visible) {
       this._wasVisible = false
       this._teardownLufsSubscription()
+      this._stopMeterLoop()
       // mixer 不可见时强制关浮窗，避免悬浮在空界面上
       closeMixerInsertPopover()
       return false
@@ -81,8 +86,9 @@ export class MixerDockView {
       ? project.mixState.masterChain.loudnessTarget
       : -14
 
-    // 第一次可见时建立 LUFS 订阅；不可见时撤回（性能保护）
+    // 第一次可见时建立 LUFS 订阅 + 启动 meter 循环；不可见时全撤回（性能保护）
     this._ensureLufsSubscription()
+    this._startMeterLoop()
 
     // 第一次打开 mixer tab 的"slide-up"动画——和 reverb dock 行为一致，
     // 让用户感知到 dock 切到 mixer 模式
@@ -207,6 +213,71 @@ export class MixerDockView {
       try { this._lufsUnsubscribe() } catch (_e) {}
       this._lufsUnsubscribe = null
     }
+  }
+
+  // ── Per-track peak meter RAF 循环 ───────────────────────────────────
+  // 单循环遍历所有 strip，每帧读 audioGraph.getTrackPeak() 写 DOM。
+  // 衰减规律（业界惯用）：peak 突然变小时不立刻掉下，每帧线性回落（5% / frame）；
+  // peak hold 顶端横线保持 1.2s 后开始下落，让用户能看到瞬间的最大值
+  _startMeterLoop() {
+    if (this._meterRafHandle) return
+    const getPeak = this.handlers?.getTrackPeak
+    if (typeof getPeak !== 'function') return  // audioGraph 没接 getter 就不跑（容错）
+
+    const FALL_PER_FRAME = 0.04   // 显示值线性下降速率：0.04 / frame ≈ 2.4 s 从 1 降到 0
+    const PEAK_HOLD_FRAMES = 72   // peak hold 顶端横线保持 ~1.2s（60fps）
+    const tick = () => {
+      this._meterRafHandle = 0
+      // 双重 visible 校验 —— 在 stop 之后还可能跑一帧
+      if (!this._wasVisible) return
+      // 拖 dock 时跳过 DOM 写入 —— 计算保留延续衰减状态、节省 layout 抢占
+      // 这是让 mixer dock 拖拽顺滑的关键（reverb dock 没 meter 循环、不存在此问题）
+      const skipWrites = Boolean(document.body.dataset.dockResizing)
+      this._stripsByTrackId.forEach((strip, trackId) => {
+        const { peakL, peakR } = getPeak(trackId) || { peakL: 0, peakR: 0 }
+        const state = this._meterDecayState.get(trackId) || {
+          displayL: 0, displayR: 0, peakHoldL: 0, peakHoldR: 0, holdTimerL: 0, holdTimerR: 0,
+        }
+        // 上升 = 立刻跟随峰值；下降 = 每帧最多回退 FALL_PER_FRAME
+        state.displayL = peakL >= state.displayL ? peakL : Math.max(0, state.displayL - FALL_PER_FRAME)
+        state.displayR = peakR >= state.displayR ? peakR : Math.max(0, state.displayR - FALL_PER_FRAME)
+        // peak hold：刷新最大值并重置计时；hold 满后开始衰减
+        if (peakL >= state.peakHoldL) {
+          state.peakHoldL = peakL
+          state.holdTimerL = PEAK_HOLD_FRAMES
+        } else if (state.holdTimerL > 0) {
+          state.holdTimerL -= 1
+        } else {
+          state.peakHoldL = Math.max(state.displayL, state.peakHoldL - FALL_PER_FRAME)
+        }
+        if (peakR >= state.peakHoldR) {
+          state.peakHoldR = peakR
+          state.holdTimerR = PEAK_HOLD_FRAMES
+        } else if (state.holdTimerR > 0) {
+          state.holdTimerR -= 1
+        } else {
+          state.peakHoldR = Math.max(state.displayR, state.peakHoldR - FALL_PER_FRAME)
+        }
+        this._meterDecayState.set(trackId, state)
+        // 写 DOM —— 用 CSS 自定义属性，CSS 处理实际渲染
+        // 拖 dock 时跳过这一步避免和 resize layout 抢主线程
+        if (!skipWrites) {
+          const refs = strip.refs
+          if (refs?.meterL) refs.meterL.style.setProperty('--meter-fill', `${state.displayL * 100}%`)
+          if (refs?.meterR) refs.meterR.style.setProperty('--meter-fill', `${state.displayR * 100}%`)
+        }
+      })
+      this._meterRafHandle = requestAnimationFrame(tick)
+    }
+    this._meterRafHandle = requestAnimationFrame(tick)
+  }
+
+  _stopMeterLoop() {
+    if (this._meterRafHandle) {
+      cancelAnimationFrame(this._meterRafHandle)
+      this._meterRafHandle = 0
+    }
+    // 衰减状态保留：再次启动 meter 时从最后位置继续
   }
 
   // strip 期望的 handler 接口 vs createHostApp 暴露的接口 —— 这里做一层桥接

@@ -195,6 +195,32 @@ export class ProjectAudioGraph {
     return Boolean(this.syncTrackState(trackId, { inserts }))
   }
 
+  /**
+   * 读取某轨当前的双声道 peak 值（归一化 [0, 1]）。
+   * 调用方一般在 RAF 循环里调；不存在该轨或 audioGraph 未起来时返回 { peakL: 0, peakR: 0 }
+   *
+   * peak = max |sample - 128| / 128（Uint8 时域采样，0~255 中点 128）
+   */
+  getTrackPeak(trackId) {
+    const channel = this.trackChannels.get(trackId)
+    if (!channel?.meterAnalyserL || !channel?.meterAnalyserR) return { peakL: 0, peakR: 0 }
+    let peakL = 0
+    let peakR = 0
+    try {
+      channel.meterAnalyserL.getByteTimeDomainData(channel.meterDataL)
+      channel.meterAnalyserR.getByteTimeDomainData(channel.meterDataR)
+      const dL = channel.meterDataL
+      const dR = channel.meterDataR
+      for (let i = 0; i < dL.length; i++) {
+        const sL = Math.abs(dL[i] - 128)
+        if (sL > peakL) peakL = sL
+        const sR = Math.abs(dR[i] - 128)
+        if (sR > peakR) peakR = sR
+      }
+    } catch (_e) { /* 极端情况下节点可能正在 dispose */ }
+    return { peakL: peakL / 128, peakR: peakR / 128 }
+  }
+
   setTrackGuitarTone(trackId, guitarTone) {
     return Boolean(this.syncTrackState(trackId, { guitarTone }))
   }
@@ -225,6 +251,10 @@ export class ProjectAudioGraph {
     disconnectNode(channel.input)
     disconnectNode(channel.postInsert)
     disconnectNode(channel.pan)
+    // peak meter tap 节点：splitter + 两个 analyser 都要断开
+    disconnectNode(channel.meterSplitter)
+    disconnectNode(channel.meterAnalyserL)
+    disconnectNode(channel.meterAnalyserR)
     disconnectNode(channel.volume)
     disconnectNode(channel.send)
     return true
@@ -337,6 +367,31 @@ export class ProjectAudioGraph {
     })
     pan.pan.value = normalizeTrackPan(state.pan)
 
+    // ── Peak meter tap ─────────────────────────────────────────────
+    // 在 volume 节点上并联一个 tap，不动主信号路径；ChannelSplitter 分 L/R 给两个 AnalyserNode
+    // AnalyserNode 输出不接 destination —— Web Audio 允许悬空输出，仍正常采样
+    let meterSplitter = null
+    let meterAnalyserL = null
+    let meterAnalyserR = null
+    let meterDataL = null
+    let meterDataR = null
+    try {
+      meterSplitter = this.rawContext.createChannelSplitter(2)
+      meterAnalyserL = this.rawContext.createAnalyser()
+      meterAnalyserR = this.rawContext.createAnalyser()
+      // fftSize 越小越省 —— 256 个样本足以做 peak 检测（~5ms @ 48kHz），不需要更高分辨率
+      meterAnalyserL.fftSize = 256
+      meterAnalyserR.fftSize = 256
+      meterDataL = new Uint8Array(meterAnalyserL.fftSize)
+      meterDataR = new Uint8Array(meterAnalyserR.fftSize)
+      // volume → splitter → 各通道 → 各 analyser
+      volume.connect(meterSplitter)
+      meterSplitter.connect(meterAnalyserL, 0)
+      meterSplitter.connect(meterAnalyserR, 1)
+    } catch (error) {
+      this.logger?.warn?.('Track meter tap creation failed', { trackId, error: error?.message || String(error) })
+    }
+
     channel = {
       input,
       postInsert,
@@ -353,6 +408,12 @@ export class ProjectAudioGraph {
       insertEffect: null,
       insertId: '__uninitialized__',
       insertStateKey: '__uninitialized__',
+      // peak meter tap（可能为 null —— createChannelSplitter 在某些容错环境会失败）
+      meterSplitter,
+      meterAnalyserL,
+      meterAnalyserR,
+      meterDataL,
+      meterDataR,
     }
     this.trackChannels.set(trackId, channel)
     this._syncTrackInsert(channel, state)

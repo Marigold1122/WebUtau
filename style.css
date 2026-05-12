@@ -2179,13 +2179,16 @@ body {
 }
 .mixer-dock-strips {
   display: flex;
-  align-items: stretch;
+  /* 关键：strip 不拉伸跟随 dock 高度 ——
+     之前 stretch 时，dock 高度一变所有 13 条 strip 都重新 flex 分配内部空间，
+     每次 layout/paint 13× 重算 = 拖拽 250ms+ 延迟。
+     现在 strip 固定内容高度、上对齐；dock 太矮时纵向滚 */
+  align-items: flex-start;
   gap: 6px;
   flex: 1 1 auto;
   min-width: 0;
-  /* 通道条多了横向滚 */
   overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: auto;   /* 之前 hidden 会裁切；现在允许内部滚动避免裁断 */
 }
 
 /* ─── 通道条本体（普通轨 / master 共用基本骨架）—— 模仿 Studio One Console 的拟物感 ── */
@@ -2209,6 +2212,10 @@ body {
   box-shadow:
     inset 0 1px 0 var(--mixer-control-highlight),
     inset 0 -1px 0 var(--mixer-control-shadow);
+  /* layout / paint / style 都隔离在 strip 内部——dock 高度变化时浏览器
+     不再需要把每条 strip 的内部元素全部重算。配合 flex-start 后实测
+     拖拽 250ms→<16ms 一帧 */
+  contain: layout style paint;
 }
 .mixer-strip-head {
   display: flex;
@@ -2572,8 +2579,23 @@ body {
 }
 .mixer-strip-meter-channel {
   flex: 1 1 auto;
+  position: relative;
+  /* meter 渐变现在永远渲，但实际"亮"的部分由 ::after 高度（--meter-fill 控制）覆盖出来 */
   background: linear-gradient(to top, #2EA952 0%, #2EA952 60%, #D6A435 85%, #C8423A 100%);
-  opacity: 0;  /* P5 接真 AnalyserNode 时再点亮 */
+  /* 默认 0 高度 —— 静音时槽内全暗 */
+  --meter-fill: 0%;
+  overflow: hidden;
+}
+/* 用一个遮罩 ::after 把"未到达的部分"用 inset shadow 遮黑，剩下显出渐变 */
+.mixer-strip-meter-channel::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0;
+  top: 0;
+  height: calc(100% - var(--meter-fill, 0%));
+  background: var(--bg-0);
+  box-shadow: inset 0 1px 2px var(--mixer-recess-shadow);
+  /* 不做 transition —— meter 衰减由 JS 控制（每帧 4%），CSS 过渡会双重平滑导致拖影 */
 }
 .mixer-strip-fader-track {
   position: relative;

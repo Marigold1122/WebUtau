@@ -2136,6 +2136,8 @@ export function createHostApp() {
     isAutoFitMeasuring: () => projectMixController.isAutoFitMeasuring(),
     getLastAutoFitResult: () => projectMixController.getLastAutoFitResult(),
     subscribeLufs: (fn) => projectMixController.subscribeLufs(fn),
+    // 单轨 peak meter 读取——mixer dock 的 RAF 循环每帧调
+    getTrackPeak: (trackId) => projectAudioGraph.getTrackPeak(trackId),
     getMasterChainPresets: () => projectMixController.getMasterChainPresets(),
     onTrackSelected: handleTrackSelected,
     onTrackContextCreate: handleTrackContextCreate,
