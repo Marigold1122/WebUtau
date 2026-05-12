@@ -15,6 +15,7 @@
  */
 
 import { extractMusicStructure } from '../ai/extractMusicStructure.js'
+import { buildPartialRetryPrompt, mergePartialRetryResponse } from '../ai/buildLyricPrompt.js'
 import { LyricAIClient } from '../ai/LyricAIClient.js'
 import {
   clearUserApiConfig,
@@ -429,7 +430,19 @@ export class QuickLyricPanel {
     //     各的、互不干扰
     const baseStructure = extractMusicStructure(this._snapshot)
     const musicStructure = this._buildMusicStructureFromOfficial(baseStructure, officialNonEmpty)
-    const result = await this._aiClient.generate({
+    let result = await this._aiClient.generate({
+      musicStructure,
+      theme,
+      style,
+      signal: this._aiAbortController.signal,
+    })
+    if (!this._el || !this._textarea) return
+
+    // 字数错位时自动局部重写：只把错的句子重投给 LLM，配上"已写好的部分"作上下文，
+    // 拿回来合并。用户得到一套完整的歌词，免去"一两句字数不对就整次报废"的挫败。
+    // 触发门槛：错位句不超过 5 句（量大就大概率重写后还是错，省得多绕一圈耗 token）
+    result = await this._maybePartialRetry({
+      initialResult: result,
       musicStructure,
       theme,
       style,
@@ -471,7 +484,89 @@ export class QuickLyricPanel {
     this._aiCurrentCandidateIdx = this._aiCandidates.length - 1
     this._renderCandidatesStrip()
 
-    this._setStatus(t('quickLyric.ai.ai_done', { count: result.flatChars.length }), 'success')
+    // 自动局部重写过的话——给用户一个温和的提示，让 ta 知道初次输出有几句字数对不上、
+    // 系统重写了那几句。展示原始 + 局部重写后的最终成品；不提示的话用户不知道发生了什么
+    if (Array.isArray(result.retriedIndices) && result.retriedIndices.length > 0) {
+      this._setStatus(
+        t('quickLyric.ai.ai_done_after_retry', {
+          count: result.flatChars.length,
+          retried: result.retriedIndices.join('、'),
+        }),
+        'success',
+      )
+    } else {
+      this._setStatus(t('quickLyric.ai.ai_done', { count: result.flatChars.length }), 'success')
+    }
+  }
+
+  // 检测 initialResult 是不是字数错位、错位句不多（≤ 5）就只把错位句送给 LLM 重写一次。
+  // 重写成功 → 合并，返回 ok:true 加 retriedIndices；重写也失败或错位太多 → 透传原失败
+  async _maybePartialRetry({ initialResult, musicStructure, theme, style, signal }) {
+    if (initialResult?.ok) return initialResult
+    // 只针对 syllable-mismatch + 有 corrections / parsedPhrases 的失败做局部重写
+    // （后端路径 422 也可能给 syllable-mismatch 但缺这俩字段——那条路径不支持 retry）
+    if (initialResult?.reason !== 'parse-failed') return initialResult
+    const corrections = initialResult.details?.corrections
+    const parsedPhrases = initialResult.details?.parsedPhrases
+    if (!Array.isArray(corrections) || corrections.length === 0) return initialResult
+    if (!Array.isArray(parsedPhrases) || parsedPhrases.length === 0) return initialResult
+    // 量大不重写——错 6 句以上多半是 LLM 整体跑偏，再投一次也是错，省得空耗
+    if (corrections.length > 5) return initialResult
+
+    const retried = corrections.map((c) => c.phraseIndex)
+    this._setStatus(t('quickLyric.ai.partial_retry_in_progress', { count: corrections.length, indices: retried.join('、') }), 'info')
+
+    let retryMessages
+    try {
+      retryMessages = buildPartialRetryPrompt({
+        originalMusicStructure: musicStructure,
+        parsedPhrases,
+        corrections,
+        theme,
+        style,
+      })
+    } catch (_e) {
+      return initialResult  // 兜底失败照样透传原错误
+    }
+
+    // 用同一个 generate 入口（messages 参数传入自定义 prompt），让两种 key 路径都能复用
+    // 关键：重写请求的 musicStructure **只含错位句**，让 parseLyricResponse 用对的字数对照
+    const subMusicStructure = {
+      ...musicStructure,
+      phrases: corrections.map((c) => ({
+        ...(musicStructure.phrases[c.phraseIndex - 1] || {}),
+        index: c.phraseIndex,
+        syllableCount: c.expected,
+      })),
+      phraseCount: corrections.length,
+      totalNotes: corrections.reduce((s, c) => s + c.expected, 0),
+    }
+    const retryResult = await this._aiClient.generate({
+      musicStructure: subMusicStructure,
+      theme,
+      style,
+      messages: retryMessages,
+      signal,
+    })
+    if (!retryResult.ok) {
+      // 重写失败：告诉用户大致原因，再让 ta 决定要不要手动重试
+      return initialResult
+    }
+
+    // 重写出来的句子按对应位置合回原 parsedPhrases
+    const merged = mergePartialRetryResponse({
+      retryPhrases: retryResult.phrases,
+      parsedPhrases,
+      corrections,
+      originalMusicStructure: musicStructure,
+    })
+    if (!merged.ok) return initialResult
+    return {
+      ok: true,
+      phrases: merged.phrases,
+      flatChars: merged.flatChars,
+      retriedIndices: retried,
+    }
   }
 
   // ── AI 候选轮播 ───────────────────────────────────
@@ -567,10 +662,11 @@ export class QuickLyricPanel {
       return {
         index: i + 1,
         syllableCount: chars.length,
-        // 没有真实的 per-line note 映射；rhythm 用占位（'短' x N），AI 不靠它写出歌词
-        rhythm: new Array(chars.length).fill('短'),
-        pitchLow: baseStructure?.pitchLow || null,
-        pitchHigh: baseStructure?.pitchHigh || null,
+        // 没有真实的 per-line note 映射——明确传 null，让 describeMusicForPrompt
+        // 跳过对应渲染段。整体 pitchLow/High 仍然挂在 structure 顶层，给 AI 大范围参考
+        rhythm: null,
+        pitchLow: null,
+        pitchHigh: null,
         existingLyrics: null,
       }
     })

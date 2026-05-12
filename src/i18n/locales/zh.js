@@ -301,6 +301,8 @@ export const messages = {
       pick_track_first: '请先选择有 MIDI 的轨道',
       need_theme: '请填写主题 / 情绪',
       ai_done: '✓ AI 生成 {count} 字，请点"解析"再"保存"',
+      ai_done_after_retry: '✓ AI 生成 {count} 字（第 {retried} 句初次字数对不上、已自动重投 LLM 修订）',
+      partial_retry_in_progress: 'AI 第 {indices} 句字数对不上，正在重投 LLM 单独重写这 {count} 句…',
       quota_using_user_key: '· 已用自己的 API key（存于{store}，直连厂商不经过我们服务器）',
       quota_remaining: '· 今日剩余 {remaining} / {limit} 次',
       quota_exhausted: '· 今日次数已用完（{limit}/{limit}），可填自己的 API key 不限',

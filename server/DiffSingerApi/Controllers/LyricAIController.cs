@@ -80,8 +80,11 @@ public class LyricAIController : ControllerBase {
             Messages: req.Messages.Select(m => new LyricAIService.ChatMessage(m.Role ?? "user", m.Content ?? "")).ToList(),
             MusicStructure: req.MusicStructure);
 
-        // 服务内部会做最多 3 次"自校验 + 错位反馈重试"——如果 LLM 第一轮数错字了，
-        // 把具体错位喂回去让它修。这里返回时只剩两种：成功，或重试用尽仍不合规
+        // 服务内部会做最多 3 次"自校验 + 错位反馈重试"——错位句 ≤ 5 时走**局部修订**
+        // 模式（只让 LLM 重写错位的几句、后端把它合并回上一轮的对句），其他场景走完整
+        // 重投。**所有内部重试都在这一个 HTTP 请求里完成、共用同一次配额扣减**——
+        // 用户拿到一份完整歌词必然只消耗一次每日免费配额。
+        // 返回时只剩两种：成功，或重试用尽仍不合规
         var result = await _service.GenerateAsync(serviceReq, ct);
 
         // 上游错误（401 / 超时 / 网络）——retries 之后没拿到合规歌词，退还配额

@@ -12,6 +12,11 @@
     <ProjectReference Include="..\..\OpenUtau\OpenUtau.Plugin.Builtin\OpenUtau.Plugin.Builtin.csproj" />
   </ItemGroup>
 
+  <!-- 让测试项目能直接调内部静态助手（ValidateLyricResponseFull / MergePartialIntoAccumulated 等）-->
+  <ItemGroup>
+    <InternalsVisibleTo Include="DiffSingerApi.Tests" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Melanchall.DryWetMidi" Version="7.2.0" />
     <PackageReference Include="NAudio" Version="2.2.1" />

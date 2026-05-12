@@ -301,6 +301,8 @@ export const messages = {
       pick_track_first: 'Please select a track that has MIDI first.',
       need_theme: 'Please enter a theme or mood.',
       ai_done: '✓ AI generated {count} characters. Click "Parse" then "Save".',
+      ai_done_after_retry: '✓ AI generated {count} characters (phrase(s) {retried} had wrong syllable count and were automatically re-requested from the LLM).',
+      partial_retry_in_progress: 'AI got phrase(s) {indices} wrong; re-requesting those {count} phrase(s) from the LLM…',
       quota_using_user_key: '· Using your own API key (stored in {store}, called directly without our server)',
       quota_remaining: '· {remaining} / {limit} uses left today',
       quota_exhausted: '· Daily quota used up ({limit}/{limit}). Add your own API key for unlimited.',

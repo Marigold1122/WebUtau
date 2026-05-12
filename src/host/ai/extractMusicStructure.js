@@ -99,13 +99,19 @@ export function describeMusicForPrompt(structure) {
   lines.push('')
   lines.push(`## 每句要求（字数硬性约束——可视占位框是几个就必须写几个字）`)
   structure.phrases.forEach((phrase) => {
-    const rhythmStr = phrase.rhythm.join(' ')
-    const pitchPart = (phrase.pitchLow && phrase.pitchHigh)
-      ? `音域 ${phrase.pitchLow}-${phrase.pitchHigh}`
-      : '音域未知'
     // 把字数渲染成"□ □ □ □"——LLM 把每个 □ 替换成一个汉字，视觉上一一对应不易数错
     const slots = '□ '.repeat(phrase.syllableCount).trim()
-    let line = `- 第 ${phrase.index} 句：必须正好 ${phrase.syllableCount} 个字 ${slots}（节奏「${rhythmStr}」，${pitchPart}）`
+    // 当 rhythm / pitch 不是真实的逐句数据（如来自官方歌词的占位）时整段省略——
+    // 不光省 input token，也避免给 LLM 误导信息（35 句全标"短 短 短"会让 LLM 怀疑结构）
+    const rhythmPart = Array.isArray(phrase.rhythm) && phrase.rhythm.length > 0
+      ? `节奏「${phrase.rhythm.join(' ')}」`
+      : null
+    const pitchPart = (phrase.pitchLow && phrase.pitchHigh)
+      ? `音域 ${phrase.pitchLow}-${phrase.pitchHigh}`
+      : null
+    const detail = [rhythmPart, pitchPart].filter(Boolean).join('，')
+    let line = `- 第 ${phrase.index} 句：必须正好 ${phrase.syllableCount} 个字 ${slots}`
+    if (detail) line += `（${detail}）`
     if (Array.isArray(phrase.existingLyrics)) {
       // 用 _ 占位空字符，让 LLM 知道哪些字已写、哪些要补
       const filled = phrase.existingLyrics.map((s) => s || '_').join(' ')

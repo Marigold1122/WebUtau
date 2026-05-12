@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -15,7 +14,14 @@ namespace DiffSingerApi.Services;
 // 重试策略：LLM 数中文字数本来就不可靠（BPE 分词与汉字不对齐）。
 // 推荐配 deepseek-reasoner（思考模式）当主力——它会先在内部"数一遍"，单次成功率 ~95%；
 // 万一仍出错，把上次错答连同具体错位丢回去让模型修正。
-// 重试只消耗平台 LLM 调用费，不增加用户配额扣减。
+// 重试只消耗平台 LLM 调用费，**不增加用户配额扣减**（一次 HTTP 请求恒等于一次配额）。
+//
+// 重试模式分两档：
+//   - syllable-mismatch + 错位 ≤ PartialRetryThreshold (5) → **局部修订**模式：
+//     让 LLM 只输出错位的几句，后端把它合并回上一轮的对句。token 成本 / 时间 / 失误率
+//     都低很多，长歌词尤其有效（35 句错 1 句不用整篇重写）
+//   - 其它（invalid-json / missing-phrases / 错位太多）→ **完整重投**模式：
+//     传统做法，把上轮错答附在 conversation 后面让 LLM 完整重写
 //
 // MaxAttempts = 3 的取舍：
 // - deepseek-chat（非思考，~5s/轮，单次 30% 失败）：3 次封顶 ~15s，从 30% 压到 ~3%
@@ -23,6 +29,9 @@ namespace DiffSingerApi.Services;
 // - 给用户 timeout 上限是 240s，3 次封顶完全在预算内
 public sealed class LyricAIService {
     private const int MaxAttempts = 3;
+    // 错位 ≤ 5 句走局部修订；超过这个数大概率是 LLM 整体跑偏（音乐结构没看懂或主题没把握），
+    // 完整重投反而更可能在剩下次数内修好
+    private const int PartialRetryThreshold = 5;
 
     private readonly LyricAIOptions _options;
     private readonly HttpClient _http;
@@ -80,6 +89,10 @@ public sealed class LyricAIService {
         var conversation = new List<ChatMessage>(request.Messages);
         LyricParseFailure? lastFailure = null;
         string? lastContent = null;
+        // 上一轮解析出来的"完整 phrases"（含错句）。局部修订成功后用它做合并基底
+        List<LyricResponseValidator.ParsedPhraseData>? accumulatedPhrases = null;
+        // 标记当前轮 LLM 是否被指示走"只输出错位句"模式（影响这一轮响应的解析方式）
+        bool currentRoundIsPartial = false;
 
         for (int attempt = 1; attempt <= MaxAttempts; attempt++) {
             var llmResult = await CallLLMOnceAsync(apiKey, fullUrl, model, conversation, ct);
@@ -89,24 +102,61 @@ public sealed class LyricAIService {
             }
 
             var content = llmResult.Content ?? "";
-            var failure = ValidateLyricResponse(content, request.MusicStructure);
-            if (failure == null) {
-                if (attempt > 1) {
-                    _logger.LogInformation("LyricAI succeeded on attempt {Attempt}", attempt);
+            // 第 2/3 轮如果上一轮指示了"局部修订"，把这一轮的局部响应合并回 accumulatedPhrases。
+            // 校验和返回的 Content 都基于合并后的完整版
+            string contentForValidation = content;
+            if (currentRoundIsPartial && accumulatedPhrases != null) {
+                var partialPhrases = LyricResponseValidator.ParsePhrasesShallow(content);
+                if (partialPhrases != null && partialPhrases.Count > 0) {
+                    accumulatedPhrases = LyricResponseValidator.MergePartialIntoAccumulated(accumulatedPhrases, partialPhrases);
+                    contentForValidation = LyricResponseValidator.SerializePhrasesToJson(accumulatedPhrases);
                 }
-                return llmResult with { Attempts = attempt };
+                // 局部响应解析不出 → 把 LLM 本轮的整体输出（很可能 LLM 又给了完整 JSON）拿去校验
             }
 
-            lastFailure = failure;
-            lastContent = content;
+            var validation = LyricResponseValidator.ValidateLyricResponseFull(contentForValidation, request.MusicStructure);
+            if (validation.FirstFailure == null) {
+                if (attempt > 1) {
+                    _logger.LogInformation(
+                        "LyricAI succeeded on attempt {Attempt} (partial={Partial})",
+                        attempt, currentRoundIsPartial);
+                }
+                // 返回校验过的完整 JSON（局部修订路径下是合并版；完整重投路径下是 LLM 本轮原文）
+                return new GenerateResult(true, contentForValidation, null, null, Attempts: attempt);
+            }
+
+            lastFailure = validation.FirstFailure;
+            lastContent = contentForValidation;
+            // 把这一轮解析出来的 phrases 留作下一轮"局部修订"的合并基底
+            if (validation.Phrases != null) {
+                accumulatedPhrases = validation.Phrases;
+            }
+
             _logger.LogInformation(
-                "LyricAI attempt {Attempt}/{Max} failed validation: {Reason} (phrase={Phrase}, expected={Exp}, actual={Act})",
-                attempt, MaxAttempts, failure.Reason, failure.PhraseIndex, failure.Expected, failure.Actual);
+                "LyricAI attempt {Attempt}/{Max} failed validation: {Reason} (phrase={Phrase}, expected={Exp}, actual={Act}, totalErrors={Errors})",
+                attempt, MaxAttempts, validation.FirstFailure.Reason,
+                validation.FirstFailure.PhraseIndex, validation.FirstFailure.Expected, validation.FirstFailure.Actual,
+                validation.AllFailures.Count);
 
             if (attempt < MaxAttempts) {
-                // 把上次的错答和具体错位喂回去——LLM 看到自己刚说错什么，下次就能修正
+                // 判定下一轮策略：syllable-mismatch + 错位 ≤ 5 + 上一轮解析出 phrases → 局部修订
+                bool nextIsPartial = validation.Phrases != null
+                    && validation.AllFailures.Count > 0
+                    && validation.AllFailures.Count <= PartialRetryThreshold
+                    && validation.AllFailures.All(f => f.Reason == "syllable-mismatch");
+
                 conversation.Add(new ChatMessage("assistant", content));
-                conversation.Add(new ChatMessage("user", BuildCorrectionPrompt(failure)));
+                if (nextIsPartial) {
+                    conversation.Add(new ChatMessage("user",
+                        LyricResponseValidator.BuildPartialRetryCorrectionPrompt(validation.Phrases!, validation.AllFailures)));
+                    currentRoundIsPartial = true;
+                } else {
+                    conversation.Add(new ChatMessage("user",
+                        LyricResponseValidator.BuildCorrectionPrompt(validation.FirstFailure)));
+                    currentRoundIsPartial = false;
+                    // 走完整重投：下一轮 LLM 输出的就是全文，重置 accumulatedPhrases 等下一轮重新填
+                    accumulatedPhrases = null;
+                }
             }
         }
 
@@ -172,124 +222,6 @@ public sealed class LyricAIService {
             _logger.LogError(ex, "LyricAI unexpected error");
             return new GenerateResult(false, null, $"LLM 内部错误: {ex.Message}", null);
         }
-    }
-
-    // 根据校验失败的具体类型，造一段"对症下药"的纠错提示给 LLM
-    private static string BuildCorrectionPrompt(LyricParseFailure failure) {
-        switch (failure.Reason) {
-            case "syllable-mismatch":
-                return $"你上一轮的输出中，第 {failure.PhraseIndex} 句给了 {failure.Actual} 个字，"
-                     + $"但音乐结构要求该句必须是 {failure.Expected} 个字。"
-                     + $"请重新输出**完整的** JSON：第 {failure.PhraseIndex} 句改成正好 {failure.Expected} 个字，"
-                     + "其它句的字数也要严格对齐音乐结构里的 syllableCount。"
-                     + "提醒：每个汉字算 1 个字，标点不算；不要包含 markdown 代码块标记。";
-            case "phrase-count-mismatch":
-                return $"你上一轮输出了 {failure.Actual} 句歌词，但音乐结构有 {failure.Expected} 句。"
-                     + $"请重新输出完整 JSON，必须**恰好 {failure.Expected} 个 phrase**，"
-                     + "并且每个 phrase 的字数都严格等于该句对应的 syllableCount。";
-            case "invalid-json":
-                return "你上一轮的输出不是合法 JSON，无法解析。请严格按系统提示中的 JSON 结构重新输出："
-                     + "{\"phrases\":[...]}，不要使用 markdown 代码块、不要加任何说明文字。";
-            case "missing-phrases":
-                return "你上一轮输出的 JSON 缺少 phrases 数组。请重新输出，根节点必须是 "
-                     + "{\"phrases\":[{...}, ...]} 这种结构。";
-            case "phrase-shape":
-                return $"你上一轮输出的第 {failure.PhraseIndex} 句格式不对——lyric 字段缺失或不是字符数组。"
-                     + "请重新输出完整 JSON：每个 phrase 必须有 \"lyric\": [\"字\", \"字\", ...] 这种字符数组。";
-            case "empty-response":
-                return "你上一轮没有返回任何内容。请按要求输出完整 JSON。";
-            default:
-                return "你上一轮的输出不符合要求，请严格按系统提示中的格式重新输出 JSON，"
-                     + "保证 phrases 数量与每句字数都准确匹配音乐结构。";
-        }
-    }
-
-    // 服务端预校验：解析 LLM 返回的 JSON，核对 phrases 数量与每句音节数是否与
-    // musicStructure 匹配。返回 null 表示通过；返回非 null 表示该退还配额或重试。
-    // 容忍 LLM 偶尔包 markdown 代码块，以及 lyric 写成字符串而非数组的情况
-    private static LyricParseFailure? ValidateLyricResponse(string? rawText, JsonElement? musicStructure) {
-        if (string.IsNullOrWhiteSpace(rawText)) {
-            return new LyricParseFailure("empty-response");
-        }
-        var body = rawText.Trim();
-        if (body.StartsWith("```")) {
-            int firstNewline = body.IndexOf('\n');
-            if (firstNewline > 0) body = body.Substring(firstNewline + 1);
-            if (body.EndsWith("```")) body = body.Substring(0, body.Length - 3);
-            body = body.Trim();
-        }
-
-        JsonDocument? doc;
-        try { doc = JsonDocument.Parse(body); }
-        catch { return new LyricParseFailure("invalid-json"); }
-        using (doc) {
-            var root = doc.RootElement;
-            if (root.ValueKind != JsonValueKind.Object ||
-                !root.TryGetProperty("phrases", out var phrasesEl) ||
-                phrasesEl.ValueKind != JsonValueKind.Array) {
-                return new LyricParseFailure("missing-phrases");
-            }
-
-            var expectedSyllables = ExtractExpectedSyllables(musicStructure);
-            int phraseCount = phrasesEl.GetArrayLength();
-            if (expectedSyllables != null && phraseCount != expectedSyllables.Count) {
-                return new LyricParseFailure(
-                    "phrase-count-mismatch",
-                    Expected: expectedSyllables.Count,
-                    Actual: phraseCount);
-            }
-
-            for (int i = 0; i < phraseCount; i++) {
-                var p = phrasesEl[i];
-                int actual;
-                if (p.ValueKind == JsonValueKind.Object && p.TryGetProperty("lyric", out var lyricEl)) {
-                    if (lyricEl.ValueKind == JsonValueKind.Array) {
-                        actual = lyricEl.GetArrayLength();
-                    } else if (lyricEl.ValueKind == JsonValueKind.String) {
-                        var s = lyricEl.GetString() ?? "";
-                        actual = CountChars(s.Trim());
-                    } else {
-                        return new LyricParseFailure("phrase-shape", PhraseIndex: i + 1);
-                    }
-                } else {
-                    return new LyricParseFailure("phrase-shape", PhraseIndex: i + 1);
-                }
-                if (expectedSyllables != null) {
-                    int want = expectedSyllables[i];
-                    if (actual != want) {
-                        return new LyricParseFailure(
-                            "syllable-mismatch",
-                            PhraseIndex: i + 1,
-                            Expected: want,
-                            Actual: actual);
-                    }
-                }
-            }
-        }
-        return null;
-    }
-
-    private static List<int>? ExtractExpectedSyllables(JsonElement? musicStructure) {
-        if (musicStructure == null) return null;
-        var ms = musicStructure.Value;
-        if (ms.ValueKind != JsonValueKind.Object) return null;
-        if (!ms.TryGetProperty("phrases", out var phrasesEl) ||
-            phrasesEl.ValueKind != JsonValueKind.Array) return null;
-        var list = new List<int>(phrasesEl.GetArrayLength());
-        foreach (var p in phrasesEl.EnumerateArray()) {
-            if (p.ValueKind != JsonValueKind.Object ||
-                !p.TryGetProperty("syllableCount", out var sc) ||
-                !sc.TryGetInt32(out var n)) {
-                return null;
-            }
-            list.Add(n);
-        }
-        return list;
-    }
-
-    private static int CountChars(string s) {
-        if (string.IsNullOrEmpty(s)) return 0;
-        return new StringInfo(s).LengthInTextElements;
     }
 
     private static string Truncate(string s, int max) {

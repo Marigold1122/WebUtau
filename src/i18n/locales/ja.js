@@ -301,6 +301,8 @@ export const messages = {
       pick_track_first: 'まず MIDI のあるトラックを選んでください。',
       need_theme: 'テーマ／気分を入力してください。',
       ai_done: '✓ AI が {count} 文字を生成。「解析」→「保存」を押してください。',
+      ai_done_after_retry: '✓ AI が {count} 文字を生成（第 {retried} 句の文字数が初回不一致のため、LLM に自動で再依頼しました）',
+      partial_retry_in_progress: 'AI 第 {indices} 句の文字数が不一致。該当 {count} 句を LLM に再依頼中…',
       quota_using_user_key: '· 自分の API キーを使用中（{store} に保存、サーバーを介さず直接呼び出し）',
       quota_remaining: '· 本日の残り {remaining} / {limit} 回',
       quota_exhausted: '· 本日の回数を使い切りました（{limit}/{limit}）。自分のキーを設定すれば無制限',

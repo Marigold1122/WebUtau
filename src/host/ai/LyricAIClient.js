@@ -39,22 +39,26 @@ export class LyricAIClient {
     this.fetchImpl = fetchImpl || ((...args) => globalThis.fetch?.(...args))
   }
 
-  async generate({ musicStructure, theme, style = '', extraInstruction = '', signal = null } = {}) {
+  async generate({ musicStructure, theme, style = '', extraInstruction = '', messages = null, signal = null } = {}) {
     if (!musicStructure) {
       return { ok: false, reason: 'missing-music-structure' }
     }
-    let messages
-    try {
-      messages = buildLyricPrompt({ musicStructure, theme, style, extraInstruction })
-    } catch (error) {
-      return { ok: false, reason: 'prompt-build-failed', error: error?.message }
+    // 局部重写场景下调用方会传一份自己构造的 messages（buildPartialRetryPrompt
+    // 出来的）；正常生成场景 messages = null，走默认 buildLyricPrompt
+    let resolvedMessages = messages
+    if (!resolvedMessages) {
+      try {
+        resolvedMessages = buildLyricPrompt({ musicStructure, theme, style, extraInstruction })
+      } catch (error) {
+        return { ok: false, reason: 'prompt-build-failed', error: error?.message }
+      }
     }
 
     // 关键判断：用户有自己的 key → 走直连 LLM 厂商；否则走我们后端
     if (await hasUserApiKey()) {
-      return this._directGenerate(messages, musicStructure, signal)
+      return this._directGenerate(resolvedMessages, musicStructure, signal)
     }
-    return this._backendGenerate(messages, musicStructure, signal)
+    return this._backendGenerate(resolvedMessages, musicStructure, signal)
   }
 
   // 路径 A：走 WebUtau 后端（平台密钥 + 限速）。用户 key 不会出现在请求里
