@@ -419,18 +419,20 @@ export class QuickLyricPanel {
     this._setStatus(t('quickLyric.ai.generating_status'), 'info')
 
     this._aiAbortController = new AbortController()
-    // musicStructure 用后端切好的 phrase 结构（aaaa 默认行结构）——这样 AI 输出
-    // 的每一句直接对应一个后端 phrase，保存时 1:1 灌字、不会出现"AI 一句歌词被
-    // 拆到两个后端 phrase 边界 → phonemizer 个别 note 失败 → backend 报 phrase
-    // 数对不上"的情况。
-    // 官方歌词改作主题灵感（extraInstruction），不再作为结构权威源
-    const musicStructure = extractMusicStructure(this._snapshot)
-    const extraInstruction = this._buildOfficialLyricsContext(officialNonEmpty)
+    // ★ AI 看到的结构 vs textarea 看到的结构是解耦的：
+    //   - musicStructure 用官方歌词的"一句一行"结构 → 让 LLM 写出来的每句句意
+    //     独立完整、严格匹配每行字数。后端的 aaaa 默认 phrase 切分是按音符间隔
+    //     切的、跟自然句子边界对不上，不能用来约束 LLM
+    //   - 拿到 result.flatChars 后再用**后端 phrase 切分**重新排列到 textarea
+    //     （_layoutFlatCharsByBackendPhrases），跟默认 aaaa 状态的行视觉一致
+    //   - 保存是按位置 1:1 灌字，跟 textarea 的行结构无关——所以两套切分各管
+    //     各的、互不干扰
+    const baseStructure = extractMusicStructure(this._snapshot)
+    const musicStructure = this._buildMusicStructureFromOfficial(baseStructure, officialNonEmpty)
     const result = await this._aiClient.generate({
       musicStructure,
       theme,
       style,
-      extraInstruction,
       signal: this._aiAbortController.signal,
     })
     if (!this._el || !this._textarea) return
@@ -445,9 +447,10 @@ export class QuickLyricPanel {
       return
     }
 
-    // AI 返回每行字——直接拼成 textarea 内容（一行一句）
-    const lines = result.phrases.map((p) => (p.lyric || []).join(''))
-    const textareaContent = lines.join('\n')
+    // AI 输出的 flatChars 重新按"后端 phrase 切分"排列到 textarea——
+    // 视觉上跟默认 aaaa 状态完全一致（多少行、每行多少字），不再被官方歌词的
+    // 行数干扰。AI 的"一句一行"约束只用于让 LLM 写出语义独立的句子，不参与渲染
+    const textareaContent = this._layoutFlatCharsByBackendPhrases(result.flatChars)
     this._textarea.value = textareaContent
     this._parsedLyrics = null
     this._btnSave.disabled = true
@@ -552,20 +555,53 @@ export class QuickLyricPanel {
     if (this._aiBtnRetake) this._aiBtnRetake.disabled = busy
   }
 
-  // 官方歌词改作"主题/意境灵感"喂给 AI，不再作为结构权威源——结构以后端
-  // phrase 切分为准（参 _handleAIGenerate）。返回值放进 extraInstruction，
-  // 系统提示词会把它定位为"参考素材"，AI 不会照抄行结构
-  _buildOfficialLyricsContext(officialLines) {
-    if (!Array.isArray(officialLines) || officialLines.length === 0) return ''
-    const cleaned = officialLines.map((l) => l.replace(/^\s+|\s+$/g, '')).filter((l) => l.length > 0)
-    if (cleaned.length === 0) return ''
-    return [
-      '## 这首歌的官方歌词（仅作主题 / 意境 / 韵脚的参考素材）',
-      '',
-      '⚠️ 重要：以下歌词**只用于理解原曲主题、意象、押韵习惯**——你写新词时的**句数、每句字数必须严格匹配上面的"音乐结构"**（不是匹配官方歌词的行数和字数）。官方歌词的句数 / 字数和音乐结构通常对不上，**以音乐结构为准**。',
-      '',
-      cleaned.join('\n'),
-    ].join('\n')
+  // 把官方歌词的"一句一行"结构当成给 LLM 的 musicStructure：
+  //   - 句数 = 官方歌词非空行数
+  //   - 每句字数 = 该行去掉空白后的字符数
+  // 这样 LLM 才有清晰的"每句多少字"硬约束，写出来的句意独立完整。
+  // baseStructure 提供整体 bpm / pitch range / tempoLabel 等元信息——不直接用它的
+  // phrases，因为后端 phrase 是按音符间隔切的、跟自然句子边界对不上
+  _buildMusicStructureFromOfficial(baseStructure, officialLines) {
+    const phrases = officialLines.map((line, i) => {
+      const chars = [...line.replace(/\s/g, '')]
+      return {
+        index: i + 1,
+        syllableCount: chars.length,
+        // 没有真实的 per-line note 映射；rhythm 用占位（'短' x N），AI 不靠它写出歌词
+        rhythm: new Array(chars.length).fill('短'),
+        pitchLow: baseStructure?.pitchLow || null,
+        pitchHigh: baseStructure?.pitchHigh || null,
+        existingLyrics: null,
+      }
+    })
+    return {
+      totalNotes: phrases.reduce((s, p) => s + p.syllableCount, 0),
+      phraseCount: phrases.length,
+      bpm: baseStructure?.bpm ?? 120,
+      tempoLabel: baseStructure?.tempoLabel ?? '中速',
+      pitchLow: baseStructure?.pitchLow || null,
+      pitchHigh: baseStructure?.pitchHigh || null,
+      phrases,
+    }
+  }
+
+  // 把 AI 返回的 flatChars 按"后端 phrase 切分"重新排列到 textarea。
+  // 视觉上跟默认 aaaa 状态完全一致（多少句、每句多少字），便于用户对照。
+  // 字数充裕时按 phrase 大小切；字数不够时尾部 phrase 行变短；字数过多时
+  // 多出的字单独成尾行（后续 _handleParse 会爆 char_overflow 提醒用户）
+  _layoutFlatCharsByBackendPhrases(flatChars) {
+    const phraseSizes = (this._snapshot?.phrases || []).map((p) => (p.notes?.length || 0))
+    const lines = []
+    let cursor = 0
+    for (const size of phraseSizes) {
+      const slice = flatChars.slice(cursor, cursor + size)
+      lines.push(slice.join(''))
+      cursor += size
+    }
+    if (cursor < flatChars.length) {
+      lines.push(flatChars.slice(cursor).join(''))
+    }
+    return lines.join('\n')
   }
 
   _formatAIError(result) {
