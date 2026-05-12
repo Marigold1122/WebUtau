@@ -2162,8 +2162,13 @@ body {
   overflow-x: auto;
   overflow-y: auto;
   box-shadow: inset 0 5px 10px rgba(0,0,0,0.03);
+  opacity: 1;
+  /* 关闭时让 dock 平滑淡出 —— 开启走 .is-opening 那条 360ms 弹起动画，
+     关闭这边对称走 120ms 透明度收尾再 display:none，避免"瞬间黑"。
+     allow-discrete 让 display 也参与 transition 时序（先 opacity → 后 display） */
+  transition: opacity 120ms ease, display 120ms ease allow-discrete;
 }
-.bottom-fx-panel.hidden { display: none !important; }
+.bottom-fx-panel.hidden { display: none !important; opacity: 0; }
 
 /* ─── 底部 dock tabbar：Mixer / Reverb 切换（紧贴 dock 上方） ─────────────── */
 .bottom-dock-tabbar {
@@ -2176,7 +2181,11 @@ body {
   flex: 0 0 auto;
   user-select: none;
 }
-.bottom-dock-tabbar.hidden { display: none !important; }
+.bottom-dock-tabbar {
+  opacity: 1;
+  transition: opacity 120ms ease, display 120ms ease allow-discrete;
+}
+.bottom-dock-tabbar.hidden { display: none !important; opacity: 0; }
 .bottom-dock-tab {
   appearance: none;
   border: 1px solid transparent;
@@ -4147,6 +4156,13 @@ body {
   width: 480px; padding: 12px 14px 10px;
   border: 1px solid #8F8A80; border-radius: 4px; background: #ECE8DE;
   box-shadow: 0 8px 28px rgba(0,0,0,0.18), inset 0 1px 0 #FFF;
+  /* 由 JS 挂到 body 上的浮窗——挂载时自动播一段 120ms 淡入 + 轻微下沉，
+     避免"瞬间砰一下"的视觉跳出 */
+  animation: quick-lyric-panel-enter 120ms ease-out both;
+}
+@keyframes quick-lyric-panel-enter {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 .quick-lyric-panel--dragging {
   box-shadow: 0 14px 36px rgba(0,0,0,0.26), inset 0 1px 0 #FFF;
@@ -6007,6 +6023,16 @@ body.inline-popover-active { }
 
 .inspector-section-body {
   padding: 10px 2px 2px;
+  /* 展开时 120ms 淡入，配合 ::before 旋转箭头的 0.15s 过渡，
+     避免折叠面板"瞬间空白" → "瞬间填满"的卡顿感。
+     @starting-style 在 [open] 首次匹配时把 opacity 起点定为 0，触发过渡 */
+  opacity: 1;
+  transition: opacity 120ms ease;
+}
+@starting-style {
+  .inspector-section[open] > .inspector-section-body {
+    opacity: 0;
+  }
 }
 
 /* 父级 section：仅靠浅底色暗示"里面还有分组"（左侧色条易显乱，已移除） */

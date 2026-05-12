@@ -2,8 +2,16 @@
 .modal-overlay {
   position: fixed; inset: 0; z-index: 1200; display: none; align-items: center; justify-content: center;
   background: rgba(43, 40, 37, 0.6); backdrop-filter: blur(4px);
+  /* 120ms 淡入淡出——避免"按一下卡一下"的瞬间空白；
+     display: discrete 让 display:none 也参与 transition 时序（先 opacity → 后 display）。
+     @starting-style 提供 is-open 类首次匹配时的起始 opacity:0，从而触发 0→1 过渡 */
+  opacity: 0;
+  transition: opacity 120ms ease, display 120ms ease allow-discrete;
 }
-.modal-overlay.is-open { display: flex; }
+.modal-overlay.is-open { display: flex; opacity: 1; }
+@starting-style {
+  .modal-overlay.is-open { opacity: 0; }
+}
 
 .modal-dialog {
   width: min(420px, calc(100vw - 32px)); padding: 20px 20px 16px;
@@ -90,7 +98,10 @@
 .export-actions .modal-btn { min-width: 0; flex: 1 1 auto; }
 .export-actions #btn-export-audio-cancel { flex: 0 0 auto; min-width: 56px; }
 
-.modal-overlay#export-audio-modal.visible { display: flex; }
+.modal-overlay#export-audio-modal.visible { display: flex; opacity: 1; }
+@starting-style {
+  .modal-overlay#export-audio-modal.visible { opacity: 0; }
+}
 
 body.modal-open .app-container, body.modal-open .menubar, body.modal-open #status-bar { user-select: none; }
 
