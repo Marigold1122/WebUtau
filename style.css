@@ -48,6 +48,15 @@
   --gap-md: 12px;
   --gap-lg: 16px;
   --gap-xl: 24px;
+  /* ─── 设计 token：Hover 反馈强度 ───────────────────────────────────────
+     基线：Linear / Figma / Bitwig——只用轻量 tint 叠层，不再"整块换底色"。
+     hover 和 active/selected 的层级分离全靠这一档：
+       - hover：rgba 黑色 5%~8% 叠加，几乎察觉但不喧宾夺主
+       - active/selected：保留各自原本更重的处理（实底色 / inset 凹陷）
+     语义型按钮（primary/danger）的 hover 由它们自己决定，不走这套 token */
+  --hover-bg: rgba(0, 0, 0, 0.05);
+  --hover-bg-strong: rgba(0, 0, 0, 0.08);
+  --hover-ring: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
 
   /* ─── 混音器控件主题变量（亮模式：奶油拉丝铝拟物） ─────────────────────
      旋钮 / 推子 / 按钮的"金属面"颜色专门一套——既要和 bg-1 ~ bg-4 协调，
@@ -123,6 +132,11 @@
   --mixer-db-bg: rgba(0,0,0,0.28);
   --mixer-db-border: rgba(0,0,0,0.45);
   --mixer-db-shadow: rgba(0,0,0,0.55);
+
+  /* 暗模式 hover：用白色叠层而非黑色（深底之上加暗会消失） */
+  --hover-bg: rgba(255, 255, 255, 0.06);
+  --hover-bg-strong: rgba(255, 255, 255, 0.10);
+  --hover-ring: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
 
 /* 主题过渡：用 View Transitions API（document.startViewTransition）做合成器层
@@ -221,9 +235,7 @@
   transition: background 200ms ease, border-color 200ms ease, color 200ms ease, transform 140ms ease;
 }
 .theme-toggle:hover {
-  background: var(--bg-1);
-  border-color: var(--border-light);
-  transform: translateY(-0.5px);
+  background: var(--hover-bg);
 }
 .theme-toggle:active {
   transform: translateY(0.5px);
@@ -400,8 +412,7 @@ body {
   transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 .menubar-project-plate:hover {
-  background: var(--bg-1);
-  border-color: var(--border-light);
+  background: var(--hover-bg);
 }
 .menubar-project-plate:active {
   background: var(--bg-4);
@@ -460,10 +471,9 @@ body {
 }
 
 .menu-item:hover {
-  background: var(--bg-3);
-  border-color: var(--border-color);
+  /* 轻 tint + 文本色加重——不再"按一下变白底带阴影"的整块换皮 */
+  background: var(--hover-bg);
   color: var(--text-main);
-  box-shadow: 0 1px 2px rgba(0,0,0,0.05), inset 0 1px 0 #FFF;
 }
 
 .menu-item.active {
@@ -1223,7 +1233,8 @@ body {
     transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 .track-item:hover {
-  background: #F8F7F4;
+  /* Linear 风格：轻 tint 叠层。原本 #F8F7F4 与 .active 完全同色——分不清 */
+  background: var(--hover-bg);
 }
 .track-item.active {
   background: #F8F7F4;
@@ -1258,10 +1269,8 @@ body {
 }
 
 .track-add-button:hover {
-  background: rgba(248, 247, 244, 0.96);
+  background: var(--hover-bg);
   border-color: rgba(59, 139, 136, 0.78);
-  box-shadow: 0 6px 14px rgba(59, 139, 136, 0.12);
-  transform: translateY(-1px);
 }
 
 .track-add-button:focus-visible {
@@ -1722,7 +1731,7 @@ body {
   transition: all 0.05s;
 }
 .t-btn:hover {
-  background: var(--bg-4);
+  background: var(--hover-bg);
 }
 .t-btn.active {
   color: #FFF;
@@ -2143,7 +2152,7 @@ body {
   color: var(--text-main); font-weight: 500; font-size: 11px;
   cursor: pointer; transition: all 0.1s ease; box-shadow: 0 1px 1px rgba(0,0,0,0.05), inset 0 1px 0 #FFF;
 }
-.editor-close:hover { background: #E8E5DF; border-color: var(--border-light); }
+.editor-close:hover { background: var(--hover-bg); }
 
 .panel-resizer {
   height: 4px; flex-shrink: 0; background: transparent; cursor: ns-resize; transition: background 0.1s;
@@ -2214,7 +2223,7 @@ body {
   cursor: pointer;
   transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
-.bottom-dock-tab:hover { color: var(--text-main); background-color: var(--bg-3); }
+.bottom-dock-tab:hover { color: var(--text-main); background-color: var(--hover-bg); }
 .bottom-dock-tab.is-active {
   color: var(--text-main);
   background-color: var(--bg-fx-panel-active, var(--bg-fx-panel));
@@ -2242,7 +2251,7 @@ body {
   transition: background-color 0.12s ease, color 0.12s ease;
 }
 .bottom-dock-close:hover {
-  background-color: var(--bg-3);
+  background-color: var(--hover-bg);
   color: var(--text-main);
 }
 
@@ -2506,7 +2515,7 @@ body {
   transition: background 120ms ease, color 120ms ease;
 }
 .mixer-insert-popover-close:hover {
-  background: var(--bg-3);
+  background: var(--hover-bg);
   color: var(--text-main);
 }
 .mixer-insert-popover-body {
@@ -3319,8 +3328,7 @@ body {
   transition: background 140ms ease, border-color 140ms ease;
 }
 .fx-lufs-reset:hover {
-  background: #DCD5C4;
-  border-color: #8F8A80;
+  background: var(--hover-bg);
 }
 
 .fx-lufs-grid {
@@ -3868,8 +3876,7 @@ body {
 }
 
 .param-value:hover {
-  background: #EFEDE7;
-  border-color: #B8B5AE;
+  background: var(--hover-bg);
 }
 
 .param-group.editing .param-value {
@@ -4195,7 +4202,7 @@ body {
   width: 22px; height: 22px; border: none; background: none; color: #666158;
   font-size: 16px; line-height: 1; cursor: pointer; border-radius: var(--radius-sm);
 }
-.quick-lyric-close:hover { background: #D8D3C8; }
+.quick-lyric-close:hover { background: var(--hover-bg); }
 .quick-lyric-textarea {
   display: block; width: 100%; height: 180px; padding: 8px 10px;
   border: 1px solid #C2BCAE; border-radius: var(--radius-sm); background: #F8F5EE; color: #2B2825;
@@ -4352,7 +4359,7 @@ body {
   color: var(--text-muted);
 }
 [data-theme='dark'] .quick-lyric-close:hover {
-  background: var(--bg-3);
+  background: var(--hover-bg);
 }
 
 /* ─── AI 区里的"官方歌词"提示 + 按钮 ─────────────────────── */
@@ -4398,7 +4405,7 @@ body {
   transition: background 0.15s, border-color 0.15s, transform 0.08s;
 }
 .quick-lyric-ai-adjust-btn:hover {
-  background: var(--bg-3);
+  background: var(--hover-bg);
   border-color: var(--accent-color);
 }
 .quick-lyric-ai-adjust-btn:active { transform: scale(0.97); }
@@ -4475,7 +4482,7 @@ body {
   transition: background 0.15s, color 0.15s;
 }
 .official-lyrics-close:hover {
-  background: var(--bg-3);
+  background: var(--hover-bg);
   color: var(--text-main);
 }
 
@@ -5145,7 +5152,7 @@ body {
   padding: 0; border: 1px solid var(--border-light); border-radius: var(--radius-sm);
   background: var(--bg-3); color: var(--text-main); cursor: pointer; transition: background 0.1s;
 }
-.playback-toast-close:hover { background: var(--bg-4); }
+.playback-toast-close:hover { background: var(--hover-bg); }
 
 /* 右侧属性面板 (Hardware Rack 风格) */
 .inspector {
@@ -5259,7 +5266,7 @@ body {
   background: linear-gradient(180deg, #FFFFFF 0%, #F0EDE5 100%); color: var(--text-main); cursor: pointer; font-size: 11px; font-weight: 600;
   box-shadow: 0 1px 1px rgba(0,0,0,0.05), inset 0 1px 0 #FFF; transition: all 0.1s ease;
 }
-.panel-action-btn:hover:not(:disabled) { background: #E8E5DF; border-color: var(--border-light); }
+.panel-action-btn:hover:not(:disabled) { background: var(--hover-bg); }
 .panel-action-btn:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; background: var(--bg-2);}
 .panel-action-btn--primary { color: #FFF; border-color: #276B69; background: var(--accent-color); box-shadow: inset 0 1px 0 rgba(255,255,255,0.2), 0 1px 2px rgba(59,139,136,0.2); }
 .panel-action-btn--primary:hover:not(:disabled) { background: #327A77; }
@@ -5282,7 +5289,7 @@ body {
   width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border: 1px solid transparent;
   position: relative; border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); cursor: pointer; transition: all 0.1s;
 }
-.side-icon:hover { color: var(--text-main); background: var(--bg-3); border-color: var(--border-color); box-shadow: 0 1px 1px rgba(0,0,0,0.05), inset 0 1px 0 #FFF; }
+.side-icon:hover { color: var(--text-main); background: var(--hover-bg); }
 .side-icon.active { color: var(--text-main); background: var(--bg-4); border-color: var(--border-light); box-shadow: inset 0 1px 2px rgba(0,0,0,0.1); }
 .side-icon::before {
   content: ""; position: absolute; top: 50%; left: 50%; width: 8px; height: 8px; border-top: 2px solid currentColor; border-right: 2px solid currentColor;
@@ -5308,7 +5315,7 @@ body {
 }
 .side-tab-btn svg { width: 16px; height: 16px; flex-shrink: 0; }
 .side-tab-btn span { font-size: 9px; font-weight: 600; line-height: 1; letter-spacing: 0.2px; white-space: nowrap; }
-.side-tab-btn:hover { color: var(--text-main); background: var(--bg-3); border-color: var(--border-color); box-shadow: 0 1px 1px rgba(0,0,0,0.05), inset 0 1px 0 #FFF; }
+.side-tab-btn:hover { color: var(--text-main); background: var(--hover-bg); }
 .side-tab-btn.active { color: var(--text-main); background: var(--bg-4); border-color: var(--border-light); box-shadow: inset 0 1px 2px rgba(0,0,0,0.1); }
 .side-tab-btn.active::after {
   content: ""; position: absolute; left: -4px; top: 50%; width: 2px; height: 14px; background: var(--accent-color); transform: translateY(-50%);
@@ -5328,7 +5335,7 @@ body {
   appearance: none; border: 1px solid var(--border-light); background: var(--bg-2); color: var(--text-main);
   padding: 6px 12px; border-radius: var(--radius); font-size: 12px; cursor: pointer; transition: background 0.12s ease, border-color 0.12s ease;
 }
-.about-update-btn:hover:not(:disabled) { background: var(--bg-3); border-color: var(--border-color); }
+.about-update-btn:hover:not(:disabled) { background: var(--hover-bg); }
 .about-update-btn:disabled { opacity: 0.55; cursor: default; }
 .about-update-btn.primary { background: var(--accent-color, #3b82f6); color: #fff; border-color: transparent; }
 .about-update-btn.primary:hover:not(:disabled) { filter: brightness(1.08); }
@@ -5976,7 +5983,7 @@ body.inline-popover-active { }
   justify-content: center;
   z-index: 2;
 }
-.inspector-collapse-btn:hover { background: var(--bg-4); }
+.inspector-collapse-btn:hover { background: var(--hover-bg); }
 .inspector-collapse-btn::before {
   content: '';
   width: 6px;
@@ -6079,7 +6086,7 @@ body.inline-popover-active { }
   transition: background 0.12s ease, color 0.12s ease;
 }
 .inspector-footer-link:hover {
-  background: var(--bg-3);
+  background: var(--hover-bg);
   color: var(--text-main);
 }
 .inspector-footer-sep { color: var(--border-color); user-select: none; }
@@ -6381,8 +6388,7 @@ body.inline-popover-active { }
   border-color: var(--border-color);
 }
 [data-theme='dark'] .param-value:hover {
-  background: var(--bg-4);
-  border-color: var(--border-light);
+  background: var(--hover-bg);
 }
 [data-theme='dark'] .param-group.editing .param-value {
   background: var(--bg-3);
@@ -6418,8 +6424,7 @@ body.inline-popover-active { }
   border-color: var(--border-color);
 }
 [data-theme='dark'] .fx-lufs-reset:hover {
-  background: var(--bg-4);
-  border-color: var(--border-light);
+  background: var(--hover-bg);
 }
 [data-theme='dark'] .fx-lufs-delta-track {
   background: var(--bg-4);
@@ -6548,8 +6553,7 @@ body.inline-popover-active { }
   box-shadow: 0 1px 1px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 [data-theme='dark'] .panel-action-btn:hover:not(:disabled) {
-  background: linear-gradient(180deg, var(--bg-4) 0%, var(--bg-3) 100%);
-  border-color: var(--border-light);
+  background: var(--hover-bg);
 }
 [data-theme='dark'] .panel-action-btn:disabled {
   background: var(--bg-2);
@@ -6781,7 +6785,7 @@ body.inline-popover-active { }
   border-color: var(--border-color);
 }
 [data-theme='dark'] .editor-close:hover {
-  background: var(--bg-4);
+  background: var(--hover-bg);
 }
 
 /* "ROLL" 时间标尺行：保留其作为"导航锚"的存在感，但配色融入暗皮——
@@ -7038,7 +7042,7 @@ body.inline-popover-active { }
   color: var(--text-muted);
 }
 .lyric-ai-key-btn--ghost:hover {
-  background: var(--bg-3);
+  background: var(--hover-bg);
   color: var(--text-main);
 }
 .lyric-ai-key-btn--danger {
@@ -7102,7 +7106,7 @@ body.inline-popover-active { }
 /* 轨道左侧信息框（track-item-cell + track-item）：hover / active 用了
    写死的 #F8F7F4，在暗模式下变成"晃眼白"。这里反相到 var(--bg-4) 暗灰高亮 */
 [data-theme='dark'] .track-item:hover {
-  background: var(--bg-4);
+  background: var(--hover-bg);
 }
 [data-theme='dark'] .track-item.active {
   background: var(--bg-4);
