@@ -121,38 +121,72 @@
   animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* ===== 顶栏 dock 切换按钮（Mixer / Reverb）：和主题切换按钮共用视觉语言 ===== */
+/* ===== 顶栏 dock 切换按钮（Mixer / Reverb）：模拟 Studio One / Logic 的
+   "主功能按钮"视觉——比普通模式切换按钮（滚动/跟踪等）视觉更重，
+   带专属图标 + 微立体感 + accent 色图标提示。让用户一眼看出"这是打开主功能" ===== */
 .menubar-dock-btn {
   display: inline-flex;
   align-items: center;
-  height: 28px;
-  padding: 0 12px;
-  margin-right: 6px;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px 0 10px;
+  margin-right: 8px;
   border: 1px solid var(--border-color);
-  border-radius: 4px;
-  background: var(--bg-3);
-  color: var(--text-muted);
-  font-size: 11px;
+  border-radius: 5px;
+  /* 微立体感：上浅下深的渐变 + inset 高光 + 1px drop shadow */
+  background: linear-gradient(180deg, var(--bg-3) 0%, var(--bg-2) 100%);
+  color: var(--text-main);
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.3px;
   cursor: pointer;
   flex-shrink: 0;
   user-select: none;
-  transition: background 200ms ease, border-color 200ms ease, color 200ms ease, transform 140ms ease;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.08),
+    0 1px 1px rgba(0, 0, 0, 0.10);
+  transition: background 200ms ease, border-color 200ms ease, color 200ms ease,
+              box-shadow 160ms ease, transform 120ms ease;
 }
 .menubar-dock-btn:hover:not(:disabled) {
-  background: var(--bg-1);
   border-color: var(--border-light);
-  color: var(--text-default);
   transform: translateY(-0.5px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.10),
+    0 2px 3px rgba(0, 0, 0, 0.14);
 }
-.menubar-dock-btn:active:not(:disabled) { transform: translateY(0.5px); }
+.menubar-dock-btn:active:not(:disabled) {
+  transform: translateY(0.5px);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.18),
+    0 0 0 rgba(0, 0, 0, 0);
+}
 .menubar-dock-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .menubar-dock-btn.accent {
-  background: var(--accent-color, #5BC0DE);
-  border-color: var(--accent-color, #5BC0DE);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--accent-color), white 6%) 0%,
+    var(--accent-color) 100%);
+  border-color: var(--accent-color);
   color: #fff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.30),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.18),
+    0 2px 4px var(--accent-dim);
 }
+/* 图标：14px 视觉重量、未激活时用 accent 色（提示"这是功能按钮"），激活时变白跟文字一致 */
+.menubar-dock-btn-icon {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  color: var(--accent-color);
+  transition: color 160ms ease;
+}
+.menubar-dock-btn-icon svg { width: 100%; height: 100%; display: block; }
+.menubar-dock-btn.accent .menubar-dock-btn-icon { color: inherit; }
+.menubar-dock-btn-label { line-height: 1; }
 
 /* ===== 顶栏明暗切换按钮：太阳 ⇄ 月亮 ===== */
 .theme-toggle {

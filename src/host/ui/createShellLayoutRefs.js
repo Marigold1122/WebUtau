@@ -1,9 +1,29 @@
 ﻿import { t } from '../../i18n/index.js'
 
-// 混响 / 混音器按钮统一放在顶栏 .menubar-tail 的最左侧——
-// 历史上有过 .tools-center 锚点，但 index.html 里没有这个元素，导致按钮一直创建失败；
-// 现在锚定到顶栏 .menubar-tail（主题切换、follow 模式所在区），用户能直接看见
-function ensureMenubarDockButton({ id, i18nKey, position = 'prepend' }) {
+// 混响 / 混音器按钮：参考 Studio One / Logic 顶栏的"功能模块按钮"——
+// 比普通"模式切换"按钮（如滚动 / 跟踪 / 翻页 / 推移）视觉更重，带专属图标 + 立体感，
+// 让用户一眼看出这是"打开主功能"而非"切换模式"
+const DOCK_BUTTON_ICONS = {
+  // Mixer：3 条纵向推子的简化形——一眼联想到调音台 channel strip
+  mixer: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true">'
+    + '<line x1="4" y1="2.5" x2="4" y2="13.5"/>'
+    + '<line x1="8" y1="2.5" x2="8" y2="13.5"/>'
+    + '<line x1="12" y1="2.5" x2="12" y2="13.5"/>'
+    + '<rect x="2.4" y="4.5" width="3.2" height="2" rx="0.5" fill="currentColor" stroke="none"/>'
+    + '<rect x="6.4" y="9" width="3.2" height="2" rx="0.5" fill="currentColor" stroke="none"/>'
+    + '<rect x="10.4" y="6.5" width="3.2" height="2" rx="0.5" fill="currentColor" stroke="none"/>'
+    + '</svg>',
+  // Reverb：脉冲 + 衰减尾部——经典 reverb 可视化
+  reverb: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-linecap="round" aria-hidden="true">'
+    + '<line x1="3" y1="3" x2="3" y2="13" stroke-width="1.6"/>'
+    + '<line x1="5.5" y1="5" x2="5.5" y2="11" stroke-width="1.3"/>'
+    + '<line x1="8" y1="6" x2="8" y2="10" stroke-width="1.1"/>'
+    + '<line x1="10.5" y1="6.8" x2="10.5" y2="9.2" stroke-width="0.9"/>'
+    + '<line x1="13" y1="7.3" x2="13" y2="8.7" stroke-width="0.7"/>'
+    + '</svg>',
+}
+
+function ensureMenubarDockButton({ id, i18nKey, iconKey, position = 'prepend' }) {
   let button = document.getElementById(id)
   if (button) return button
 
@@ -14,8 +34,19 @@ function ensureMenubarDockButton({ id, i18nKey, position = 'prepend' }) {
   button.type = 'button'
   button.className = 'menubar-dock-btn'
   button.id = id
-  button.setAttribute('data-i18n', i18nKey)
-  button.textContent = t(i18nKey)
+  // 图标 + 文本结构 —— icon 元素吃 currentColor、自动跟随按钮文字色
+  const iconSvg = DOCK_BUTTON_ICONS[iconKey] || ''
+  if (iconSvg) {
+    const iconWrap = document.createElement('span')
+    iconWrap.className = 'menubar-dock-btn-icon'
+    iconWrap.innerHTML = iconSvg
+    button.appendChild(iconWrap)
+  }
+  const labelSpan = document.createElement('span')
+  labelSpan.className = 'menubar-dock-btn-label'
+  labelSpan.setAttribute('data-i18n', i18nKey)
+  labelSpan.textContent = t(i18nKey)
+  button.appendChild(labelSpan)
   if (position === 'prepend') {
     tail.insertAdjacentElement('afterbegin', button)
   } else {
@@ -28,6 +59,7 @@ function ensureReverbDockToggleButton() {
   return ensureMenubarDockButton({
     id: 'btn-toggle-reverb-dock',
     i18nKey: 'reverb.panel_button',
+    iconKey: 'reverb',
     position: 'prepend',
   })
 }
@@ -39,6 +71,7 @@ function ensureMixerDockToggleButton() {
   return ensureMenubarDockButton({
     id: 'btn-toggle-mixer-dock',
     i18nKey: 'mixer.panel_button',
+    iconKey: 'mixer',
     position: 'prepend',
   })
 }

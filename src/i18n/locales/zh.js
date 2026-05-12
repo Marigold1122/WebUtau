@@ -387,8 +387,8 @@ export const messages = {
     comp_makeup: '补偿',
   },
   reverb: {
-    panel_button: '混响 Reverb',
-    panel_aria: '混响面板 Reverb panel',
+    panel_button: '混响',
+    panel_aria: '混响面板',
     tab_label: '混响',
     style: {
       all: '全部风格',
