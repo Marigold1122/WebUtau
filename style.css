@@ -4335,6 +4335,100 @@ body {
   cursor: not-allowed;
 }
 
+/* ── AI 候选轮播条带（Synthesizer V Retakes 风格） ──────────────────────
+   位于 textarea 和 status 之间；初始 hidden=true，第一次生成成功后才显示。
+   横向滚动；末尾常驻"再来一版"按钮，与切换 chip 视觉区分（accent 描边） */
+.quick-lyric-ai-candidates {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-xs);
+  margin: 6px 0 4px;
+  padding: 4px 2px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+.quick-lyric-ai-candidates[hidden] { display: none; }
+.quick-lyric-ai-candidate {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-xs);
+  min-width: 56px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: linear-gradient(180deg, var(--bg-3) 0%, var(--bg-2) 100%);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.1s ease, border-color 0.1s ease, box-shadow 0.1s ease;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+.quick-lyric-ai-candidate:hover {
+  background: var(--hover-bg);
+  border-color: var(--border-light);
+}
+.quick-lyric-ai-candidate.is-active {
+  /* 选中态：accent 描边 + 内 glow，区别于 hover 的轻 tint。
+     color-mix 让 accent 自动跟随亮 / 暗模式（亮 #3B8B88 / 暗 #4FB1AE） */
+  background: color-mix(in srgb, var(--accent-color) 12%, transparent);
+  border-color: var(--accent-color);
+  box-shadow: inset 0 0 0 1px var(--accent-color), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  color: var(--text-main);
+}
+.quick-lyric-ai-candidate.is-stale {
+  /* 官方歌词改了 → 这一版结构对不上，灰掉但仍可点（用户也许想看一眼内容） */
+  opacity: 0.55;
+  border-style: dashed;
+}
+.quick-lyric-ai-candidate-num {
+  font-family: 'Oswald', sans-serif;
+  font-weight: 600;
+  font-size: 10px;
+  color: var(--accent-color);
+  letter-spacing: 0.4px;
+}
+.quick-lyric-ai-candidate-preview {
+  max-width: 56px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 10.5px;
+}
+.quick-lyric-ai-candidate.is-active .quick-lyric-ai-candidate-preview {
+  color: var(--text-main);
+}
+/* "再来一版"——与切换 chip 视觉拉开：accent 系，扁平 dashed，提示"动作" */
+.quick-lyric-ai-retake {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-xs);
+  height: 30px;
+  margin-left: var(--gap-xs);
+  padding: 0 10px;
+  border: 1px dashed var(--accent-color);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--accent-color);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+.quick-lyric-ai-retake:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-color) 10%, transparent);
+}
+.quick-lyric-ai-retake:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* 暗模式：textarea / 风格 input 用更深的底；header / footer 文字反相 */
 [data-theme='dark'] .quick-lyric-panel {
   background: var(--bg-1);
@@ -4360,6 +4454,15 @@ body {
 }
 [data-theme='dark'] .quick-lyric-close:hover {
   background: var(--hover-bg);
+}
+/* 暗模式候选 chip：底层渐变换暗，去掉过亮的白色 inset 高光 */
+[data-theme='dark'] .quick-lyric-ai-candidate {
+  background: linear-gradient(180deg, var(--bg-3) 0%, var(--bg-2) 100%);
+  border-color: var(--border-color);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+[data-theme='dark'] .quick-lyric-ai-candidate.is-active {
+  box-shadow: inset 0 0 0 1px var(--accent-color), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 /* ─── AI 区里的"官方歌词"提示 + 按钮 ─────────────────────── */

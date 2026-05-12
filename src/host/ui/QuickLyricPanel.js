@@ -34,6 +34,10 @@ import { t } from '../../i18n/index.js'
 // 的 lyric-only edit 校验。这里按字符拆完直接过滤掉。
 const LYRIC_SEPARATOR_RE = /[\s.,!?;:'"()[\]{}<>，。！？、；：“”‘’（）《》【】…·・~～/\\\-‐‑‒–—―]/
 
+// AI 候选轮播上限：参考 Synthesizer V Retakes 默认 5——再多用户也认不全；
+// 超过这个数就丢最早那一版（FIFO）
+const AI_CANDIDATES_LIMIT = 5
+
 export class QuickLyricPanel {
   constructor() {
     this._el = null
@@ -59,11 +63,19 @@ export class QuickLyricPanel {
     this._aiThemeInput = null
     this._aiStyleInput = null
     this._aiBtnGenerate = null
+    this._aiBtnRetake = null
     this._aiBtnConfig = null
     this._aiClient = new LyricAIClient()
     this._aiBusy = false
     this._aiAbortController = null
     this._songName = null
+
+    // 候选轮播：每次 AI 生成成功的结果存一份；点击切换不扣配额、点"再来一版"扣一次
+    // 上限默认 5——参考 Synthesizer V Retakes 的体感，超过时丢最早那一版
+    /** @type {Array<{ phrases: Array, flatChars: Array<string>, theme: string, style: string, textareaContent: string, officialKey: string, createdAt: number }>} */
+    this._aiCandidates = []
+    this._aiCurrentCandidateIdx = -1
+    this._aiCandidatesStripEl = null
 
     // 官方歌词（前端持久化的真实歌词行结构，用于 AI 写词的 musicStructure）
     /** @type {string[]} */
@@ -119,10 +131,15 @@ export class QuickLyricPanel {
     this._aiThemeInput = null
     this._aiStyleInput = null
     this._aiBtnGenerate = null
+    this._aiBtnRetake = null
     this._aiBtnConfig = null
     this._btnOfficialLyrics = null
     this._officialLyricsStatusEl = null
     this._aiHintEl = null
+    // 候选轮播在面板生命周期内有效；关闭后清空（下次打开是全新会话）
+    this._aiCandidates = []
+    this._aiCurrentCandidateIdx = -1
+    this._aiCandidatesStripEl = null
   }
 
   isOpen() { return this._el !== null }
@@ -158,9 +175,20 @@ export class QuickLyricPanel {
       this._btnSave.disabled = true
       this._hideFix()
       this._setStatus('')
+      // 用户手动改了 textarea —— 当前不再对应任何候选，撤销高亮
+      if (this._aiCurrentCandidateIdx !== -1) {
+        this._aiCurrentCandidateIdx = -1
+        this._renderCandidatesStrip()
+      }
     })
     // 阻断字母键 / Space 等冒泡触发全局快捷键；但放行 ESC，让外层全局 ESC 调度能关掉本浮窗
     this._textarea.addEventListener('keydown', (e) => { if (e.key !== 'Escape') e.stopPropagation() })
+
+    // AI 候选轮播条带——初始隐藏，第一次成功生成后再显示。点击切换不耗配额；
+    // 末尾固定一个"再来一版"按钮，按它会再调一次 LLM（消耗一次配额）
+    this._aiCandidatesStripEl = document.createElement('div')
+    this._aiCandidatesStripEl.className = 'quick-lyric-ai-candidates'
+    this._aiCandidatesStripEl.hidden = true
 
     this._statusEl = document.createElement('div')
     this._statusEl.className = 'quick-lyric-status'
@@ -187,7 +215,7 @@ export class QuickLyricPanel {
     actions.append(this._btnFix, this._btnParse, this._btnSave)
 
     const aiSection = this._buildAISection()
-    el.append(header, this._textarea, this._statusEl, aiSection, actions)
+    el.append(header, this._textarea, this._aiCandidatesStripEl, this._statusEl, aiSection, actions)
     document.body.appendChild(el)
     this._el = el
     this._textarea.focus()
@@ -303,9 +331,20 @@ export class QuickLyricPanel {
     const cleaned = result.lines.map((l) => l.replace(/^\s+|\s+$/g, ''))
     while (cleaned.length > 0 && cleaned[cleaned.length - 1] === '') cleaned.pop()
     while (cleaned.length > 0 && cleaned[0] === '') cleaned.shift()
+    const oldKey = this._computeOfficialLyricsKey()
     this._officialLyrics = cleaned
+    const newKey = this._computeOfficialLyricsKey()
     this._onOfficialLyricsChanged?.(cleaned)
     this._refreshOfficialLyricsStatus()
+
+    // 官方歌词的指纹变了 → 旧候选的"每行字数"模板对不上当前结构，作废
+    if (oldKey !== newKey && this._aiCandidates.length > 0) {
+      this._aiCandidates = []
+      this._aiCurrentCandidateIdx = -1
+      this._renderCandidatesStrip()
+      this._setStatus(t('quickLyric.ai.candidates_cleared_on_official_change'), 'info')
+      return
+    }
     this._setStatus(t('quickLyric.ai.official_lyrics_saved'), 'success')
   }
 
@@ -376,8 +415,7 @@ export class QuickLyricPanel {
     const style = this._aiStyleInput?.value?.trim() || ''
 
     this._aiBusy = true
-    this._aiBtnGenerate.disabled = true
-    this._aiBtnGenerate.textContent = t('quickLyric.ai.btn_generating')
+    this._setAIBusyUI(true)
     this._setStatus(t('quickLyric.ai.generating_status'), 'info')
 
     this._aiAbortController = new AbortController()
@@ -393,10 +431,7 @@ export class QuickLyricPanel {
 
     this._aiBusy = false
     this._aiAbortController = null
-    if (this._aiBtnGenerate) {
-      this._aiBtnGenerate.disabled = false
-      this._aiBtnGenerate.textContent = t('quickLyric.ai.btn_generate')
-    }
+    this._setAIBusyUI(false)
     this._refreshAIQuota()
 
     if (!result.ok) {
@@ -406,11 +441,109 @@ export class QuickLyricPanel {
 
     // AI 返回每行字——直接拼成 textarea 内容（一行一句）
     const lines = result.phrases.map((p) => (p.lyric || []).join(''))
-    this._textarea.value = lines.join('\n')
+    const textareaContent = lines.join('\n')
+    this._textarea.value = textareaContent
     this._parsedLyrics = null
     this._btnSave.disabled = true
     this._hideFix()
+
+    // 入库：保留为可切换的候选；超过上限时丢最早一版
+    const candidate = {
+      phrases: result.phrases,
+      flatChars: result.flatChars,
+      theme,
+      style,
+      textareaContent,
+      officialKey: this._computeOfficialLyricsKey(),
+      createdAt: Date.now(),
+    }
+    this._aiCandidates.push(candidate)
+    if (this._aiCandidates.length > AI_CANDIDATES_LIMIT) this._aiCandidates.shift()
+    this._aiCurrentCandidateIdx = this._aiCandidates.length - 1
+    this._renderCandidatesStrip()
+
     this._setStatus(t('quickLyric.ai.ai_done', { count: result.flatChars.length }), 'success')
+  }
+
+  // ── AI 候选轮播 ───────────────────────────────────
+
+  _computeOfficialLyricsKey() {
+    // 用"非空行的行字数 + 内容拼接"做指纹：行内空格不影响演唱单位，但为了
+    // 切换提示准确，连同字面也参与签名——用户改字也算"结构变了"
+    return (this._officialLyrics || [])
+      .filter((l) => l.replace(/\s/g, '').length > 0)
+      .map((l) => l.replace(/\s+/g, ''))
+      .join('\n')
+  }
+
+  _renderCandidatesStrip() {
+    const strip = this._aiCandidatesStripEl
+    if (!strip) return
+    strip.innerHTML = ''
+    if (this._aiCandidates.length === 0) {
+      strip.hidden = true
+      this._aiBtnRetake = null
+      return
+    }
+    strip.hidden = false
+    const currentOfficialKey = this._computeOfficialLyricsKey()
+    this._aiCandidates.forEach((cand, idx) => {
+      const chip = document.createElement('button')
+      chip.type = 'button'
+      chip.className = 'quick-lyric-ai-candidate'
+      if (idx === this._aiCurrentCandidateIdx) chip.classList.add('is-active')
+      const isStale = cand.officialKey !== currentOfficialKey
+      if (isStale) chip.classList.add('is-stale')
+      const num = document.createElement('span')
+      num.className = 'quick-lyric-ai-candidate-num'
+      num.textContent = `#${idx + 1}`
+      const preview = document.createElement('span')
+      preview.className = 'quick-lyric-ai-candidate-preview'
+      const firstLine = (cand.textareaContent.split('\n')[0] || '').slice(0, 6)
+      preview.textContent = firstLine
+      chip.title = isStale
+        ? t('quickLyric.ai.candidate_stale')
+        : t('quickLyric.ai.candidate_tooltip', { theme: cand.theme, style: cand.style || '—' })
+      chip.append(num, preview)
+      chip.addEventListener('click', () => this._switchToCandidate(idx))
+      strip.appendChild(chip)
+    })
+
+    // 末尾"再来一版"：同 _handleAIGenerate 路径，会消耗一次配额。
+    // 放在 strip 内是为了让"切换"和"再生"两类动作在同一条带上完成
+    const btnRetake = document.createElement('button')
+    btnRetake.type = 'button'
+    btnRetake.className = 'quick-lyric-ai-retake'
+    btnRetake.innerHTML = `<span aria-hidden="true">↻</span> ${t('quickLyric.ai.btn_retake')}`
+    btnRetake.title = t('quickLyric.ai.retake_tooltip')
+    btnRetake.disabled = this._aiBusy
+    btnRetake.addEventListener('click', () => this._handleAIGenerate())
+    this._aiBtnRetake = btnRetake
+    strip.appendChild(btnRetake)
+  }
+
+  _switchToCandidate(idx) {
+    if (idx < 0 || idx >= this._aiCandidates.length) return
+    if (idx === this._aiCurrentCandidateIdx) return
+    const cand = this._aiCandidates[idx]
+    this._aiCurrentCandidateIdx = idx
+    if (this._textarea) this._textarea.value = cand.textareaContent
+    this._parsedLyrics = null
+    if (this._btnSave) this._btnSave.disabled = true
+    this._hideFix()
+    this._setStatus(t('quickLyric.ai.candidates_switched', { idx: idx + 1 }), 'info')
+    this._renderCandidatesStrip()
+  }
+
+  // 配合 generate / retake 两个入口，统一切换 busy 视觉
+  _setAIBusyUI(busy) {
+    if (this._aiBtnGenerate) {
+      this._aiBtnGenerate.disabled = busy
+      this._aiBtnGenerate.textContent = busy
+        ? t('quickLyric.ai.btn_generating')
+        : t('quickLyric.ai.btn_generate')
+    }
+    if (this._aiBtnRetake) this._aiBtnRetake.disabled = busy
   }
 
   // 把官方歌词的行结构 + snapshot 的整体音乐信息合成 musicStructure 给 AI
