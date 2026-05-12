@@ -120,13 +120,26 @@ class RenderCache {
     return entry != null && entry.audioBuffer != null
   }
 
+  // 静默删除会让 phraseRenderStateStore 留下过期的 'available' 状态——卷帘
+  // 重绘时按旧状态画成绿色，看起来"音符没变色、也没开始重渲染"。这里跟
+  // invalidate/set 保持一致，按句号发 CACHE_INVALIDATED，让所有订阅者同步。
   clearIndices(indices) {
-    for (const idx of indices) this.cache.delete(idx)
+    if (!indices) return
+    for (const idx of indices) {
+      if (!Number.isInteger(idx) || idx < 0) continue
+      this.cache.delete(idx)
+      eventBus.emit(EVENTS.CACHE_INVALIDATED, { phraseIndex: idx })
+    }
   }
 
   clearAbove(maxIndex) {
+    const cleared = []
     for (const key of this.cache.keys()) {
-      if (key >= maxIndex) this.cache.delete(key)
+      if (key >= maxIndex) cleared.push(key)
+    }
+    for (const key of cleared) {
+      this.cache.delete(key)
+      eventBus.emit(EVENTS.CACHE_INVALIDATED, { phraseIndex: key })
     }
   }
 }

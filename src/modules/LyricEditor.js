@@ -198,9 +198,6 @@ class LyricEditor {
     if (indices.length === 0) return
     renderCache.clearIndices(indices)
     audioEngine.cancelPhrases(indices)
-    indices.forEach((phraseIndex) => {
-      eventBus.emit(EVENTS.CACHE_INVALIDATED, { phraseIndex })
-    })
     renderJobManager.incrementGeneration()
   }
 
