@@ -145,6 +145,7 @@ export class MixerDockView {
     this._masterStrip.setVolume?.(masterVolume)
     // Reconcile 轨条：按当前 tracks 顺序构造缺失的、移除多余的、复用 update 已存在的
     const nextIds = new Set()
+    const selectedTrackId = project?.selectedTrackId || null
     tracks.forEach((track) => {
       if (!track?.id) return
       nextIds.add(track.id)
@@ -163,6 +164,8 @@ export class MixerDockView {
           strip.root.style.setProperty('--mixer-strip-color', trackColor)
         }
       }
+      // 选中态视觉：当前 selectedTrackId 对应的 strip 加 .is-selected
+      strip.root.classList.toggle('is-selected', track.id === selectedTrackId)
     })
     // 删除已不存在的轨条
     Array.from(this._stripsByTrackId.entries()).forEach(([id, strip]) => {
@@ -289,6 +292,8 @@ export class MixerDockView {
       onSendChanged: (send, opts) => h.onTrackReverbSendChanged?.(trackId, send, opts),
       onToggleMute: () => h.onTrackMuteToggled?.(trackId),
       onToggleSolo: () => h.onTrackSoloToggled?.(trackId),
+      // 点 strip 空白区 → 选中对应轨道（trackShell 那边亮起 + selectedTrackId 同步）
+      onSelectTrack: () => h.onTrackSelected?.(trackId),
       // insert 按钮点击 = 打开参数浮窗（浮窗内含 bypass 开关 + 参数旋钮）
       onInsertOpenRequested: (slotKey, anchorEl) => this._openInsertPopover(trackId, slotKey, anchorEl),
     }

@@ -78,10 +78,21 @@ export function buildMixerChannelStrip({ track, trackColor, isMaster = false, ha
   // 整条 strip 上的 pointer / click / mousedown / dblclick 全部止冒 ——
   // 防御性：保证 strip 内任何点击都不会渗出去触发 trackShell / workspace 层的逻辑
   // （比如轨道选中、播放头跳转、面板关闭等）
+  // 注意：点击 strip 选中轨的逻辑通过 root.click 听 —— 子元素（fader/knob/按钮）
+  // 各自 stopPropagation 后不会冒到 root，只有点 strip 空白区/名字 才到这里
   const swallowEvent = (event) => event.stopPropagation()
-  ;['pointerdown', 'mousedown', 'click', 'dblclick'].forEach((evt) => {
+  ;['pointerdown', 'mousedown', 'dblclick'].forEach((evt) => {
     root.addEventListener(evt, swallowEvent)
   })
+  if (!isMaster && track?.id) {
+    root.addEventListener('click', (event) => {
+      // 子组件 click 已 stopPropagation；能到这里的就是点 strip 空白区
+      event.stopPropagation()
+      currentHandlers.onSelectTrack?.()
+    })
+  } else {
+    root.addEventListener('click', swallowEvent)
+  }
 
   // 1. 色条 + 名（master 没有色条，但有 "MASTER" 标）
   const head = document.createElement('div')

@@ -105,6 +105,17 @@ function ensureBottomDockTabbar() {
   }
   tabbar.appendChild(makeTab('mixer', 'mixer.tab_label'))
   tabbar.appendChild(makeTab('reverb', 'reverb.tab_label'))
+
+  // 关闭按钮：紧贴 tabbar 右端、独立 flex 推到最右
+  const btnClose = document.createElement('button')
+  btnClose.type = 'button'
+  btnClose.id = 'bottom-dock-close'
+  btnClose.className = 'bottom-dock-close'
+  btnClose.setAttribute('data-i18n-attr', 'aria-label:modal.common.close')
+  btnClose.setAttribute('aria-label', t('modal.common.close'))
+  btnClose.textContent = '×'
+  tabbar.appendChild(btnClose)
+
   reverbDock.insertAdjacentElement('beforebegin', tabbar)
   return tabbar
 }

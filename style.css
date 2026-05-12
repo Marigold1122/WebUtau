@@ -2164,6 +2164,30 @@ body {
   box-shadow: inset 0 2px 0 var(--accent-color);
 }
 
+/* 关闭按钮：贴到 tabbar 最右 —— margin-left:auto 把它推过去 */
+.bottom-dock-close {
+  margin-left: auto;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+.bottom-dock-close:hover {
+  background-color: var(--bg-3);
+  color: var(--text-main);
+}
+
 /* ─── Mixer Dock 骨架 ──────────────────────────────────────────────────── */
 .mixer-dock {
   display: flex;
@@ -2216,6 +2240,20 @@ body {
      不再需要把每条 strip 的内部元素全部重算。配合 flex-start 后实测
      拖拽 250ms→<16ms 一帧 */
   contain: layout style paint;
+}
+/* 选中态：accent 描边 + 微 glow —— 让用户能一眼看出当前编辑哪条轨 */
+.mixer-strip.is-selected {
+  border-color: var(--accent-color);
+  box-shadow:
+    inset 0 1px 0 var(--mixer-control-highlight),
+    inset 0 -1px 0 var(--mixer-control-shadow),
+    inset 0 0 0 1px var(--accent-dim),
+    0 0 0 1px var(--accent-mid);
+}
+.mixer-strip.is-selected .mixer-strip-name { color: var(--accent-color); }
+/* hover 提示（仅未选中时）—— 微微亮一点，告诉用户可点击 */
+.mixer-strip:not(.is-selected):hover {
+  border-color: var(--text-muted);
 }
 .mixer-strip-head {
   display: flex;

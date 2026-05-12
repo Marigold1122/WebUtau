@@ -2053,6 +2053,7 @@ export function createHostApp() {
     onToggleReverbDock: reverbController.toggleReverbDock,
     onToggleMixerDock: reverbController.toggleMixerDock,
     onActiveDockTabChanged: reverbController.setActiveDockTab,
+    onCloseBottomDock: reverbController.closeBottomDock,
     onToggleProjectReverbEnabled: reverbController.toggleProjectReverbEnabled,
     onProjectReverbPresetSelected: reverbController.handleProjectReverbPresetSelected,
     onProjectReverbConfigChanged: reverbController.handleProjectReverbConfigChanged,

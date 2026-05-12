@@ -111,6 +111,14 @@ export function createHostReverbController({
     return next
   }
 
+  // 关 dock 入口（tabbar 右端的 × 按钮调）：不论当前在哪个 tab 都关
+  function closeBottomDock() {
+    if (!sessionStore.isReverbDockOpen()) return false
+    sessionStore.setReverbDockOpen(false)
+    render('bottom-dock-closed')
+    return false
+  }
+
   function toggleTrackFxPanel(trackId) {
     const track = trackId ? store.getTrack(trackId) : null
     if (!track) return false
@@ -181,6 +189,7 @@ export function createHostReverbController({
     toggleReverbDock,
     toggleMixerDock,
     setActiveDockTab,
+    closeBottomDock,
     toggleTrackFxPanel,
     toggleProjectReverbEnabled,
     toggleTrackReverbEnabled,

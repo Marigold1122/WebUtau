@@ -228,6 +228,13 @@ export class ShellLayoutView {
     const tabbar = this.refs.bottomDockTabbar
     if (!tabbar) return
     tabbar.addEventListener('click', (event) => {
+      // 关闭按钮优先匹配 —— 不能让它被 data-tab 路径接管
+      if (event.target.closest?.('#bottom-dock-close')) {
+        event.preventDefault()
+        event.stopPropagation()
+        this.handlers.onCloseBottomDock?.()
+        return
+      }
       const target = event.target.closest('[data-tab]')
       if (!target) return
       const nextTab = target.dataset.tab === 'reverb' ? 'reverb' : 'mixer'
