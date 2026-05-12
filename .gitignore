@@ -103,3 +103,4 @@ Thumbs.db
 .vscode/
 *.swp
 docs/RELEASE.md
+src-tauri/resources/vst-host/webutau_vst_host

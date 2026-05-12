@@ -1830,9 +1830,12 @@ public partial class SynthesisService : IHostedService {
             .Where(key => !phraseNoteKeys.Contains(key))
             .ToList();
 
-        var structureChanged = allPhrases.Count != originalPhraseCount
-            || missingEditedNotes.Count > 0;
-        if (!structureChanged) {
+        // 只要被编辑的 note 还在新 phrase 集合里就算编辑成功。
+        // phrase count 单独变化（合并 / 拆分）是 OpenUtau 内部按 phoneme 时序切分的副作用：
+        // 重新音素化后某些 phoneme 时长被 ML 模型预测得正好对接（例如声母提前到 padding
+        // 区让前后两段唱腔在 tick 上连续），渲染层只要 note 没丢就能正常出声。
+        // 日语 っ / ー 那种"丢 note"会被 missingEditedNotes 直接拦下，跟 phrase 数无关。
+        if (missingEditedNotes.Count == 0) {
             return;
         }
 
@@ -1850,7 +1853,7 @@ public partial class SynthesisService : IHostedService {
         job.AllPhrases = CollectAllPhrases(voiceParts);
 
         throw new EditNotesRejectedException(
-            $"Lyric edit was rejected because it changed phrase structure unexpectedly (phrases {originalPhraseCount}->{allPhrases.Count}).");
+            $"Lyric edit was rejected because edited notes were dropped during phonemization (missing notes={missingEditedNotes.Count}).");
     }
 
     private void CleanupOldJobs() {

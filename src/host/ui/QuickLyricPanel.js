@@ -29,6 +29,11 @@ import { openLyricAIKeyDialog } from './LyricAIKeyDialog.js'
 import { openOfficialLyricsDialog } from './OfficialLyricsDialog.js'
 import { t } from '../../i18n/index.js'
 
+// 自然文本里的书写分隔符，不参与演唱。把它们当 lyric 发给后端，phonemizer
+// 查表失败会用 SP 兜底并把那个 note 整个吞掉（partResult 不写入），破坏后端
+// 的 lyric-only edit 校验。这里按字符拆完直接过滤掉。
+const LYRIC_SEPARATOR_RE = /[\s.,!?;:'"()[\]{}<>，。！？、；：“”‘’（）《》【】…·・~～/\\\-‐‑‒–—―]/
+
 export class QuickLyricPanel {
   constructor() {
     this._el = null
@@ -606,7 +611,16 @@ export class QuickLyricPanel {
     const flatChars = []
     for (const line of raw.split('\n')) {
       const lineRaw = line.replace(/\s/g, '')
-      const chars = splitMoraeIfNeeded ? splitMoraeIfNeeded(lineRaw) : [...lineRaw]
+      let chars
+      if (splitMoraeIfNeeded) {
+        chars = splitMoraeIfNeeded(lineRaw)
+      } else {
+        // 书写分隔符（连字符、标点）不是演唱单位：按字符发到后端时，
+        // phonemizer 查表失败会走 wordFound=false 路径并 continue 掉
+        // partResult[note.position]，那个 note 在新 phrase 集合里整个丢失，
+        // SynthesisService.EnsureLyricEditPreservesStructure 报 missing notes>0。
+        chars = [...lineRaw].filter((ch) => !LYRIC_SEPARATOR_RE.test(ch))
+      }
       flatChars.push(...chars)
     }
 
