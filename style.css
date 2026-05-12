@@ -3130,12 +3130,13 @@ body {
   gap: 10px;
 }
 
-/* 主控母带链模块：10 个 knob 单排展开，所以默认宽度更大；
+/* 主控母带链模块：10 个 knob 改成 2 行 × 5 列布局，整体宽度收窄 ——
+   之前单排 10 knob 让模块宽 1080px 整个吃满底部 dock，挤占其它内容
    高度让内容自由生长，不要 align: stretch 强行拉到 252px 内塞不下 */
 .fx-module--master-chain {
   width: auto;
-  min-width: 880px;
-  max-width: 1080px;
+  min-width: 540px;
+  max-width: 720px;
   align-self: flex-start; /* 抵消 .bottom-fx-panel 的 align-items: stretch */
 }
 /* 让 4 行 / 2 行 label 都把 knob 对齐到同一基线，不再上下错乱 */
@@ -3146,11 +3147,23 @@ body {
   justify-content: center;
   text-align: center;
 }
-/* 默认 fx-body 是 align-items: center 居中——单行 10 knob 用 flex-start 对齐顶部 */
+/* fx-body 改用 Grid：5 列 × 2 行 = 10 个 knob 自动排布 */
 .fx-module--master-chain .fx-body {
-  flex-wrap: nowrap;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 14px 12px;
   padding: 12px 12px 14px;
+  /* grid 容器里 param-group 不需要 flex 拉伸，知道列宽即可 */
+  align-items: start;
+  justify-items: center;
+}
+/* LUFS 面板 / preset footer 等下层元素继承 module 的 max-width 自动变窄；
+   显式收一点边距让上下视觉宽度一致、又不过于拥挤 */
+.fx-module--master-chain .fx-lufs-panel,
+.fx-module--master-chain .fx-screen-row,
+.fx-module--master-chain .fx-module-note {
+  margin-left: 12px;
+  margin-right: 12px;
 }
 
 /* 主控母带链 LUFS 仪表面板：插在 footer 之后、note 之前，单独一段。
