@@ -3,6 +3,8 @@ import renderCache from './RenderCache.js'
 import renderJobManager from './RenderJobManager.js'
 import audioEngine from './AudioEngine.js'
 import phraseStore from '../core/PhraseStore.js'
+import eventBus from '../core/EventBus.js'
+import { EVENTS } from '../config/constants.js'
 
 const M = '[音符编辑]'
 
@@ -31,6 +33,13 @@ function applyLyricEditsLocally(edits) {
       affectedSet.add(pi)
       break
     }
+  }
+  // updatePhrase 只发 PHRASE_MODIFIED；PianoRoll 监听的是 PHRASES_EDITED / PHRASES_REBUILT。
+  // 不补发的话本地路径下卷帘 notes.phrases 永远是改前的"a"，切到歌词模式还显示老歌词。
+  // server 路径里 rebuildFromEdit 会自己发 PHRASES_EDITED，所以渲染过的工程没事——只有
+  // 未渲染（jobId=null，刚从 .webutau 加载）的工程才会撞这条 bug
+  if (affectedSet.size > 0) {
+    eventBus.emit(EVENTS.PHRASES_EDITED, { phrases: phraseStore.getPhrases() })
   }
   return Array.from(affectedSet)
 }
