@@ -354,6 +354,7 @@ export const messages = {
     no_change: 'No lyric change',
     saving: 'Saving {count} change(s)…',
     save_failed: 'Save failed: {message}',
+    save_failed_job_lost: 'The backend render job has expired (likely idle timeout or server restart). Close Quick Lyric, click "Render as voice" to re-render, then come back to fill lyrics.',
     saved: 'Saved {count} change(s)',
     unknown_error: 'unknown error',
   },

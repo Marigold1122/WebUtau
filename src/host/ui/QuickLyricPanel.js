@@ -419,12 +419,18 @@ export class QuickLyricPanel {
     this._setStatus(t('quickLyric.ai.generating_status'), 'info')
 
     this._aiAbortController = new AbortController()
-    const baseStructure = extractMusicStructure(this._snapshot)
-    const musicStructure = this._buildMusicStructureFromOfficial(baseStructure, officialNonEmpty)
+    // musicStructure 用后端切好的 phrase 结构（aaaa 默认行结构）——这样 AI 输出
+    // 的每一句直接对应一个后端 phrase，保存时 1:1 灌字、不会出现"AI 一句歌词被
+    // 拆到两个后端 phrase 边界 → phonemizer 个别 note 失败 → backend 报 phrase
+    // 数对不上"的情况。
+    // 官方歌词改作主题灵感（extraInstruction），不再作为结构权威源
+    const musicStructure = extractMusicStructure(this._snapshot)
+    const extraInstruction = this._buildOfficialLyricsContext(officialNonEmpty)
     const result = await this._aiClient.generate({
       musicStructure,
       theme,
       style,
+      extraInstruction,
       signal: this._aiAbortController.signal,
     })
     if (!this._el || !this._textarea) return
@@ -546,29 +552,20 @@ export class QuickLyricPanel {
     if (this._aiBtnRetake) this._aiBtnRetake.disabled = busy
   }
 
-  // 把官方歌词的行结构 + snapshot 的整体音乐信息合成 musicStructure 给 AI
-  _buildMusicStructureFromOfficial(baseStructure, officialLines) {
-    const phrases = officialLines.map((line, i) => {
-      const chars = [...line.replace(/\s/g, '')]
-      return {
-        index: i + 1,
-        syllableCount: chars.length,
-        // 没有真实的 per-line note 映射；rhythm 用占位（'短' x N），AI 不靠它写出歌词
-        rhythm: new Array(chars.length).fill('短'),
-        pitchLow: baseStructure?.pitchLow || null,
-        pitchHigh: baseStructure?.pitchHigh || null,
-        existingLyrics: null,
-      }
-    })
-    return {
-      totalNotes: phrases.reduce((s, p) => s + p.syllableCount, 0),
-      phraseCount: phrases.length,
-      bpm: baseStructure?.bpm ?? 120,
-      tempoLabel: baseStructure?.tempoLabel ?? '中速',
-      pitchLow: baseStructure?.pitchLow || null,
-      pitchHigh: baseStructure?.pitchHigh || null,
-      phrases,
-    }
+  // 官方歌词改作"主题/意境灵感"喂给 AI，不再作为结构权威源——结构以后端
+  // phrase 切分为准（参 _handleAIGenerate）。返回值放进 extraInstruction，
+  // 系统提示词会把它定位为"参考素材"，AI 不会照抄行结构
+  _buildOfficialLyricsContext(officialLines) {
+    if (!Array.isArray(officialLines) || officialLines.length === 0) return ''
+    const cleaned = officialLines.map((l) => l.replace(/^\s+|\s+$/g, '')).filter((l) => l.length > 0)
+    if (cleaned.length === 0) return ''
+    return [
+      '## 这首歌的官方歌词（仅作主题 / 意境 / 韵脚的参考素材）',
+      '',
+      '⚠️ 重要：以下歌词**只用于理解原曲主题、意象、押韵习惯**——你写新词时的**句数、每句字数必须严格匹配上面的"音乐结构"**（不是匹配官方歌词的行数和字数）。官方歌词的句数 / 字数和音乐结构通常对不上，**以音乐结构为准**。',
+      '',
+      cleaned.join('\n'),
+    ].join('\n')
   }
 
   _formatAIError(result) {
@@ -836,7 +833,14 @@ export class QuickLyricPanel {
     try {
       await this._onSave?.(edits)
     } catch (error) {
-      this._setStatus(t('quickLyric.save_failed', { message: error?.message || t('quickLyric.unknown_error') }), 'error')
+      const msg = String(error?.message || '')
+      // 后端 job 被清理（idle 超时 / 服务器重启 / cleanup）—— 翻译成可操作的人话，
+      // 而不是甩 "Job not found." 让用户摸不到头脑
+      if (/job not found/i.test(msg)) {
+        this._setStatus(t('quickLyric.save_failed_job_lost'), 'error')
+      } else {
+        this._setStatus(t('quickLyric.save_failed', { message: msg || t('quickLyric.unknown_error') }), 'error')
+      }
       this._btnSave.disabled = false
       return
     }

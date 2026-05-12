@@ -354,6 +354,7 @@ export const messages = {
     no_change: '歌詞に変更はありません',
     saving: '{count} 件を保存中…',
     save_failed: '保存失敗：{message}',
+    save_failed_job_lost: 'バックエンドのレンダリングジョブが失効しました（アイドルタイムアウトまたはサーバー再起動が原因と思われます）。Quick Lyric を閉じて「音声としてレンダリング」をもう一度実行してから、再度歌詞を入力してください。',
     saved: '{count} 件を保存しました',
     unknown_error: '不明なエラー',
   },

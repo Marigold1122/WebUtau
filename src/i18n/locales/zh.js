@@ -354,6 +354,7 @@ export const messages = {
     no_change: '歌词没有变化',
     saving: '正在保存 {count} 处修改…',
     save_failed: '保存失败：{message}',
+    save_failed_job_lost: '后端渲染任务已失效（多半是闲置超时或服务器重启）。请关闭快速填词→点"渲染为人声"重新渲染一遍，然后再来填词。',
     saved: '已保存 {count} 处修改',
     unknown_error: '未知错误',
   },
