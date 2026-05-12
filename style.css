@@ -2275,8 +2275,10 @@ body {
      拖拽 250ms→<16ms 一帧 */
   contain: layout style paint;
 }
-/* 选中态：accent 描边 + 微 glow —— 让用户能一眼看出当前编辑哪条轨 */
-.mixer-strip.is-selected {
+/* 选中态：accent 描边 + 微 glow —— 让用户能一眼看出当前编辑哪条轨
+   仅作用于普通 strip；master 不参与轨道选中、不应套这套样式
+   （master 本身已用 accent 边界 + inner glow 视觉强区分，不需重复） */
+.mixer-strip.is-selected:not(.mixer-strip--master) {
   border-color: var(--accent-color);
   box-shadow:
     inset 0 1px 0 var(--mixer-control-highlight),
@@ -2284,9 +2286,9 @@ body {
     inset 0 0 0 1px var(--accent-dim),
     0 0 0 1px var(--accent-mid);
 }
-.mixer-strip.is-selected .mixer-strip-name { color: var(--accent-color); }
-/* hover 提示（仅未选中时）—— 微微亮一点，告诉用户可点击 */
-.mixer-strip:not(.is-selected):hover {
+.mixer-strip.is-selected:not(.mixer-strip--master) .mixer-strip-name { color: var(--accent-color); }
+/* hover 提示（仅未选中、非 master）—— 微微亮一点，告诉用户可点击 */
+.mixer-strip:not(.is-selected):not(.mixer-strip--master):hover {
   border-color: var(--text-muted);
 }
 .mixer-strip-head {
