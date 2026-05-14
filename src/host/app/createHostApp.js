@@ -556,6 +556,8 @@ export function createHostApp() {
     projectAudioMixPersistence,
     projectMixController,
     autoSave: projectAutoSave,
+    // lazy arrow：resumeVoiceRendersAfterRestore 在文件中后于此处声明
+    resumeVoiceRendersAfterRestore: () => resumeVoiceRendersAfterRestore(),
     markPristine,
     logger,
   })

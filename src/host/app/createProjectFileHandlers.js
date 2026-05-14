@@ -40,6 +40,7 @@ export function createProjectFileHandlers({
   projectAudioMixPersistence,
   projectMixController,
   autoSave,
+  resumeVoiceRendersAfterRestore = null,
   markPristine = () => {},
   logger = null,
 }) {
@@ -213,6 +214,13 @@ export function createProjectFileHandlers({
       view.setProjectFileState?.({ name: currentProjectName, dirty: false })
       // 打开成功后立刻把 IndexedDB 里的旧自动快照清掉，避免"恢复上次未保存"误触发
       await autoSave?.clearSnapshot?.()
+      // 跟"恢复工程"走一样的人声渲染重启路径：保存的 .webutau 里人声轨的
+      // prepState='ready' + voiceSnapshot.pitchData 留下来了，但 server 任务和
+      // phrase 音频跨会话失效，HostVocalScheduler 看不到 manifest.phraseStates 会
+      // 整条轨静音——这里后台逐条把渲染任务跑起来
+      if (typeof resumeVoiceRendersAfterRestore === 'function') {
+        void resumeVoiceRendersAfterRestore()
+      }
     } catch (error) {
       logger?.error?.('Project open: load failed', { error: error?.message || String(error) })
       view.setStatus(t('hostStatus.open_failed_generic'))
