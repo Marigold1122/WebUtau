@@ -2,6 +2,7 @@
 import { t } from '../../i18n/index.js'
 import { normalizeTrackVolume } from '../project/trackPlaybackState.js'
 import { getProjectDuration } from '../services/PreviewProjector.js'
+import { getTrackTimelineMetrics } from '../ui/trackTimelineMetrics.js'
 import { TrackFxDispatchRouter } from './TrackFxDispatchRouter.js'
 
 const HOST_PROJECT_DRIVER = 'host-project'
@@ -205,8 +206,14 @@ export class ProjectTransportCoordinator {
     if (!project) return false
 
     const snapshot = this.transportStore.getSnapshot()
-    const duration = Math.max(snapshot.duration || 0, getProjectDuration(project.tracks))
-    const targetTime = Math.min(Math.max(0, Number.isFinite(timeSec) ? timeSec : 0), duration)
+    // seek 上界用"可视 timeline 长度"（至少 64 小节）而非"已填充内容时长"——
+    // 空白工程或刚新建的空轨道 getProjectDuration 返回 0，旧实现把上界 clamp 成 0，
+    // 任何 seek 都被压回 0、播放头看起来"拖不动"。timelineMetrics.axis.duration
+    // 永远 >= 64 小节对应的时间，与 ruler 上能看到的范围一致。
+    const contentDuration = Math.max(snapshot.duration || 0, getProjectDuration(project.tracks))
+    const timelineDuration = getTrackTimelineMetrics(project).axis?.duration || 0
+    const seekUpperBound = Math.max(contentDuration, timelineDuration)
+    const targetTime = Math.min(Math.max(0, Number.isFinite(timeSec) ? timeSec : 0), seekUpperBound)
     this._logTrace('seekToTime:entry', {
       requestedTime: timeSec,
       targetTime,
@@ -222,7 +229,7 @@ export class ProjectTransportCoordinator {
       this.clockStartedSongTime = targetTime
       const nextSnapshot = this.transportStore.patch({
         currentTime: targetTime,
-        duration: Math.max(duration, targetTime),
+        duration: Math.max(contentDuration, targetTime),
       })
       this._syncViewState(nextSnapshot)
       this.logger?.info?.('宿主录制时钟定位完成', {
@@ -236,7 +243,7 @@ export class ProjectTransportCoordinator {
 
     const nextSnapshot = this.transportStore.patch({
       currentTime: targetTime,
-      duration,
+      duration: contentDuration,
     })
     this._syncViewState(nextSnapshot)
     this.logger?.info?.('宿主定位完成', {

@@ -98,9 +98,11 @@
 .export-actions .modal-btn { min-width: 0; flex: 1 1 auto; }
 .export-actions #btn-export-audio-cancel { flex: 0 0 auto; min-width: 56px; }
 
-.modal-overlay#export-audio-modal.visible { display: flex; opacity: 1; }
+.modal-overlay#export-audio-modal.visible,
+.modal-overlay#ustx-export-modal.visible { display: flex; opacity: 1; }
 @starting-style {
-  .modal-overlay#export-audio-modal.visible { opacity: 0; }
+  .modal-overlay#export-audio-modal.visible,
+  .modal-overlay#ustx-export-modal.visible { opacity: 0; }
 }
 
 body.modal-open .app-container, body.modal-open .menubar, body.modal-open #status-bar { user-select: none; }

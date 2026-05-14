@@ -52,6 +52,8 @@ import { installMenubarMeter } from '../ui/menubarMeter.js'
 import { parseUstxToWebUtau } from '../../formats/ustx-import.js'
 import { serializeWebUtauToUstx } from '../../formats/ustx-export.js'
 import { UstxExportModal } from '../../formats/UstxExportModal.js'
+import { createTrackDocument } from '../project/createTrackDocument.js'
+import { mergeTrackPlaybackState } from '../project/trackPlaybackState.js'
 import { t } from '../../i18n/index.js'
 import { ConvertedVocalAssetRegistry } from '../vocal/ConvertedVocalAssetRegistry.js'
 import { ConvertedVocalScheduler } from '../vocal/ConvertedVocalScheduler.js'
@@ -669,6 +671,47 @@ export function createHostApp() {
 
       if (isFirstImport) {
         // ── 空白工程：完整导入 ──
+        // parseUstxToWebUtau 只产出"裸 track summary"——缺 id / jobRef / prepState /
+        // renderState / vocalManifest / voiceConversionState / revision / midiTrackIndex
+        // 等所有 webUTAU runtime 必需字段；previewNotes / sourcePhrases 也只有 tick 没有
+        // time。直接 setProject 会让卷帘按 time=0 把音符全堆在原点（看起来空），
+        // 双击编辑器拿不到 track.id 而 stuck，播放头按 undefined.time 推进失败。
+        // 这里跟 MIDI 导入一致：先用 createTrackDocument 套完整骨架，再用 USTX 自带
+        // tempoData 跑 applyProjectTiming 把 tick→time 算出来。
+        const skeletonProject = {
+          ...importedProject,
+          tracks: incomingTracks.map((track, idx) => {
+            const summary = {
+              index: idx,
+              name: track.name,
+              color: track.color,
+              hasLyrics: track.hasLyrics,
+              role: track.role,
+              contentType: track.contentType,
+              duration: track.duration,
+              durationTicks: track.durationTicks,
+              noteCount: track.noteCount,
+              previewNotes: track.previewNotes,
+              playbackState: track.playbackState,
+              audioClip: track.audioClip,
+            }
+            const doc = createTrackDocument(
+              summary,
+              track.sourcePhrases || [],
+              track.languageCode || null,
+            )
+            doc.singerId = track.singerId || null
+            // round-trip 影子数据透传：USTX 里读出来的孤儿字段挂回 track 上，
+            // 后续导出时 sewTrackExtensions 再写回 YAML
+            if (track._extensions) doc._extensions = track._extensions
+            return doc
+          }),
+        }
+        const timedProject = importService.applyProjectTiming(skeletonProject, {
+          tempoData: skeletonProject.tempoData,
+          ppq: skeletonProject.ppq,
+        }) || skeletonProject
+
         transportCoordinator.reset()
         vocalManifestController.resetProjectAssets()
         voiceConversionController?.reset?.()
@@ -687,7 +730,7 @@ export function createHostApp() {
         sessionStore?.setOpenReverbTrackIds?.([])
         trackShellSessionController.closeSourcePicker(null, 'project-import')
 
-        const restoredProject = projectAudioMixPersistence?.restoreProject?.(importedProject) || importedProject
+        const restoredProject = projectAudioMixPersistence?.restoreProject?.(timedProject) || timedProject
         store.setProject(restoredProject)
         projectAudioMixPersistence?.saveProject?.(store.getProject())
         projectMixController?.syncProjectState?.(store.getProject())
@@ -716,13 +759,19 @@ export function createHostApp() {
             afterTrackId: lastCreatedTrackId,
           })
           lastCreatedTrackId = newTrack.id
+          // USTX 的 playbackState 只覆盖 assignedSourceId/mute/solo/volume/pan，缺
+          // reverb / inserts / guitarTone 等扩展字段；直接 Object.assign 覆盖会把
+          // createTrack 生成的完整 playbackState 砸碎，导致单轨混响/插入效果丢失
+          const mergedPlaybackState = incomingTrack.playbackState
+            ? mergeTrackPlaybackState(newTrack.playbackState, incomingTrack.playbackState)
+            : newTrack.playbackState
           store.updateTrack(newTrack.id, {
             singerId: incomingTrack.singerId || null,
             color: incomingTrack.color || null,
             hasLyrics: incomingTrack.hasLyrics ?? true,
             role: incomingTrack.role || 'vocal',
             contentType: incomingTrack.contentType || 'midi',
-            playbackState: incomingTrack.playbackState || newTrack.playbackState,
+            playbackState: mergedPlaybackState,
             sourcePhrases: incomingTrack.sourcePhrases,
             _extensions: incomingTrack._extensions,
           })
