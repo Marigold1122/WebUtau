@@ -226,6 +226,27 @@ export class ImportProjectService {
       snapshot.jobId = track.jobRef?.jobId || null
       if (!prepReady) snapshot.pitchData = null
       snapshot.renderManifest = cloneValue(track.vocalManifest, null)
+      // 关键修复：USTX 合成路径的 voiceSnapshot 没存 phrases/previewNotes（避免跟
+      // sourcePhrases 双倍体积），但 runtime 需要 phrases 渲染钢琴卷帘。如果 snapshot
+      // 内 phrases/previewNotes 缺失或空，用 track.sourcePhrases 重建。否则 runtime 拿到
+      // pitchCurve=20526 个采样点但 phrases=0 → 卷帘空白
+      if (!Array.isArray(snapshot.phrases) || snapshot.phrases.length === 0) {
+        snapshot.phrases = createPhraseDocuments(track.sourcePhrases)
+        snapshot.phraseCount = snapshot.phrases.length
+        snapshot.noteCount = snapshot.phrases.flatMap((p) => p.notes || []).length
+      }
+      if (!Array.isArray(snapshot.previewNotes) || snapshot.previewNotes.length === 0) {
+        snapshot.previewNotes = cloneValue(track.previewNotes, [])
+      }
+      if (snapshot.encodedMidi == null) {
+        snapshot.encodedMidi = createEncodedMidi(snapshot.phrases, createTempoDocument(tempoDataSource))
+      }
+      if (!snapshot.tempoData) {
+        snapshot.tempoData = createTempoDocument(tempoDataSource)
+      }
+      if (!Number.isFinite(snapshot.duration) || snapshot.duration <= 0) {
+        snapshot.duration = track.duration || 0
+      }
       return snapshot
     }
 

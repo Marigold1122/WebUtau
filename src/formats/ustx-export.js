@@ -16,8 +16,11 @@ import {
   USTX_VERSION,
   toUstxVibrato,
   WEBUTAU_ORPHAN_FIELDS,
+  pruneVoiceSnapshotForUstx,
+  shouldPersistVoiceSnapshotToUstx,
 } from './ustx-types.js'
 import { normalizeShape } from './shape-map.js'
+import { createTimelineAxis } from '../shared/timelineAxis.js'
 
 // ============================================================
 // 常量
@@ -146,6 +149,10 @@ function stripNullsRecursive(obj) {
     if (value == null) {
       delete obj[key]
     } else if (typeof value === 'object') {
+      // _meta 是 webUTAU 私有 payload（voiceSnapshot / guitarTone 等），里面可能有
+      // 合法 null 字段（pitchData.pitchDeviation 等），不能被 sanitize 误删——
+      // OpenUtau 端会忽略整个 _meta，所以保留原样最安全
+      if (key === '_meta') continue
       stripNullsRecursive(value)
     }
   }
@@ -196,6 +203,12 @@ function buildUstxProject(state, options) {
   const tempos = buildTempos(state.tempoData)
   const timeSignatures = buildTimeSignatures(state.tempoData)
 
+  // voice runtime 的 phraseStore.rebuildFromEdit 会在某些路径下把 phrase.notes 的
+  // tick 写成 part-relative（甚至全 0），但 phrase.startTime（绝对秒）总是可靠的。
+  // 提前建好 axis，buildVoicePart 在 tick 缺失/全相同时用 startTime+note.time 反推绝对 tick
+  const safePpq = Number.isFinite(state.ppq) && state.ppq > 0 ? state.ppq : DEFAULT_PPQ
+  const fallbackAxis = createTimelineAxis({ tempoData: state.tempoData, ppq: safePpq, totalTicks: 0 })
+
   const tracks = asArray(state.tracks)
   const ustxTracks = []
   const voiceParts = []
@@ -211,7 +224,7 @@ function buildUstxProject(state, options) {
     const phrases = asArray(track.sourcePhrases)
     if (phrases.length > 0) {
       phrases.forEach((phrase, phraseIdx) => {
-        const part = buildVoicePart(track, phrase, trackNo, phraseIdx)
+        const part = buildVoicePart(track, phrase, trackNo, phraseIdx, fallbackAxis)
         if (part) voiceParts.push(part)
       })
     } else {
@@ -344,6 +357,17 @@ function sewTrackExtensions(ustxTrack, extensions, track) {
     ustxTrack._meta = ustxTrack._meta || {}
     ustxTrack._meta.webutau_voice_conversion = extensions.webutau_voice_conversion
   }
+  // AI 音高预测产物（voiceSnapshot.pitchData.pitchCurve 等密集采样）：
+  // OpenUtau USTX 本身没有此字段，但 webUTAU 闭环 round-trip 需要——影子保留到 _meta，
+  // OpenUtau 端忽略不影响互通。仅在 prepState=ready 且有 pitchCurve 时写，避免悬空。
+  if (shouldPersistVoiceSnapshotToUstx(track)) {
+    const prunedSnapshot = pruneVoiceSnapshotForUstx(track.voiceSnapshot)
+    if (prunedSnapshot) {
+      ustxTrack._meta = ustxTrack._meta || {}
+      ustxTrack._meta.webutau_voice_snapshot = prunedSnapshot
+      ustxTrack._meta.webutau_prep_state = { status: 'ready', progress: 100, error: null }
+    }
+  }
 }
 
 /**
@@ -361,16 +385,35 @@ function buildPhonemizer(languageCode, extensions) {
 // VoicePart 构建
 // ============================================================
 
-function buildVoicePart(track, phrase, trackNo, phraseIdx) {
+function buildVoicePart(track, phrase, trackNo, phraseIdx, fallbackAxis) {
   const notes = asArray(phrase.notes)
   if (notes.length === 0) return null
 
   const partExtensions = getExtensions(phrase)
-  // 动态计算最小绝对 tick，避免依赖可能过时的缓存 _startTick
-  const partPosition = notes.length > 0 ? Math.min(...notes.map(n => asInteger(n.tick))) : 0
-  // 显式计算 VoicePart 持续时长（最大 end tick − 最小 start tick）
-  const partDuration = notes.length > 0
-    ? Math.max(...notes.map(n => asInteger(n.tick) + Math.max(1, asInteger(n.durationTicks, 1)))) - partPosition
+
+  // 兜底：runtime 的 phraseStore.rebuildFromEdit 在某些路径下把 phrase.notes 的 tick
+  // 写成 part-relative（甚至全 0），sourcePhrases 流回 host 后 host 端 note.tick 失真。
+  // 检测方法：所有 note.tick 相同 + notes>1 → 不可能（同时刻 N 个 note 重叠）→ 视为污染。
+  // 修复方法：用 phrase.startTime（绝对秒）+ note.time（part-relative 秒）反推绝对 tick。
+  const tickValues = notes.map((n) => asInteger(n.tick))
+  const allSameTick = notes.length > 1 && tickValues.every((t) => t === tickValues[0])
+  const needRebuild = allSameTick && fallbackAxis
+  const phraseStartSec = Number.isFinite(phrase?.startTime) ? Math.max(0, phrase.startTime) : 0
+  const resolvedNotes = needRebuild
+    ? notes.map((n) => {
+        const noteRelSec = Number.isFinite(n?.time) ? n.time : 0
+        // note.time 可能是 part-relative（rebuildFromEdit 路径）也可能是绝对（正常 import 路径）。
+        // 判断：若 note.time < phrase.startTime，必然是 part-relative，加 startTime 矫正；
+        // 否则视为绝对值（webUTAU 多数链路下 note.time 直接是绝对秒）。
+        const absSec = noteRelSec < phraseStartSec ? phraseStartSec + noteRelSec : noteRelSec
+        const absTick = Math.max(0, Math.round(fallbackAxis.timeToTick(absSec)))
+        return { ...n, tick: absTick }
+      })
+    : notes
+
+  const partPosition = resolvedNotes.length > 0 ? Math.min(...resolvedNotes.map(n => asInteger(n.tick))) : 0
+  const partDuration = resolvedNotes.length > 0
+    ? Math.max(...resolvedNotes.map(n => asInteger(n.tick) + Math.max(1, asInteger(n.durationTicks, 1)))) - partPosition
     : 0
 
   const part = {
@@ -379,7 +422,7 @@ function buildVoicePart(track, phrase, trackNo, phraseIdx) {
     track_no: trackNo,
     position: partPosition,
     duration: partDuration,
-    notes: notes.map((note) => buildUstxNote(note, partPosition)),
+    notes: resolvedNotes.map((note) => buildUstxNote(note, partPosition)),
     // 注入默认 phonemes 桩，打通 note→phoneme 引用链
     phonemes: partExtensions.phonemes || [{ position: 0, phoneme: 'a' }],
     curves: partExtensions.curves || [],

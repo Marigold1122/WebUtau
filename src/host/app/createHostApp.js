@@ -86,13 +86,17 @@ function getNoteEditorMonitorSourceId(track) {
 }
 
 function isPreparedVoiceTrack(track) {
+  // 旧版本要求 jobRef.jobId 非空——含义是"经过后端任务渲染完的轨道"。但 USTX 导入的轨道
+  // 也带 voiceSnapshot + prepState=ready（pitchData 来自前端合成器或 _meta 影子还原），
+  // 同样属于"已准备好的 voice track"，不该被强制走"擦 sourcePhrases + 重新预测"的路径。
+  // 改为只要"有效 voiceSnapshot.pitchData"就算 prepared，jobId 不强制——这条等价语义
+  // 跨"后端预测产物"和"USTX 携带 pitch"两种来源
   return Boolean(
     track
     && !isAudioTrack(track)
     && isVoiceRuntimeSource(track.playbackState?.assignedSourceId)
     && isTrackPrepReady(track)
-    && track.voiceSnapshot
-    && track.jobRef?.jobId,
+    && track.voiceSnapshot?.pitchData?.pitchCurve?.length,
   )
 }
 
@@ -678,6 +682,13 @@ export function createHostApp() {
         // 双击编辑器拿不到 track.id 而 stuck，播放头按 undefined.time 推进失败。
         // 这里跟 MIDI 导入一致：先用 createTrackDocument 套完整骨架，再用 USTX 自带
         // tempoData 跑 applyProjectTiming 把 tick→time 算出来。
+        // USTX _meta.webutau_voice_snapshot 里保留的 AI 音高预测产物——
+        // applyProjectTiming 会无条件把 voiceSnapshot 重置为 null（MIDI 改 tempo
+        // 后 pitchCurve 失效，这种语义对一般导入是对的）；但 USTX 闭环 round-trip
+        // 用的是 USTX 自带 tempoData，tempo 不变，pitchCurve 仍有效——所以这里
+        // 先把还原出来的 voiceSnapshot/prepState 旁路缓存，applyProjectTiming
+        // 跑完后再按 track.id 一一 patch 回 timedProject。
+        const voiceSnapshotPatches = new Map()
         const skeletonProject = {
           ...importedProject,
           tracks: incomingTracks.map((track, idx) => {
@@ -704,6 +715,12 @@ export function createHostApp() {
             // round-trip 影子数据透传：USTX 里读出来的孤儿字段挂回 track 上，
             // 后续导出时 sewTrackExtensions 再写回 YAML
             if (track._extensions) doc._extensions = track._extensions
+            if (track.voiceSnapshot && track.prepState?.status === 'ready') {
+              voiceSnapshotPatches.set(doc.id, {
+                voiceSnapshot: track.voiceSnapshot,
+                prepState: track.prepState,
+              })
+            }
             return doc
           }),
         }
@@ -711,6 +728,19 @@ export function createHostApp() {
           tempoData: skeletonProject.tempoData,
           ppq: skeletonProject.ppq,
         }) || skeletonProject
+
+        // 把旁路缓存的 voiceSnapshot/prepState 写回——pitchCurve 在原 tempo 下采样，
+        // 这里 timing 没改，曲线仍有效；trackId 与 doc.id 一一对应（createTrackDocument
+        // 按 index 生成 'track-<idx>'，applyProjectTiming 不会改 id）
+        if (voiceSnapshotPatches.size > 0) {
+          for (const track of timedProject.tracks || []) {
+            const patch = voiceSnapshotPatches.get(track.id)
+            if (patch) {
+              track.voiceSnapshot = patch.voiceSnapshot
+              track.prepState = patch.prepState
+            }
+          }
+        }
 
         transportCoordinator.reset()
         vocalManifestController.resetProjectAssets()
@@ -751,8 +781,13 @@ export function createHostApp() {
           return
         }
 
+        // 导入新 track 后 transport 状态必须重置——不然如果用户上次播到了某个时间，
+        // 这次导入完会看到播放头停在那个旧时间、点击 ruler 又因为某些链路 clamp 失败，
+        // 视觉上就是"导入完播放头位置错、还拖不动"
+        transportCoordinator.reset()
+
         let lastCreatedTrackId = null
-        for (const incomingTrack of timedTracks) {
+        for (const [trackIdx, incomingTrack] of timedTracks.entries()) {
           const newTrack = store.createTrack({
             name: incomingTrack.name || '',
             languageCode: incomingTrack.languageCode || null,
@@ -776,11 +811,25 @@ export function createHostApp() {
             _extensions: incomingTrack._extensions,
           })
           // 填充音符（不重建 sourcePhrases，保留 USTX phrase 结构）
+          // clearVoiceSnapshot=false：USTX 的 voiceSnapshot（合成器算的 pitchCurve 或
+          // _meta 还原的 AI 产物）跟新 previewNotes 是配套的，不能擦掉，否则切到
+          // lyric/pitch 模式时 prepState=idle 又会触发完整音高预测、覆盖 USTX 携带的 pitch
           store.replaceTrackPreviewNotes(newTrack.id, incomingTrack.previewNotes, {
             rebuildSourcePhrases: false,
-            clearVoiceSnapshot: true,
+            clearVoiceSnapshot: false,
             clearPendingVoiceEditState: false,
           })
+          // 显式写回 USTX 携带的 voiceSnapshot/prepState——applyProjectTiming 会把
+          // timedProject.tracks[i].voiceSnapshot 重置为 null（多 tempo 路径下 pitch 失效是
+          // 合理保护），但 USTX 闭环用 USTX 自带 tempoData，pitchCurve 仍有效。
+          // applyProjectTiming 输出按原顺序，所以按 trackIdx 回 importedProject.tracks 取
+          const originalUstxTrack = importedProject.tracks[trackIdx]
+          if (originalUstxTrack?.voiceSnapshot && originalUstxTrack.prepState?.status === 'ready') {
+            store.updateTrack(newTrack.id, {
+              voiceSnapshot: originalUstxTrack.voiceSnapshot,
+              prepState: originalUstxTrack.prepState,
+            })
+          }
         }
 
         projectAudioMixPersistence?.saveProject?.(store.getProject())

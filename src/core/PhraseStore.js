@@ -179,22 +179,43 @@ class PhraseStore {
       return notes
     })
 
-    // 第二轮：回收孤儿 note — 分配到时间上最近的前一个 phrase
+    // 第二轮：回收孤儿 note — 分配到时间上最近的 phrase（前后均可）
+    // 之前只找"前一个 phrase"——但 backend 可能为优化静默而把 phrase[0].startMs 设得比
+    // 第一个 webutau note 还晚，那个 note 没有"前一个 phrase"可归 → 被静默丢掉
+    // → 用户感受到的"开头缺音符" round-trip bug
     const orphans = allNotes.filter((n) => !assigned.has(n))
     if (orphans.length > 0) {
       console.log(`[数据中心] 分配孤儿note | ${orphans.length}个未分配`)
       for (const orphan of orphans) {
         const orphanTime = orphan.time
-        // 找时间上最近的前一个 phrase（endSec <= orphanTime 或最近的）
+        // 找时间上**最近**的 phrase：先看前一个（startSec ≤ orphanTime 中最大的），
+        // 没有就退化到第一个 phrase（覆盖"在所有 phrase 之前"的孤儿，避免丢音符）
         let bestIdx = -1
+        let bestDelta = Infinity
         for (let i = 0; i < sortedPhrases.length; i++) {
           const startSec = sortedPhrases[i].startMs / 1000
-          if (startSec <= orphanTime) bestIdx = i
+          const endSec = startSec + sortedPhrases[i].durationMs / 1000
+          // 优先匹配 orphan 落入或紧邻的 phrase
+          let delta
+          if (orphanTime < startSec) delta = startSec - orphanTime
+          else if (orphanTime > endSec) delta = orphanTime - endSec
+          else delta = 0
+          if (delta < bestDelta) {
+            bestDelta = delta
+            bestIdx = i
+          }
         }
         if (bestIdx >= 0) {
           phraseNotes[bestIdx].push(orphan)
           phraseNotes[bestIdx].sort((a, b) => a.time - b.time)
-          console.log(`[数据中心]   孤儿 time=${orphanTime.toFixed(3)}s midi=${orphan.midi} → 归入phrase ${sortedPhrases[bestIdx].index}`)
+          console.log(`[数据中心]   孤儿 time=${orphanTime.toFixed(3)}s midi=${orphan.midi} → 归入phrase ${sortedPhrases[bestIdx].index} (delta=${bestDelta.toFixed(3)}s)`)
+        } else {
+          // 完全没 phrase（边界情况）：保留到第一个 phrase 兜底，绝对不丢音符
+          console.warn(`[数据中心]   孤儿 time=${orphanTime.toFixed(3)}s midi=${orphan.midi} → 无 phrase 可归，分配到 phrase[0] 兜底`)
+          if (phraseNotes.length > 0) {
+            phraseNotes[0].push(orphan)
+            phraseNotes[0].sort((a, b) => a.time - b.time)
+          }
         }
       }
     }

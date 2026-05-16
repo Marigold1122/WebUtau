@@ -377,6 +377,20 @@ export const WEBUTAU_ORPHAN_FIELDS = Object.freeze({
     note: 'webUTAU 音色转换（SeedVC）状态。USTX 无此概念。',
     lossiness: 'preserved-in-ustx',
   },
+  'track.voiceSnapshot': {
+    category: 'track',
+    ustxFate: '_meta.webutau_voice_snapshot',
+    ustFate: 'discard',
+    note: 'webUTAU AI 渲染产物（pitchData.pitchCurve 等密集采样）。OpenUtau 自身的 pitch curve 是渲染时实时计算的、不持久化；webUTAU 把它保存进 _meta 影子槽以实现自身闭环 round-trip，OpenUtau 端忽略。仅当 prepState=ready 且 pitchCurve 非空时写入。',
+    lossiness: 'preserved-in-ustx',
+  },
+  'track.prepState': {
+    category: 'track',
+    ustxFate: '_meta.webutau_prep_state',
+    ustFate: 'discard',
+    note: 'webUTAU 音高预测状态机。与 voiceSnapshot 配对：prepState=ready 表示 voiceSnapshot.pitchData 有效。仅持久化 ready 状态，其余 idle/queued/predicting/error 一律不写。',
+    lossiness: 'preserved-in-ustx',
+  },
   'track.audioClip': {
     category: 'track',
     ustxFate: 'UWavePart',
@@ -590,6 +604,8 @@ export const EXTENSION_TO_USTX_PATH = Object.freeze({
   webutau_guitarTone: 'track._meta.webutau_guitar_tone',
   webutau_reverb: 'track._meta.webutau_reverb',
   webutau_voiceConversion: 'track._meta.webutau_voice_conversion',
+  webutau_voiceSnapshot: 'track._meta.webutau_voice_snapshot',
+  webutau_prepState: 'track._meta.webutau_prep_state',
 
   // ── Project 级扩展 → UProject ──
   comment: 'project.comment',
@@ -682,5 +698,71 @@ export function fromUstxVibrato(vibrato) {
     shift: vibrato.shift,
     drift: vibrato.drift,
     volLink: vibrato.vol_link,
+  }
+}
+
+// ============================================================
+// SECTION 11: voiceSnapshot / prepState 影子持久化
+// ============================================================
+//
+// .webutau v2 工程文件持久化 AI 音高预测产物（voiceSnapshot.pitchData）+ prepState；
+// USTX 没有对应字段，通过 _meta.webutau_voice_snapshot / _meta.webutau_prep_state
+// 影子槽实现 webUTAU 端的闭环 round-trip。OpenUtau 解析 USTX 时 _meta 字段会被忽略，
+// 不影响互通。
+//
+// 序列化策略与 host/project/projectFile.js#pruneVoiceSnapshot 对齐：
+//   - 剔除 jobId / renderManifest（含 server-side 任务 ID，跨会话失效）
+//   - 仅当 prepState='ready' 且 pitchData.pitchCurve 非空时才写
+//   - prepState 写入时收敛到 { status: 'ready', progress: 100, error: null }，
+//     不持久化 queued/predicting/error 等运行时态
+
+/** 把 voiceSnapshot 剔成"可跨会话持久化"的子集；返回 null 表示不值得保存。 */
+export function pruneVoiceSnapshotForUstx(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return null
+  // 先剥掉无法 YAML 序列化的字段（File / Blob 类），structuredClone 能拷它们，
+  // 但 js-yaml.dump 会变成 {} 或抛 toJSON-related 错。手动构造纯 POJO 子集才稳。
+  const pitchData = snapshot.pitchData
+  if (!pitchData?.pitchCurve?.length) return null
+  return {
+    trackName: typeof snapshot.trackName === 'string' ? snapshot.trackName : '',
+    trackIndex: Number.isFinite(snapshot.trackIndex) ? snapshot.trackIndex : null,
+    languageCode: typeof snapshot.languageCode === 'string' ? snapshot.languageCode : null,
+    bpm: Number.isFinite(snapshot.bpm) ? snapshot.bpm : null,
+    tempoData: snapshot.tempoData ? structuredClone(snapshot.tempoData) : null,
+    phraseCount: Number.isFinite(snapshot.phraseCount) ? snapshot.phraseCount : null,
+    noteCount: Number.isFinite(snapshot.noteCount) ? snapshot.noteCount : null,
+    duration: Number.isFinite(snapshot.duration) ? snapshot.duration : 0,
+    pitchData: structuredClone(pitchData),
+    // 显式不保留：
+    //   jobId / renderManifest — server 侧任务引用，跨会话失效
+    //   encodedMidi — File 对象，YAML 不能序列化；webUTAU 加载时按需用 phrases+tempoData 重建
+    //   previewNotes / phrases — store 里已经有完整 sourcePhrases，重复保存浪费 YAML 体积
+  }
+}
+
+/** 判断一对 (voiceSnapshot, prepState) 是否值得写入 USTX _meta 影子槽。 */
+export function shouldPersistVoiceSnapshotToUstx(track) {
+  if (!track || typeof track !== 'object') return false
+  if (track.prepState?.status !== 'ready') return false
+  return Boolean(track.voiceSnapshot?.pitchData?.pitchCurve?.length)
+}
+
+/**
+ * 从 USTX _meta.webutau_voice_snapshot / webutau_prep_state 还原 webUTAU 状态。
+ * 返回 { voiceSnapshot, prepState }，无效或不完整时返回 { voiceSnapshot: null, prepState: null }。
+ * 校验逻辑跟 projectFile.js#normalizeLoadedTracks 一致——prep='ready' 必有 pitchCurve，
+ * 否则降级到 idle 并丢掉 voiceSnapshot。
+ */
+export function restoreVoiceSnapshotFromUstx(meta) {
+  if (!meta || typeof meta !== 'object') return { voiceSnapshot: null, prepState: null }
+  const rawSnapshot = meta.webutau_voice_snapshot
+  const rawPrep = meta.webutau_prep_state
+  if (!rawSnapshot || typeof rawSnapshot !== 'object') return { voiceSnapshot: null, prepState: null }
+  if (!rawSnapshot.pitchData?.pitchCurve?.length) return { voiceSnapshot: null, prepState: null }
+  const prepStatus = typeof rawPrep?.status === 'string' ? rawPrep.status : null
+  if (prepStatus !== 'ready') return { voiceSnapshot: null, prepState: null }
+  return {
+    voiceSnapshot: structuredClone(rawSnapshot),
+    prepState: { status: 'ready', progress: 100, error: null },
   }
 }

@@ -1,6 +1,6 @@
 import { normalizeOptionalLanguageCode } from '../../config/languageOptions.js'
 import { buildPredictionOverlayText } from '../app/trackPredictionProgress.js'
-import { isTrackPrepReady } from '../project/trackPrepState.js'
+import { hasPredictedPitch, isTrackPrepReady } from '../project/trackPrepState.js'
 import { isVoiceRuntimeSource } from '../project/trackSourceAssignment.js'
 import { hasTracksRequiringVoiceLanguageSelection } from '../project/voiceTrackLanguageGate.js'
 import { t } from '../../i18n/index.js'
@@ -77,9 +77,51 @@ export class TrackPredictionGateController {
 
     if (!isResume) await this._prepareRuntime(track.id, intent)
     const preparedTrack = this.store.getTrack(track.id)
+    // 如果 track 已经有有效 pitchData（USTX 携带的合成曲线 / _meta 影子还原 / 上一轮渲染产物），
+    // 不重新预测——只把 snapshot 推给 runtime 让 iframe 加载已有曲线就行。
+    // 用户的 USTX 工程含 pitchCurve 时，选完语言/声库不该被强制重算（覆盖原 pitch 数据）
+    const alreadyPredicted = isTrackPrepReady(preparedTrack) && hasPredictedPitch(preparedTrack.voiceSnapshot)
     const snapshot = this.importService.buildVoiceSnapshot(preparedTrack, this.store.getProject()?.tempoData)
-    const prepPromise = this.prepWaiters.wait(track.id)
     this._activeTrackId = track.id
+
+    if (alreadyPredicted) {
+      // 已经有 pitchData → 跳过 prepWaiters 等待（编辑器立即可用）+ 不显示 PrepareOverlay；
+      // 但 startSynthesis 仍要调——它在 webUTAU 架构里**不只是音高预测**，更重要的是
+      // "提交 MIDI 给后端做 phrase 音频渲染"。不调就没 WAV 文件、播放无声。
+      // 关键：必须调 beginPrediction 让 jobRef.status='active'，否则 taskCoordinator.
+      // matchesActiveTask 拒绝所有 backend 后续事件（onRenderProgress / onRenderComplete /
+      // onJobSubmitted / onPhraseReady 都用 matchesActiveTask 守卫），UI 永远停在
+      // "渲染中"、音频也注册不进 vocalAssetRegistry → 播放无声
+      try {
+        this.taskCoordinator.beginPrediction(preparedTrack.id, intent)
+        await this.bridge.loadTrack(snapshot)
+        this.taskCoordinator.setRuntimeTrack(preparedTrack.id)
+        this.store.updateTrackRenderState(preparedTrack.id, { status: 'queued', completed: 0, total: 0, error: null })
+        this.render('prediction-gate-skip-resync')
+        await this.bridge.startSynthesis({ languageCode, singerId })
+        // 不 await prepWaiters——pitchData 已存在，编辑器不必等 backend prediction
+        if (intent === 'open') {
+          this.onEditorOpened?.(preparedTrack.id)
+          this.render('editor-opened-with-precomputed-pitch')
+          this.view.notifyRuntimeLayoutChanged()
+          this.view.setStatus(t('predictionGate.open_done', { name: preparedTrack.name }))
+          return true
+        }
+        if (isResume) {
+          this.render('prediction-gate-resume-ready')
+          return true
+        }
+        this.render('playback-start-with-precomputed-pitch')
+        this.view.setStatus(t('predictionGate.play_done', { name: preparedTrack.name }))
+        await this.onPlaybackRequested?.()
+        return true
+      } finally {
+        this._activeTrackId = null
+        this.view.hideTrackSynthesisOverlay()
+      }
+    }
+
+    const prepPromise = this.prepWaiters.wait(track.id)
     this.taskCoordinator.beginPrediction(track.id, intent)
     this.store.updateTrackPrepState(preparedTrack.id, { status: 'queued', progress: 8, error: null })
     this.view.showTrackSynthesisOverlay(
@@ -155,7 +197,14 @@ export class TrackPredictionGateController {
     if (!hasTracksRequiringVoiceLanguageSelection(this.store.getProject()?.tracks || [])) {
       this.view.hidePlaybackToast(VOICE_LANGUAGE_TOAST_ID)
     }
-    if (languageChanged || singerChanged) {
+    // 关键：language/singer 变更通常意味着"需要按新声库重新预测"，但 track 已经携带
+    // 有效 pitchData（USTX 工程的 OpenUtau pitch 曲线、上一轮 AI 预测产物等）时，
+    // 用户的意图是"补语言信息但保留现成的音高"——若清掉 prepState，run() 后续就会
+    // 重启 startSynthesis 覆盖 pitchData。所以只在确实没有 pitch 数据时才作废。
+    const trackAfterUpdate = this.store.getTrack(track.id)
+    const hasUsableSnapshot = isTrackPrepReady(trackAfterUpdate)
+      && hasPredictedPitch(trackAfterUpdate?.voiceSnapshot)
+    if ((languageChanged || singerChanged) && !hasUsableSnapshot) {
       this.taskCoordinator.resetTrackTask(track.id)
       this.store.updateTrackPrepState(track.id, { status: 'idle', progress: 0, error: null })
       this.store.updateTrackRenderState(track.id, { status: 'idle', completed: 0, total: 0, error: null })

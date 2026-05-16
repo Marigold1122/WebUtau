@@ -20,8 +20,11 @@ import {
   fromUstxVibrato,
   TEMPO_FIELD_MAP,
   TIME_SIGNATURE_FIELD_MAP,
+  restoreVoiceSnapshotFromUstx,
 } from './ustx-types.js'
 import { normalizeShape } from './shape-map.js'
+import { buildSynthesizedVoiceSnapshot } from './ustxPitchSynth.js'
+import { createTimelineAxis } from '../shared/timelineAxis.js'
 
 // ============================================================
 // 常量
@@ -158,13 +161,16 @@ function convertProject(ustx) {
     projectExtensions[key] = value
   }
 
+  // 先算 tempoData——合成 pitchCurve 时需要它做 ms↔tick 换算
+  const tempoData = convertTempoData(tempos, timeSignatures)
+
   // 转换 webUTAU track 列表
-  const webUtauTracks = convertTracks(voiceParts, trackByNo, tempos, timeSignatures)
+  const webUtauTracks = convertTracks(voiceParts, trackByNo, tempos, timeSignatures, tempoData, DEFAULT_PPQ)
 
   return {
     fileName: asString(ustx.name, 'New Project'),
     ppq: DEFAULT_PPQ,
-    tempoData: convertTempoData(tempos, timeSignatures),
+    tempoData,
     tracks: webUtauTracks,
     [EXTENSIONS_KEY]: Object.keys(projectExtensions).length > 0 ? projectExtensions : undefined,
   }
@@ -174,7 +180,7 @@ function convertProject(ustx) {
 // Track / Part 级别转换
 // ============================================================
 
-function convertTracks(voiceParts, trackByNo, tempos, timeSignatures) {
+function convertTracks(voiceParts, trackByNo, tempos, timeSignatures, tempoData, ppq) {
   // voice_parts 已按 trackNo 排序，分组为 per-track 的 parts 列表
   const partsByTrack = new Map()
   voiceParts.forEach((part) => {
@@ -185,12 +191,20 @@ function convertTracks(voiceParts, trackByNo, tempos, timeSignatures) {
     partsByTrack.get(trackNo).push(part)
   })
 
+  // 修复异常 part position：webUTAU backend phrase 渲染回填存在双叠加 bug，
+  // 导致某些 part 的 position 翻倍写入 USTX。表现：某 part.position 远超
+  // "前面所有 part 的 max(position + duration)" 累计端点；且 part.position / 2
+  // 接近这个累计端点。修复后下游 absoluteTick = partPos + notePos 自动落到合理位置。
+  for (const parts of partsByTrack.values()) {
+    fixVoicePartPositions(parts)
+  }
+
   const result = []
   let index = 0
 
   for (const [trackNo, parts] of partsByTrack) {
     const track = trackByNo.get(trackNo) || {}
-    const webUtauTrack = convertTrack(track, parts, trackNo, index, tempos, timeSignatures)
+    const webUtauTrack = convertTrack(track, parts, trackNo, index, tempos, timeSignatures, tempoData, ppq)
     result.push(webUtauTrack)
     index += 1
   }
@@ -198,7 +212,45 @@ function convertTracks(voiceParts, trackByNo, tempos, timeSignatures) {
   return result
 }
 
-function convertTrack(ustxTrack, parts, trackNo, index, tempos, timeSignatures) {
+/**
+ * 修正 voice_parts 中 partPosition 被 backend 双叠加污染的 part。
+ *
+ * 检测：按文件顺序扫描，partPos 远超前面所有 part 的最大 partPos（绝对差 > 20000 且
+ * 倍率 > 1.5）→ 异常。这种异常 part 的 position 是 backend 渲染时 phrase.position 双
+ * 叠加产物，halfPos = partPos / 2 通常接近"应当的位置"。
+ *
+ * 修复：把 partPos 改成 max(halfPos, maxPrevPos)，让异常 part 至少不会回到时间线前段。
+ * 注意：不使用 maxPos+duration 作为累计端点——backend bug 同时污染了 part.duration，
+ * 那个值不可信。直接用 max(partPos) 累积比较稳。
+ *
+ * 直接 mutate 原 part 对象的 position 字段。
+ */
+function fixVoicePartPositions(parts) {
+  if (parts.length < 2) return
+  let maxPrevPos = 0
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i]
+    const pos = asInteger(part.position)
+    // 异常条件:
+    //   (a) pos > maxPrevPos * 1.5 (倍率，排除轻微跳跃)
+    //   (b) pos - maxPrevPos > 20000 (绝对差，排除开头小 part 跨越)
+    //   (c) halfPos 在 [maxPrevPos * 0.7, maxPrevPos + 15000] 范围（典型双叠加）
+    if (i > 0 && pos > maxPrevPos * 1.5 && pos - maxPrevPos > 20000) {
+      const halfPos = pos / 2
+      if (halfPos >= maxPrevPos * 0.7 && halfPos <= maxPrevPos + 15000) {
+        // 修正后位置取 max(halfPos, maxPrevPos)，保证不跑到前面 part 之前
+        const corrected = Math.max(Math.round(halfPos), maxPrevPos)
+        console.warn(`[ustx-import] voice_part[${i}] partPos=${pos} 异常 (>>maxPrevPos=${maxPrevPos}) → 修正为 ${corrected}`)
+        part.position = corrected
+        maxPrevPos = Math.max(maxPrevPos, corrected)
+        continue
+      }
+    }
+    maxPrevPos = Math.max(maxPrevPos, pos)
+  }
+}
+
+function convertTrack(ustxTrack, parts, trackNo, index, tempos, timeSignatures, tempoData, ppq) {
   // 收集 UTrack 级别扩展（保留 USTX YAML 原生 snake_case 键名）
   const trackExtensions = {}
   const knownTrackKeys = new Set([
@@ -222,6 +274,10 @@ function convertTrack(ustxTrack, parts, trackNo, index, tempos, timeSignatures) 
   if (ustxTrack.voice_color_names !== undefined) {
     trackExtensions.voice_color_names = ustxTrack.voice_color_names
   }
+
+  // 建 axis 一次，buildPhrase 用它把 tick 转成绝对 startTime/endTime
+  const safePpq = Number.isFinite(ppq) && ppq > 0 ? ppq : 480
+  const axis = createTimelineAxis({ tempoData, ppq: safePpq, totalTicks: 0 })
 
   // 转换所有 part 中的 note
   const allPreviewNotes = []
@@ -249,16 +305,78 @@ function convertTrack(ustxTrack, parts, trackNo, index, tempos, timeSignatures) 
     const convertedNotes = notes.map((ustxNote) =>
       convertNote(ustxNote, partPosition),
     )
+    // backend 异常修正：backend 渲染 phrase 时存在 "renderPhrase.position + 已经是 absolute
+    // 的 renderNote.position 双叠加" bug，导致 phrase 内 first note（典型为 vocal 第一个字）
+    // 的 absoluteTick 翻倍。典型表现：USTX 文件里某个 note 的 raw position ≈ partPosition
+    // （例如 partPosition=11280, note.position=10800; partPosition=36360, note.position=36120），
+    // 让 absoluteTick = partPosition + position ≈ 2×partPosition——这是不可能的"真实音符位置"。
+    //
+    // 检测策略：raw position 接近 partPosition (ratio ≈ 1)，且 part 内其它 note 集中在
+    // part.duration 内（合理范围），则视为 backend 双叠加产物。
+    // 修复策略：把 outlier 的 absoluteTick 修正为 partPosition - outlierDur（让它紧邻
+    // part 起点之前——这就是 vocal 第一个音符在原始 ustx 中应该的位置）。
+    const partDurationTicks = asInteger(part.duration)
+    if (convertedNotes.length >= 2 && partDurationTicks > 0 && partPosition > 0) {
+      let maxIdx = 0
+      let maxTick = convertedNotes[0].tick || 0
+      for (let i = 1; i < convertedNotes.length; i++) {
+        if ((convertedNotes[i].tick || 0) > maxTick) {
+          maxTick = convertedNotes[i].tick
+          maxIdx = i
+        }
+      }
+      const outlier = convertedNotes[maxIdx]
+      const outlierRawPos = (outlier.tick || 0) - partPosition  // = note.position 原始值
+      const outlierDur = Math.max(0, outlier.durationTicks || 0)
+      const otherRawPositions = convertedNotes
+        .filter((_, i) => i !== maxIdx)
+        .map((n) => (n.tick || 0) - partPosition)
+      const groupMaxRaw = Math.max(...otherRawPositions)
+      // 双重判断:
+      //   (a) outlier raw position 接近 partPosition (typical backend 双叠加产物，ratio≈1)
+      //   (b) 群体的 raw position 都在 part.duration 内 (合理 note 分布)
+      const ratio = outlierRawPos / partPosition
+      const isBackendDoubled = ratio > 0.7 && ratio < 1.3
+      const groupInPartRange = groupMaxRaw < partDurationTicks
+      if (isBackendDoubled && groupInPartRange) {
+        const correctedTick = Math.max(0, partPosition - outlierDur)
+        console.warn(`[ustx-import] part[${partIdx}] outlier: rawPos=${outlierRawPos} ≈ partPos=${partPosition} (ratio=${ratio.toFixed(3)}) → absTick=${outlier.tick} → ${correctedTick}`)
+        convertedNotes[maxIdx] = { ...outlier, tick: correctedTick }
+      }
+    }
+    // 按 absoluteTick 升序排序，确保 phrase 内 first note 真的 tick 最小（buildPhrase 用它算 startTime）
+    convertedNotes.sort((a, b) => (a.tick || 0) - (b.tick || 0))
     allPreviewNotes.push(...convertedNotes)
 
-    const phrase = buildPhrase(convertedNotes, partIdx, partExtensions)
+    const phrase = buildPhrase(convertedNotes, partIdx, partExtensions, axis)
     sourcePhrases.push(phrase)
   })
 
   // 从 singer 字段推断语言（弱映射）
   const singer = asString(ustxTrack.singer)
   const phonemizer = asString(ustxTrack.phonemizer)
-  const languageCode = inferLanguageCode(singer, phonemizer)
+  const languageCode = inferLanguageCode(singer, phonemizer, allPreviewNotes)
+
+  // 还原 webUTAU 闭环 round-trip 保存的 AI 音高预测产物：USTX _meta.webutau_voice_snapshot
+  // + webutau_prep_state。若不存在或失效，voiceSnapshot/prepState 为 null（上游会用默认 idle）。
+  // 校验逻辑跟 .webutau 工程加载侧 normalizeLoadedTracks 一致——prep=ready 必有 pitchCurve。
+  let { voiceSnapshot, prepState } = restoreVoiceSnapshotFromUstx(ustxTrack._meta)
+  // OpenUtau 原生导出的 USTX 不含 _meta.webutau_voice_snapshot——用合成器把
+  // note.pitch.data + vibrato 按 OpenUtau 自家 RenderPhrase 算法机械算出 pitchCurve，
+  // 让用户导入后立即看到音高曲线，无需等 AI 重新预测。
+  if (!voiceSnapshot && sourcePhrases.length > 0) {
+    const synthesized = buildSynthesizedVoiceSnapshot({
+      phrases: sourcePhrases,
+      tempoData,
+      ppq,
+      trackName: asString(ustxTrack.track_name),
+      languageCode: null,
+    })
+    if (synthesized) {
+      voiceSnapshot = synthesized
+      prepState = { status: 'ready', progress: 100, error: null }
+    }
+  }
 
   return {
     index,
@@ -282,6 +400,8 @@ function convertTrack(ustxTrack, parts, trackNo, index, tempos, timeSignatures) 
     languageCode,
     singerId: singer || null,
     audioClip: null,
+    voiceSnapshot,
+    prepState,
     [EXTENSIONS_KEY]: Object.keys(trackExtensions).length > 0 ? trackExtensions : undefined,
   }
 }
@@ -301,10 +421,29 @@ function convertTrackVolume(ustxVolume) {
 }
 
 /** 弱映射：从 singer/phonemizer 推断语言代码 */
-function inferLanguageCode(singer, phonemizer) {
+function inferLanguageCode(singer, phonemizer, notes = []) {
+  // 第一轮：用 singer / phonemizer 字符串关键字匹配
   const lower = (singer + phonemizer).toLowerCase()
   if (lower.includes('japanese') || lower.includes('jpn') || lower.includes('ja')) return 'JA'
   if (lower.includes('chinese') || lower.includes('mandarin') || lower.includes('zh') || lower.includes('cmn')) return 'ZH'
+
+  // 第二轮兜底：扫 lyric 字符 — 真实工程的 OpenUtau singer 命名常常没语言提示
+  // （比如 "yousaV1.52" + "OpenUtau.Core.DefaultPhonemizer"），但歌词本身能反映。
+  // 没这个兜底 USTX 导入后 languageCode=null，每次双击歌词/音高面板都会弹"选语言/声库"。
+  // Unicode 范围：CJK 汉字 一-鿿；日文假名 ぀-ゟ (平假名) + ゠-ヿ (片假名)。
+  let cjkCount = 0
+  let kanaCount = 0
+  for (const note of Array.isArray(notes) ? notes : []) {
+    const lyric = typeof note?.lyric === 'string' ? note.lyric : ''
+    for (const ch of lyric) {
+      const code = ch.codePointAt(0)
+      if (code >= 0x3040 && code <= 0x30FF) kanaCount += 1        // 假名（独占日文标志）
+      else if (code >= 0x4E00 && code <= 0x9FFF) cjkCount += 1     // 汉字（中日都用，作为弱信号）
+    }
+  }
+  // 假名优先：哪怕只有少量假名，也强烈暗示日文（汉字在中日歌词里都常见）
+  if (kanaCount > 0) return 'JA'
+  if (cjkCount > 0) return 'ZH'
   return null
 }
 
@@ -427,7 +566,7 @@ function convertPitchPoint(ustxPoint) {
 // Phrase 构建
 // ============================================================
 
-function buildPhrase(notes, partIndex, partExtensions) {
+function buildPhrase(notes, partIndex, partExtensions, axis = null) {
   if (notes.length === 0) {
     return {
       index: partIndex,
@@ -442,13 +581,19 @@ function buildPhrase(notes, partIndex, partExtensions) {
   const startTick = firstNote.tick
   const endTick = lastNote.tick + lastNote.durationTicks
 
-  // Time 是派生字段，此处置 0（由 ImportProjectService.applyProjectTiming 重新计算）
+  // startTime/endTime 当场就用 axis 算成绝对秒。原先这两个字段被硬置 0、等 applyProjectTiming
+  // 反算——但那条链路依赖调用方记得跑 timing；某些回路（如 voice runtime 反馈污染 sourcePhrases）
+  // 又会让 tick 失真但 startTime 仍是 phrase 的可信锚点。这里 import 阶段直接算好，
+  // 下游所有路径都能拿到正确的 startTime/endTime，做 tick 反推的兜底也才能生效
+  const startTime = axis ? axis.tickToTime(startTick) : 0
+  const endTime = axis ? axis.tickToTime(endTick) : 0
+
   const phrase = {
     index: partIndex,
-    startTime: 0,
-    endTime: 0,
+    startTime,
+    endTime,
     notes,
-    // 保存原始 tick 范围用于后续 time 计算
+    // 保存原始 tick 范围用于后续 time 计算（applyProjectTiming 仍可消费）
     _startTick: startTick,
     _endTick: endTick,
   }
@@ -487,9 +632,13 @@ function convertTempoData(tempos, timeSignatures) {
 }
 
 function convertTempo(ustxTempo) {
+  // 注意：time 字段刻意留 null 而非 0——createTempoPoint / finalizeTempoPoints 走的是
+  // "time finite 即视为已知"，把 time=0 + ticks=224640 当成"在 0 秒处突变到 224640 tick"，
+  // 让 timeToTick(16.8s) 错落到 segment 1 上、加 224640 偏移。null 表示"未知，由 axis
+  // 用上一段 bpm + ticks 增量反推"，对多 tempo 工程才能拿到正确时间映射。
   return {
     bpm: asNumber(ustxTempo.bpm, DEFAULT_BPM),
-    time: 0, // 后续由 timelineAxis 通过 tick 反算
+    time: null,
     ticks: asInteger(ustxTempo.position),
   }
 }
@@ -499,7 +648,7 @@ function convertTimeSignature(ustxSig) {
   const denominator = asInteger(ustxSig.beat_unit, 4)
   return {
     timeSignature: [numerator, denominator],
-    time: 0, // 后续反算
+    time: null, // 同 convertTempo：由 axis 反推，避免 multi-segment 跳变
     ticks: asInteger(ustxSig.bar_position),
   }
 }

@@ -56,6 +56,44 @@ function buildSourcePhrasesFromPreviewNotes(previewNotes = []) {
   }])
 }
 
+// 用 projection 输出的"已校正"previewNotes 重建 sourcePhrases：按 incoming snapshot.phrases
+// 的边界（每个 phrase 的 note 数）切回去，保留 phrase 元信息，但用校正后的 note tick/time。
+// 若 incoming snapshot 没有 phrases，退化成单 phrase 包整套 previewNotes。
+function rebuildSourcePhrasesWithProjection(incomingPhrases = [], correctedPreviewNotes = []) {
+  if (!Array.isArray(incomingPhrases) || incomingPhrases.length === 0) {
+    return buildSourcePhrasesFromPreviewNotes(correctedPreviewNotes)
+  }
+  let cursor = 0
+  return createPhraseDocuments(incomingPhrases.map((phrase, idx) => {
+    const noteCount = Array.isArray(phrase?.notes) ? phrase.notes.length : 0
+    const sliced = correctedPreviewNotes.slice(cursor, cursor + noteCount)
+    cursor += noteCount
+    // 每个 note 用校正后的 tick/time 重建为 NoteDocument——保留原 phrase 内 note 的 lyric /
+    // pitch / vibrato 等"runtime 端可能修改过"的字段，但 tick/time 用 projection 权威值
+    const notes = sliced.map((cn, i) => {
+      const original = phrase.notes[i] || {}
+      return createNoteDocument({
+        ...original,
+        tick: cn.tick,
+        durationTicks: cn.durationTicks,
+        time: cn.time,
+        duration: cn.duration,
+        midi: cn.midi,
+        velocity: cn.velocity,
+      })
+    })
+    const startTime = notes[0]?.time ?? 0
+    const endTime = notes.reduce((m, n) => Math.max(m, n.time + n.duration), startTime)
+    return {
+      ...phrase,
+      index: Number.isInteger(phrase?.index) ? phrase.index : idx,
+      startTime,
+      endTime,
+      notes,
+    }
+  }))
+}
+
 function getTrackStartTime(track) {
   if (isAudioTrack(track)) return clampNonNegative(track.audioClip?.startTime)
   return (Array.isArray(track?.previewNotes) ? track.previewNotes : []).reduce((minValue, note) => {
@@ -444,8 +482,25 @@ export class ProjectDocumentStore {
     const track = this.getTrack(trackId)
     if (!track || !snapshot) return null
     const projection = buildPreviewProjection(snapshot, this._project?.tempoData, this._project?.ppq)
-    track.voiceSnapshot = cloneValue(snapshot, null)
-    track.sourcePhrases = createPhraseDocuments(snapshot?.phrases)
+    // 关键防御：incoming snapshot.pitchData 为空但 track 当前已有 pitchData 时，保留旧的。
+    // 之所以会出现 "incoming 空、当前有"——上游某条 buildVoiceSnapshot 用了 prepState!=ready
+    // 而 prepState 又被某条路径误改成 idle（比如声库下拉 onChange 触发的 onVoicebankChanged
+    // 在初始化时被错误触发，跨调用清掉 ready 状态）；这种回路绝不该让 USTX 携带的
+    // pitchCurve 被静默吃掉。覆盖前先把"现有 pitchCurve + incoming 没有"识别出来。
+    const cloned = cloneValue(snapshot, null)
+    const existingCurveLen = track.voiceSnapshot?.pitchData?.pitchCurve?.length || 0
+    const incomingCurveLen = cloned?.pitchData?.pitchCurve?.length || 0
+    if (existingCurveLen > 0 && incomingCurveLen === 0) {
+      console.warn('[store.replaceVoiceSnapshot] 拒绝用空 pitchData 覆盖现有 pitchData', {
+        trackId, existingCurveLen,
+      })
+      cloned.pitchData = cloneValue(track.voiceSnapshot.pitchData, null)
+    }
+    track.voiceSnapshot = cloned
+    // 用 projection.previewNotes 反推每个 phrase 的 note.tick / time，对抗 voice runtime
+    // 反馈的 part-relative 污染。projection 内已经识别污染并用 phrase.startTime 校正过，
+    // 这里按 phrase 边界把校正后的 note 切回去——一一对应（runtime 不增删 note，只可能改字段）。
+    track.sourcePhrases = rebuildSourcePhrasesWithProjection(snapshot?.phrases, projection.previewNotes)
     track.previewNotes = (Array.isArray(projection.previewNotes) ? projection.previewNotes : []).map((note) => normalizePreviewNote(note))
     track.noteCount = projection.noteCount ?? snapshot.noteCount ?? track.noteCount
     track.phraseCount = snapshot.phraseCount ?? track.sourcePhrases.length ?? track.phraseCount
