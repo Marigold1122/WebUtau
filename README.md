@@ -1,6 +1,11 @@
-# WebUtau
+<div align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/banner-dark.png">
+    <img src="docs/banner-light.png" alt="WebUtau" width="440">
+  </picture>
+</div>
 
-**一站式虚拟歌姬网页工作站** — 导入 MIDI，填写歌词，让虚拟歌姬为你演唱！
+<p align="center"><strong>一站式虚拟歌姬网页工作站</strong> — 导入 MIDI，填写歌词，让虚拟歌姬为你演唱！</p>
 
 ![webUTAU 界面预览](docs/screenshot.png)
 
